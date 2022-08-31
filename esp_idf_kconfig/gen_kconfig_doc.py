@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 #
-# gen_kconfig_doc - confgen.py support for generating ReST markup documentation
+# gen_kconfig_doc - kconfgen.py support for generating ReST markup documentation
 #
 # For each option in the loaded Kconfig (e.g. 'FOO'), CONFIG_FOO link target is
 # generated, allowing options to be referenced in other documents
@@ -385,7 +385,3 @@ def write_menu_item(f, node, visibility):
             ref_list = ['- :ref:`{}`'.format(anchor) for _, anchor in sorted_child_list]
             f.write('\n'.join(ref_list))
             f.write('\n\n')
-
-
-if __name__ == '__main__':
-    print("Run this via 'confgen.py --output doc FILENAME'")

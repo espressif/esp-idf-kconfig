@@ -41,7 +41,7 @@ def parse_testcases(version):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--logfile', type=argparse.FileType('w'), help='Optional session log of the interactions with confserver.py')
+    parser.add_argument('--logfile', type=argparse.FileType('w'), help='Optional session log of the interactions with kconfserver.py')
     args = parser.parse_args()
 
     try:
@@ -57,18 +57,15 @@ def main():
         with tempfile.NamedTemporaryFile(delete=False) as f:
             temp_kconfig_projbuilds_source_file = os.path.join(tempfile.gettempdir(), f.name)
 
-        cmdline = '''../../confserver.py --env "COMPONENT_KCONFIGS_SOURCE_FILE=%s" \
-                                         --env "COMPONENT_KCONFIGS_PROJBUILD_SOURCE_FILE=%s" \
-                                         --env "COMPONENT_KCONFIGS=" \
-                                         --env "COMPONENT_KCONFIGS_PROJBUILD=" \
-                                         --kconfig Kconfig \
-                                         --config %s \
+        cmdline = '''kconfserver --env "COMPONENT_KCONFIGS_SOURCE_FILE=%s" \
+                                 --env "COMPONENT_KCONFIGS_PROJBUILD_SOURCE_FILE=%s" \
+                                 --env "COMPONENT_KCONFIGS=" \
+                                 --env "COMPONENT_KCONFIGS_PROJBUILD=" \
+                                 --kconfig Kconfig \
+                                 --config %s \
                   ''' % (temp_kconfigs_source_file, temp_kconfig_projbuilds_source_file, temp_sdkconfig_path)
 
         cmdline = re.sub(r' +', ' ', cmdline)
-
-        # prepare_kconfig_files.py doesn't have to be called because COMPONENT_KCONFIGS and
-        # COMPONENT_KCONFIGS_PROJBUILD are empty
 
         print('Running: %s' % cmdline)
         p = pexpect.spawn(cmdline, timeout=30, logfile=args.logfile, echo=False, use_poll=True, maxread=1)

@@ -9,7 +9,7 @@ import textwrap
 import unittest
 
 
-class ConfgenBaseTestCase(unittest.TestCase):
+class KconfgenBaseTestCase(unittest.TestCase):
     @classmethod
     def setUpClass(self):
         self.args = dict()
@@ -27,12 +27,12 @@ class ConfgenBaseTestCase(unittest.TestCase):
             self.functions['regex'] = lambda instance, s, expr: regex_func(instance, expr, s)  # reverse args order
 
     def setUp(self):
-        with tempfile.NamedTemporaryFile(prefix='test_confgen_', delete=False) as f:
+        with tempfile.NamedTemporaryFile(prefix='test_kconfgen_', delete=False) as f:
             self.output_file = f.name
             self.addCleanup(os.remove, self.output_file)
 
-    def invoke_confgen(self, args):
-        call_args = [sys.executable, '../../confgen.py']
+    def invoke_kconfgen(self, args):
+        call_args = ['kconfgen']
 
         for (k, v) in args.items():
             if k != 'output':
@@ -47,22 +47,22 @@ class ConfgenBaseTestCase(unittest.TestCase):
 
     def invoke_and_test(self, in_text, out_text, test='in'):
         """
-        Main utility function for testing confgen:
+        Main utility function for testing kconfgen:
 
-        - Runs confgen via invoke_confgen(), using output method pre-set in test class setup
+        - Runs kconfgen via invoke_kconfgen(), using output method pre-set in test class setup
         - in_text is the Kconfig file input content
-        - out_text is some expected output from confgen
+        - out_text is some expected output from kconfgen
         - 'test' can be any function key from self.functions dict (see above). Default is 'in' to test if
-          out_text is a substring of the full confgen output.
+          out_text is a substring of the full kconfgen output.
         """
 
-        with tempfile.NamedTemporaryFile(mode='w+', prefix='test_confgen_', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode='w+', prefix='test_kconfgen_', delete=False) as f:
             self.addCleanup(os.remove, f.name)
             f.write(textwrap.dedent(in_text))
 
         self.args['kconfig'] = f.name
 
-        self.invoke_confgen(self.args)
+        self.invoke_kconfgen(self.args)
 
         with open(self.output_file) as f_result:
             result = f_result.read()
@@ -75,7 +75,7 @@ class ConfgenBaseTestCase(unittest.TestCase):
         self.functions[test](self, out_text, result)
 
 
-class CmakeTestCase(ConfgenBaseTestCase):
+class CmakeTestCase(KconfgenBaseTestCase):
     @classmethod
     def setUpClass(self):
         super(CmakeTestCase, self).setUpClass()
@@ -93,7 +93,7 @@ class CmakeTestCase(ConfgenBaseTestCase):
         self.invoke_and_test(HEXPREFIX_KCONFIG, 'set(CONFIG_HEX_PREFIX "0x77")')
 
 
-class JsonTestCase(ConfgenBaseTestCase):
+class JsonTestCase(KconfgenBaseTestCase):
     @classmethod
     def setUpClass(self):
         super(JsonTestCase, self).setUpClass()
@@ -112,7 +112,7 @@ class JsonTestCase(ConfgenBaseTestCase):
         self.invoke_and_test(HEXPREFIX_KCONFIG, '"HEX_PREFIX": %d' % 0x77)
 
 
-class JsonMenuTestCase(ConfgenBaseTestCase):
+class JsonMenuTestCase(KconfgenBaseTestCase):
     @classmethod
     def setUpClass(self):
         super(JsonMenuTestCase, self).setUpClass()
@@ -140,7 +140,7 @@ class JsonMenuTestCase(ConfgenBaseTestCase):
         """, r'"range":\s+\[\s+16,\s+175\s+\]', 'regex')
 
 
-class ConfigTestCase(ConfgenBaseTestCase):
+class ConfigTestCase(KconfgenBaseTestCase):
     @classmethod
     def setUpClass(self):
         super(ConfigTestCase, self).setUpClass()
@@ -153,7 +153,7 @@ class ConfigTestCase(ConfgenBaseTestCase):
 
     def setUp(self):
         super(ConfigTestCase, self).setUp()
-        with tempfile.NamedTemporaryFile(mode='w+', prefix='test_confgen_', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode='w+', prefix='test_kconfgen_', delete=False) as f:
             self.addCleanup(os.remove, f.name)
             self.args.update({'config': f.name})  # this is input in contrast with {'output': 'config'}
             f.write(textwrap.dedent("""
@@ -168,11 +168,11 @@ class ConfigTestCase(ConfgenBaseTestCase):
         self.invoke_and_test(self.input, 'CONFIG_UNKNOWN', 'not in')
 
 
-class RenameConfigTestCase(ConfgenBaseTestCase):
+class RenameConfigTestCase(KconfgenBaseTestCase):
     @classmethod
     def setUpClass(self):
         super(RenameConfigTestCase, self).setUpClass()
-        # `args` attribute is a dictionary containing the parameters to pass to `confgen.py`.
+        # `args` attribute is a dictionary containing the parameters to pass to `kconfgen.py`.
         # Specify the name of the output file, this will generate the argument `--output config`.
         self.args.update({'output': 'config'})
         # Setup the KConfig file content in the `input` attribute.
@@ -190,9 +190,9 @@ class RenameConfigTestCase(ConfgenBaseTestCase):
         # Setup the actual test. What we want to do is to have a configuration file containing which
         # option should be enabled or not, this is the equivalent of the `sdkconfig` that we can find
         # in the examples.
-        with tempfile.NamedTemporaryFile(mode='w+', prefix='test_confgen_', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode='w+', prefix='test_kconfgen_', delete=False) as f:
             self.addCleanup(os.remove, f.name)
-            # The current file name will be given to `confgen.py` after `--config` argument.
+            # The current file name will be given to `kconfgen.py` after `--config` argument.
             self.args.update({'config': f.name})
             # Specify the content of that configuration file, in our case, we want to explicitely
             # have an option, which needs to be renamed, disabled/not set.
@@ -201,7 +201,7 @@ class RenameConfigTestCase(ConfgenBaseTestCase):
             """))
         # The configuration file is ready, we need to prepare a `rename` configuration file which will
         # provide the new name for `CONFIG_NAMED_OPTION` we defined above
-        with tempfile.NamedTemporaryFile(mode='w+', prefix='test_confgen_', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode='w+', prefix='test_kconfgen_', delete=False) as f:
             self.addCleanup(os.remove, f.name)
             # Same as above, the following entry will result in the generation of `--sdkconfig-rename`
             # parameter followed by the current temporary file name.
@@ -217,7 +217,7 @@ class RenameConfigTestCase(ConfgenBaseTestCase):
         self.invoke_and_test(self.input, '# CONFIG_RENAMED_OPTION is not set')
 
 
-class HeaderTestCase(ConfgenBaseTestCase):
+class HeaderTestCase(KconfgenBaseTestCase):
     @classmethod
     def setUpClass(self):
         super(HeaderTestCase, self).setUpClass()
@@ -235,7 +235,7 @@ class HeaderTestCase(ConfgenBaseTestCase):
         self.invoke_and_test(HEXPREFIX_KCONFIG, '#define CONFIG_HEX_PREFIX 0x77')
 
 
-class DocsTestCase(ConfgenBaseTestCase):
+class DocsTestCase(KconfgenBaseTestCase):
     @classmethod
     def setUpClass(self):
         super(DocsTestCase, self).setUpClass()

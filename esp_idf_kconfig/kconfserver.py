@@ -9,9 +9,11 @@ import os
 import sys
 import tempfile
 
-import confgen
+import esp_idf_kconfig.kconfgen as kconfgen
 import kconfiglib
-from confgen import FatalError, __version__
+from esp_idf_kconfig.kconfgen import FatalError
+
+from esp_idf_kconfig import __version__
 
 # Min/Max supported protocol versions
 MIN_PROTOCOL_VERSION = 1
@@ -19,7 +21,7 @@ MAX_PROTOCOL_VERSION = 2
 
 
 def main():
-    parser = argparse.ArgumentParser(description='confserver.py v%s - Config Generation Tool' % __version__, prog=os.path.basename(sys.argv[0]))
+    parser = argparse.ArgumentParser(description='kconfserver.py v%s - Config Generation Tool' % __version__, prog=os.path.basename(sys.argv[0]))
 
     parser.add_argument('--config',
                         help='Project configuration settings',
@@ -75,7 +77,7 @@ def run_server(kconfig, sdkconfig, sdkconfig_rename, default_version=MAX_PROTOCO
     sdkconfig_renames_from_env = os.environ.get('COMPONENT_SDKCONFIG_RENAMES')
     if sdkconfig_renames_from_env:
         sdkconfig_renames += sdkconfig_renames_from_env.split(';')
-    deprecated_options = confgen.DeprecatedOptions(config.config_prefix, path_rename_files=sdkconfig_renames)
+    deprecated_options = kconfgen.DeprecatedOptions(config.config_prefix, path_rename_files=sdkconfig_renames)
     f_o = tempfile.NamedTemporaryFile(mode='w+b', delete=False)
     try:
         with open(sdkconfig, mode='rb') as f_i:
@@ -88,7 +90,7 @@ def run_server(kconfig, sdkconfig, sdkconfig_rename, default_version=MAX_PROTOCO
 
     print('Server running, waiting for requests on stdin...', file=sys.stderr)
 
-    config_dict = confgen.get_json_values(config)
+    config_dict = kconfgen.get_json_values(config)
     ranges_dict = get_ranges(config)
     visible_dict = get_visible(config)
 
@@ -114,7 +116,7 @@ def run_server(kconfig, sdkconfig, sdkconfig_rename, default_version=MAX_PROTOCO
             print('\n')
             sys.stdout.flush()
             continue
-        before = confgen.get_json_values(config)
+        before = kconfgen.get_json_values(config)
         before_ranges = get_ranges(config)
         before_visible = get_visible(config)
 
@@ -141,7 +143,7 @@ def run_server(kconfig, sdkconfig, sdkconfig_rename, default_version=MAX_PROTOCO
 
         error = handle_request(deprecated_options, config, req)
 
-        after = confgen.get_json_values(config)
+        after = kconfgen.get_json_values(config)
         after_ranges = get_ranges(config)
         after_visible = get_visible(config)
 
@@ -190,7 +192,7 @@ def handle_request(deprecated_options, config, req):
     if 'save' in req:
         try:
             print('Saving config to %s...' % req['save'], file=sys.stderr)
-            confgen.write_config(deprecated_options, config, req['save'])
+            kconfgen.write_config(deprecated_options, config, req['save'])
         except Exception as e:
             error += ['Failed to save to %s: %s' % (req['save'], e)]
 
@@ -312,14 +314,6 @@ def get_visible(config):
         result[m] = any(v for (n,v) in result.items() if n.parent == m)
 
     # return a dict mapping the node ID to its visibility.
-    result = dict((confgen.get_menu_node_id(n),v) for (n,v) in result.items())
+    result = dict((kconfgen.get_menu_node_id(n),v) for (n,v) in result.items())
 
     return result
-
-
-if __name__ == '__main__':
-    try:
-        main()
-    except FatalError as e:
-        print('A fatal error occurred: %s' % e, file=sys.stderr)
-        sys.exit(2)

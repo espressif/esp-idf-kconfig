@@ -1,18 +1,18 @@
 # KConfig Tests
 
-## confserver.py tests
+## kconfserver.py tests
 
 Install pexpect (`pip install pexpect`).
 
 Then run the tests manually like this:
 
 ```
-./test_confserver.py --logfile tests.log
+./test_kconfserver.py --logfile tests.log
 ```
 
-If a weird error message comes up from the test, check the log file (`tests.log`) which has the full interaction session (input and output) from confserver.py - sometimes the test suite misinterprets some JSON-like content in a Python error message as JSON content.
+If a weird error message comes up from the test, check the log file (`tests.log`) which has the full interaction session (input and output) from kconfserver.py - sometimes the test suite misinterprets some JSON-like content in a Python error message as JSON content.
 
-Note: confserver.py prints its error messages on stderr, to avoid overlap with JSON content on stdout. However pexpect uses a pty (virtual terminal) which can't distinguish stderr and stdout.
+Note: kconfserver.py prints its error messages on stderr, to avoid overlap with JSON content on stdout. However pexpect uses a pty (virtual terminal) which can't distinguish stderr and stdout.
 
 Test cases apply to `KConfig` config schema. Cases are listed in `testcases.txt` and are each of this form:
 
@@ -29,4 +29,3 @@ Test cases apply to `KConfig` config schema. Cases are listed in `testcases.txt`
 * (Blank line between cases)
 
 Test cases are run in sequence, so any test case depends on the state changes caused by all items above it.
-

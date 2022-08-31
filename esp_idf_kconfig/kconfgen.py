@@ -20,10 +20,10 @@ import tempfile
 import textwrap
 from collections import defaultdict
 
-import gen_kconfig_doc
+import esp_idf_kconfig.gen_kconfig_doc as gen_kconfig_doc
 import kconfiglib
 
-__version__ = '0.1'
+from esp_idf_kconfig import __version__
 
 
 class DeprecatedOptions(object):
@@ -177,7 +177,7 @@ class DeprecatedOptions(object):
 
 
 def main():
-    parser = argparse.ArgumentParser(description='confgen.py v%s - Config Generation Tool' % __version__, prog=os.path.basename(sys.argv[0]))
+    parser = argparse.ArgumentParser(description='kconfgen.py v%s - Config Generation Tool' % __version__, prog=os.path.basename(sys.argv[0]))
 
     parser.add_argument('--config',
                         help='Project configuration settings',
@@ -269,9 +269,9 @@ def main():
             if not os.path.exists(name):
                 raise RuntimeError('Defaults file not found: %s' % name)
             try:
-                with tempfile.NamedTemporaryFile(prefix='confgen_tmp', delete=False) as f:
+                with tempfile.NamedTemporaryFile(prefix='kconfgen_tmp', delete=False) as f:
                     temp_file1 = f.name
-                with tempfile.NamedTemporaryFile(prefix='confgen_tmp', delete=False) as f:
+                with tempfile.NamedTemporaryFile(prefix='kconfgen_tmp', delete=False) as f:
                     temp_file2 = f.name
                 deprecated_options.replace(sdkconfig_in=name, sdkconfig_out=temp_file1)
                 _replace_empty_assignments(temp_file1, temp_file2)
@@ -286,7 +286,7 @@ def main():
     # If config file previously exists, load it
     if args.config and os.path.exists(args.config):
         # ... but replace deprecated options before that
-        with tempfile.NamedTemporaryFile(prefix='confgen_tmp', delete=False) as f:
+        with tempfile.NamedTemporaryFile(prefix='kconfgen_tmp', delete=False) as f:
             temp_file = f.name
         try:
             deprecated_options.replace(sdkconfig_in=args.config, sdkconfig_out=temp_file)
@@ -305,7 +305,7 @@ def main():
 
     # Output the files specified in the arguments
     for output_type, filename in args.output:
-        with tempfile.NamedTemporaryFile(prefix='confgen_tmp', delete=False) as f:
+        with tempfile.NamedTemporaryFile(prefix='kconfgen_tmp', delete=False) as f:
             temp_file = f.name
         try:
             output_function = OUTPUT_FORMATS[output_type]
@@ -584,11 +584,3 @@ class FatalError(RuntimeError):
     Class for runtime errors (not caused by bugs but by user input).
     """
     pass
-
-
-if __name__ == '__main__':
-    try:
-        main()
-    except FatalError as e:
-        print('A fatal error occurred: %s' % e)
-        sys.exit(2)
