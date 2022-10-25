@@ -1,4 +1,5 @@
 import os.path
+import sys
 
 from setuptools import find_packages, setup
 
@@ -24,6 +25,11 @@ def get_long_description():
     return text
 
 
+_install_requires = ["kconfiglib>=13.7.1"]
+
+if sys.platform == "win32":
+    _install_requires.append("windows-curses")
+
 setup(
     name="esp-idf-kconfig",
     version=get_version("esp_idf_kconfig/__init__.py"),
@@ -35,7 +41,7 @@ setup(
     url="https://github.com/espressif/esp-idf-kconfig",
     packages=find_packages(),
     python_requires=">=3.7",
-    install_requires=["kconfiglib>=13.7.1"],
+    install_requires=_install_requires,
     extras_require={
         "dev": [
             "flake8>=3.2.0",
