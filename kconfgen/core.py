@@ -689,11 +689,3 @@ OUTPUT_FORMATS = {
     "json_menus": write_json_menus,
     "savedefconfig": write_min_config,
 }
-
-
-class FatalError(RuntimeError):
-    """
-    Class for runtime errors (not caused by bugs but by user input).
-    """
-
-    pass

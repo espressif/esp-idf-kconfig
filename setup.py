@@ -61,10 +61,4 @@ setup(
         "Operating System :: Microsoft :: Windows",
         "Operating System :: MacOS :: MacOS X",
     ],
-    entry_points={
-        "console_scripts": [
-            "kconfgen = esp_idf_kconfig:kconfgen_main",
-            "kconfserver = esp_idf_kconfig:kconfserver_main",
-        ]
-    },
 )

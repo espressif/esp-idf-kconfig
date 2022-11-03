@@ -35,7 +35,7 @@ class KconfgenBaseTestCase(unittest.TestCase):
             self.addCleanup(os.remove, self.output_file)
 
     def invoke_kconfgen(self, args):
-        call_args = ["kconfgen"]
+        call_args = ["python", "-m", "kconfgen"]
 
         for (k, v) in args.items():
             if k != "output":
