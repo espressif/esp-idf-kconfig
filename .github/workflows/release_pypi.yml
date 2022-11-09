@@ -2,8 +2,8 @@ name: PyPI release
 
 on:
   push:
-    tags:
-      - '*'
+    branches:
+      - master
 
 jobs:
   build_and_upload:
