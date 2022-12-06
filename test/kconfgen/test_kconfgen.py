@@ -330,6 +330,44 @@ class DocsTestCase(KconfgenBaseTestCase):
         )  # this is more readable than regex
 
 
+class DefaultsTestCase(KconfgenBaseTestCase):
+    @classmethod
+    def setUpClass(self):
+        super(DefaultsTestCase, self).setUpClass()
+        self.args.update({"output": "savedefconfig"})
+        self.input = """
+        config IDF_TARGET
+            string "IDF target"
+            default "esp32"
+
+        config TEST
+            bool "test"
+            default "y"
+        """
+
+    def setUp(self):
+        super(DefaultsTestCase, self).setUp()
+        with tempfile.NamedTemporaryFile(
+            mode="w+", prefix="test_kconfgen_", delete=False
+        ) as f:
+            self.addCleanup(os.remove, f.name)
+            self.args.update(
+                {"config": f.name}
+            )  # this is input in contrast with {'output': 'config'}
+            f.write(
+                textwrap.dedent(
+                    """
+                    CONFIG_TEST=n
+                    """
+                )
+            )
+
+    def testSaveDefault(self):
+        # Make sure that setting bool to false is represented as assignment and not as comment "CONFIG_TEST is not set"
+        self.invoke_and_test(self.input, "CONFIG_TEST=n")
+        self.invoke_and_test(self.input, "# CONFIG_TEST is not set", "not in")
+
+
 # Used by multiple testHexPrefix() test cases to verify correct hex output for each format
 HEXPREFIX_KCONFIG = """
 config HEX_NOPREFIX

@@ -434,7 +434,18 @@ def write_min_config(deprecated_options, config, filename):
             target_symbol.config_string if write_target else ""
         )
     )
-    config.write_min_config(filename, header=CONFIG_HEADING)
+
+    # convert `# CONFIG_XY is not set` to `CONFIG_XY=n` to improve readability
+    lines = config._min_config_contents(header=CONFIG_HEADING).splitlines()
+    unset_match = re.compile(
+        r"# {}([^ ]+) is not set".format(config.config_prefix)
+    ).match
+    for idx, line in enumerate(lines):
+        match = unset_match(line)
+        if match:
+            lines[idx] = f"{config.config_prefix}{match.group(1)}=n"
+    lines[-1] += "\n"
+    config._write_if_changed(filename, "\n".join(lines))
 
 
 def write_header(deprecated_options, config, filename):
