@@ -44,9 +44,6 @@ setup(
     install_requires=_install_requires,
     extras_require={
         "dev": [
-            "flake8>=3.2.0",
-            "flake8-import-order",
-            "black",
             "pre-commit",
             "pexpect",
         ],
