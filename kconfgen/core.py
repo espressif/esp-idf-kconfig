@@ -7,7 +7,7 @@
 # Used internally by the ESP-IDF build system. But designed to be
 # non-IDF-specific.
 #
-# SPDX-FileCopyrightText: 2018-2021 Espressif Systems (Shanghai) CO LTD
+# SPDX-FileCopyrightText: 2018-2023 Espressif Systems (Shanghai) CO LTD
 # SPDX-License-Identifier: Apache-2.0
 
 import argparse
@@ -409,9 +409,10 @@ def main():
 
 
 def write_config(deprecated_options, config, filename):
-    CONFIG_HEADING = """#
+    idf_version = os.environ.get("IDF_VERSION", "")
+    CONFIG_HEADING = f"""#
 # Automatically generated file. DO NOT EDIT.
-# Espressif IoT Development Framework (ESP-IDF) Project Configuration
+# Espressif IoT Development Framework (ESP-IDF) {idf_version} Project Configuration
 #
 """
     config.write_config(filename, header=CONFIG_HEADING)
@@ -419,20 +420,19 @@ def write_config(deprecated_options, config, filename):
 
 
 def write_min_config(deprecated_options, config, filename):
+    idf_version = os.environ.get("IDF_VERSION", "")
     target_symbol = config.syms["IDF_TARGET"]
     # 'esp32` is harcoded here because the default value of IDF_TARGET is set on the first run from the environment
     # variable. I.E. `esp32  is not defined as default value.
     write_target = target_symbol.str_value != "esp32"
 
     CONFIG_HEADING = textwrap.dedent(
-        """\
+        f"""\
     # This file was generated using idf.py save-defconfig. It can be edited manually.
-    # Espressif IoT Development Framework (ESP-IDF) Project Minimal Configuration
+    # Espressif IoT Development Framework (ESP-IDF) {idf_version} Project Minimal Configuration
     #
-    {}\
-    """.format(
-            target_symbol.config_string if write_target else ""
-        )
+    {target_symbol.config_string if write_target else ""}\
+    """
     )
 
     # convert `# CONFIG_XY is not set` to `CONFIG_XY=n` to improve readability
@@ -449,9 +449,10 @@ def write_min_config(deprecated_options, config, filename):
 
 
 def write_header(deprecated_options, config, filename):
-    CONFIG_HEADING = """/*
+    idf_version = os.environ.get("IDF_VERSION", "")
+    CONFIG_HEADING = f"""/*
  * Automatically generated file. DO NOT EDIT.
- * Espressif IoT Development Framework (ESP-IDF) Configuration Header
+ * Espressif IoT Development Framework (ESP-IDF) {idf_version} Configuration Header
  */
 #pragma once
 """
