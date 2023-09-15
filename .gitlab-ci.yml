@@ -75,6 +75,13 @@ test_kconfgen:
     - cd test/kconfgen/
     - ./test_kconfgen.py
 
+test_kconfcheck:
+  extends: .base_template
+  stage: test
+  script:
+    - cd test/kconfcheck/
+    - ./test_kconfcheck.py
+
 # TESTS in VENV
 test_kconfgen_venv:
   extends: .venv_template
@@ -97,3 +104,10 @@ test_kconfgen_venv:
   script:
     - cd test/kconfgen/
     - ./test_kconfgen.py
+
+test_kconfcheck_venv:
+  extends: .venv_template
+  stage: test
+  script:
+    - cd test/kconfcheck/
+    - ./test_kconfcheck.py
