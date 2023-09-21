@@ -5,15 +5,9 @@
 # SPDX-FileCopyrightText: 2018-2023 Espressif Systems (Shanghai) CO LTD
 # SPDX-License-Identifier: Apache-2.0
 
-from __future__ import print_function, unicode_literals
-
 import argparse
 import os
 import re
-from io import open
-
-# regular expression for matching Kconfig files
-RE_KCONFIG = r"^Kconfig(\.projbuild)?(\.in)?$"
 
 # ouput file with suggestions will get this suffix
 OUTPUT_SUFFIX = ".new"
@@ -483,70 +477,31 @@ def validate_kconfig_file(
 
 def main():
     parser = argparse.ArgumentParser(description="Kconfig style checker")
-    parser.add_argument("files", nargs="*", help="Kconfig files")
+    parser.add_argument(
+        "files",
+        nargs="*",
+        help="Kconfig files to check (full paths separated by space)",
+    )
     parser.add_argument(
         "--verbose",
         "-v",
         action="store_true",
         help="Print more information (useful for debugging)",
     )
-    parser.add_argument(
-        "--includes",
-        "-d",
-        nargs="*",
-        help="Extra paths for recursively searching Kconfig files. (for example $IDF_PATH)",
-        type=valid_directory,
-    )
-    parser.add_argument(
-        "--exclude-submodules", action="store_true", help="Exclude submodules"
-    )
-    parser.add_argument(  # hidden argument in help message, passed from esp-idf
-        "--_exc_dirs", nargs="+", help=argparse.SUPPRESS
-    )
     args = parser.parse_args()
 
     success_counter = 0
     failure_counter = 0
-    ignore_counter = 0
-
-    # ignored directories (makes sense only when run on IDF_PATH)
-    # Note: ignore_dirs is a tuple in order to be able to use it directly with the startswith() built-in function which
-    # accepts tuples but no lists.
-    ignore_dirs: tuple = ()
-    if args.exclude_submodules:
-        ignore_dirs = eval(args._ignore_dirs[0])
 
     files = [os.path.abspath(file_path) for file_path in args.files]
 
-    if args.includes:
-        for directory in args.includes:
-            for root, dirnames, filenames in os.walk(directory):
-                for filename in filenames:
-                    full_path = os.path.join(root, filename)
-                    if re.search(RE_KCONFIG, filename):
-                        files.append(full_path)
-                    elif re.search(RE_KCONFIG, filename, re.IGNORECASE):
-                        # On Windows Kconfig files are working with different cases!
-                        print(
-                            '{}: Incorrect filename. The case should be "Kconfig"!'.format(
-                                full_path
-                            )
-                        )
-                        failure_counter += 1
-
     for full_path in files:
-        if full_path.startswith(ignore_dirs):
-            print("{}: Ignored".format(full_path))
-            ignore_counter += 1
-            continue
         is_valid = validate_kconfig_file(full_path, args.verbose)
         if is_valid:
             success_counter += 1
         else:
             failure_counter += 1
 
-    if ignore_counter > 0:
-        print("{} files have been ignored.".format(ignore_counter))
     if success_counter > 0:
         print("{} files have been successfully checked.".format(success_counter))
     if failure_counter > 0:
@@ -558,8 +513,5 @@ def main():
         return 1
 
     if not files:
-        print(
-            "WARNING: no files specified. Please specify files or use "
-            '"--includes" to search Kconfig files recursively'
-        )
+        print("WARNING: no files specified.")
     return 0

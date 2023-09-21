@@ -4,12 +4,15 @@ esp-idf-kconfig is the kconfig support used by the ESP-IDF CMake-based build sys
 
 It depends on the [kconfiglib](https://github.com/ulfalizer/Kconfiglib) package.
 
-## Kconfig check
+## Kconfig checker
 
-Kconfig check is a command line tool which performs kconfig files checks. Checks can be done with command:
+Kconfig checker is a command line tool which performs kconfig file checks. Detailed description of Kconfig format rules and checker can be found in the [documentation](https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-reference/kconfig.html?highlight=check_kconfigs#format-checker).
+
+Checks can be done with the following command:
 ```
-python -m esp_idf_kconfig --includes <path_where_to_recursively_search_for_kconfigs>
+python -m kconfcheck <path_to_kconfig_file_1> <"path to kconfig file 2 with spaces"> ...
 ```
+where paths are divided by spaces and the ones with spaces should be surrounded by quotes (").
 
 ## kconfserver.py
 
