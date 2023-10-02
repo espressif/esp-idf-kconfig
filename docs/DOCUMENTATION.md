@@ -4,11 +4,21 @@ esp-idf-kconfig is the kconfig support used by the ESP-IDF CMake-based build sys
 
 It depends on the [kconfiglib](https://github.com/ulfalizer/Kconfiglib) package.
 
+## Kconfig checker
+
+Kconfig checker is a command line tool which performs kconfig file checks. Detailed description of Kconfig format rules and checker can be found in the [documentation](https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-reference/kconfig.html?highlight=check_kconfigs#format-checker).
+
+Checks can be done with the following command:
+```
+python -m kconfcheck <path_to_kconfig_file_1> <"path to kconfig file 2 with spaces"> ...
+```
+where paths are divided by spaces and the ones with spaces should be surrounded by quotes (").
+
 ## kconfserver.py
 
 kconfserver.py is a small Python program intended to support IDEs and other clients who want to allow editing sdkconfig, without needing to reproduce all of the kconfig logic in a particular program.
 
-After launching kconfserver.py (which can be done via `idf.py kconfserver` command or `kconfserver` build target in ninja/make), the kconfserver communicates via JSON sent/received on stdout. Out-of-band errors are logged via stderr.
+After launching kconfserver.py (which can be done via `idf.py confserver` command or `confserver` build target in ninja/make), the kconfserver communicates via JSON sent/received on stdout. Out-of-band errors are logged via stderr.
 
 ### Configuration Structure
 
