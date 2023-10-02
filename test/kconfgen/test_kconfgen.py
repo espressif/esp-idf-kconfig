@@ -324,8 +324,15 @@ class DocsTestCase(KconfgenBaseTestCase):
             Description of TYPES
 
             Available options:
-                - option 1             (TYPES_OP1)
-                - option 2             (TYPES_OP2)
+
+                  .. _CONFIG_TYPES_OP1:
+
+                - option 1             (CONFIG_TYPES_OP1)
+
+                  .. _CONFIG_TYPES_OP2:
+
+                - option 2             (CONFIG_TYPES_OP2)
+
         """,
         )  # this is more readable than regex
 

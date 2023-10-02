@@ -45,6 +45,11 @@ choice CHOICE_FOR_CHIPA
         bool "op2"
 endchoice
 
+config OPT_DEPENDENT_ON_CHOICE_OP2
+    bool "Option with a default dependent on choice OP2"
+    default y if CHOICE_FOR_CHIPA_OP2
+    default n
+
 choice CHOICE_FOR_CHIPB
     prompt "Always visible choice"
     default CHOICE_FOR_CHIPB_OP1
