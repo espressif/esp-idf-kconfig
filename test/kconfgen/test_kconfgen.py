@@ -343,13 +343,24 @@ class DefaultsTestCase(KconfgenBaseTestCase):
         super(DefaultsTestCase, self).setUpClass()
         self.args.update({"output": "savedefconfig"})
         self.input = """
-        config IDF_TARGET
-            string "IDF target"
-            default "esp32"
+        menu "Label"
+            config IDF_TARGET
+                string "IDF target"
+                default "esp32"
 
-        config TEST
-            bool "test"
-            default "y"
+            menu "This is a menu label"
+                config TEST2
+                    bool "test"
+                    default "y"
+            endmenu
+
+            menu "Label"
+                config TEST
+                    bool "test"
+                    default "y"
+                    comment "This is a comment for TEST"
+            endmenu
+        endmenu
         """
 
     def setUp(self):
@@ -365,6 +376,7 @@ class DefaultsTestCase(KconfgenBaseTestCase):
                 textwrap.dedent(
                     """
                     CONFIG_TEST=n
+                    CONFIG_TEST2=n
                     """
                 )
             )
@@ -373,6 +385,35 @@ class DefaultsTestCase(KconfgenBaseTestCase):
         # Make sure that setting bool to false is represented as assignment and not as comment "CONFIG_TEST is not set"
         self.invoke_and_test(self.input, "CONFIG_TEST=n")
         self.invoke_and_test(self.input, "# CONFIG_TEST is not set", "not in")
+
+    def testSaveDefaultWithLabels(self):
+        # get min config without labels and with labes, remove labes and compare the results
+
+        # without labels
+        self.invoke_and_test(self.input, "# This is a menu label", "not in")
+        with open(self.output_file, "r") as f:
+            without_labels = f.readlines()
+        # set min config labels
+        os.environ["ESP_IDF_KCONFIG_MIN_LABELS"] = "True"
+        # add cleanup to remove the env variable after test
+        self.addCleanup(os.environ.pop, "ESP_IDF_KCONFIG_MIN_LABELS", None)
+        # get result with labels
+        self.invoke_and_test(self.input, "# This is a menu label")
+        with open(self.output_file, "r") as f:
+            with_labels = f.readlines()
+        # verify that comments are not printed out as labels
+        self.assertNotIn("# This is a comment for TEST\n", with_labels)
+        # verify that "Label" is twice in the min config
+        cnt = 0
+        for line in with_labels:
+            if line == "# Label\n":
+                cnt += 1
+        self.assertEqual(cnt, 2)
+        # remove labels and empty lines; ignore first three lines that contain header
+        with_labels_strip = with_labels[:3] + list(
+            filter(lambda x: not x.startswith("#") and not x == "\n", with_labels[3:])
+        )
+        self.assertEqual(without_labels, with_labels_strip)
 
 
 # Used by multiple testHexPrefix() test cases to verify correct hex output for each format
