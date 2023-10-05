@@ -377,28 +377,42 @@ def write_menu_item(f, node, visibility):
         pass  # No help
 
     if isinstance(node.item, kconfiglib.Choice):
-        f.write("%sAvailable options:\n" % INDENT)
+        f.write("%sAvailable options:\n\n" % INDENT)
         choice_node = node.list
         while choice_node:
             # Format available options as a list
+            # First, link anchor for this option
+            f.write("%s  .. _%s:\n\n" % (INDENT * 2, get_link_anchor(choice_node)))
+            # Then, option itself, as a list item
             f.write(
-                "%s- %-20s (%s)\n"
-                % (INDENT * 2, choice_node.prompt[0], choice_node.item.name)
+                "%s- %-20s (%s%s)\n"
+                % (
+                    INDENT * 2,
+                    choice_node.prompt[0],
+                    node.kconfig.config_prefix,
+                    choice_node.item.name,
+                )
             )
             if choice_node.help:
                 HELP_INDENT = INDENT * 2
                 fmt_help = format_rest_text(choice_node.help, "  " + HELP_INDENT)
                 f.write("%s  \n%s\n" % (HELP_INDENT, fmt_help))
             choice_node = choice_node.next
+            f.write("\n")
 
         f.write("\n\n")
 
     if isinstance(node.item, kconfiglib.Symbol):
 
         def _expr_str(sc):
-            if sc.is_constant or not sc.nodes or sc.choice:
+            if sc.is_constant or not sc.nodes:
                 return "{}".format(sc.name)
-            return ":ref:`%s%s`" % (sc.kconfig.config_prefix, sc.name)
+            opt_name = "%s%s" % (sc.kconfig.config_prefix, sc.name)
+            if sc.choice:
+                # link targets not associated with a section cannot be referenced without providing the title
+                # https://github.com/sphinx-doc/sphinx/issues/9993
+                return ":ref:`%s<%s>`" % (opt_name, opt_name)
+            return ":ref:`%s`" % opt_name
 
         range_strs = []
         for low, high, cond in node.item.ranges:

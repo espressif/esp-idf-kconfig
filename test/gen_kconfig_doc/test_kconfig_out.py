@@ -74,6 +74,18 @@ class TestDocOutput(unittest.TestCase):
         self.assertIn("- from 1 to 10", s)
         self.assertNotIn("- from 100", s)
 
+    def test_choice(self):
+        s = self.get_doc_out("CHOICE_FOR_CHIPA")
+        self.assertIn("Available options:", s)
+        self.assertRegex(s, r"- op1\s+\(CONFIG_CHOICE_FOR_CHIPA_OP1\)")
+        self.assertRegex(s, r"- op2\s+\(CONFIG_CHOICE_FOR_CHIPA_OP2\)")
+
+        s = self.get_doc_out("OPT_DEPENDENT_ON_CHOICE_OP2")
+        self.assertIn(
+            "- Yes (enabled) if :ref:`CONFIG_CHOICE_FOR_CHIPA_OP2<CONFIG_CHOICE_FOR_CHIPA_OP2>`",
+            s,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
