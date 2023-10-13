@@ -18,7 +18,7 @@ import re
 import sys
 import tempfile
 import textwrap
-from collections import defaultdict
+from collections import OrderedDict, defaultdict
 
 import kconfiglib
 
@@ -419,6 +419,64 @@ def write_config(deprecated_options, config, filename):
     deprecated_options.append_config(config, filename)
 
 
+def min_config_with_labels(config: kconfiglib.Kconfig, header: str) -> str:
+    """Return minimal config containing menu labels"""
+    all_options = config._config_contents("").splitlines()
+    min_options = config._min_config_contents("").splitlines()
+
+    end_regex = re.compile(r"^# end of (.*)$").match
+    # `label_path` marks the current path from the root; labels represent tree nodes.
+    # The path is represented as an ordered Dict; the last element in the Dict is closest to the leaves.
+    # The label name is the key, and a boolean value indicates whether the label was added to the output (i.e., the label is used in the output).
+    # We need to track used labels to ensure correct timing when printing the label ending.
+    # Note that label names are not necessarily unique, so the order is significant.
+    label_path: OrderedDict[str, bool] = OrderedDict()
+    output = [header]
+    possibly_label = False
+    current = None  # None stands for tree root
+    comments = []
+
+    # Using depth search first, we go down the tree and save the path from the root.
+    # If we find an option from min config, we update the whole path to used (True) and print all menu labels.
+    # When we go back up the tree, we print all label endings that were marked as used
+    for line in all_options:
+        end_match = end_regex(line)
+        if end_match:
+            # we have found an end of a menu section
+            current = end_match.group(1)
+            label = None
+            while label != current and label_path:
+                # remove any labels that appeared outside of used sections
+                label, used = label_path.popitem()
+                if used and label != current:
+                    # used label without end -> comment
+                    comments.append(label)
+            if used:
+                # menu label was used - print menu label ending
+                output.append(f"{line}\n")
+            # find the new current (the last in list); if tree is empty return back to the root
+            current = next(reversed(label_path.keys())) if label_path else None
+        elif line == "#":
+            # starting/ending possible menu label
+            possibly_label = not possibly_label
+        elif possibly_label:
+            current = line[2:]  # remove leading '# '
+            label_path[current] = False  # label not yet used
+        elif line in min_options:
+            # minimal config option detected
+            for label, used in label_path.items():
+                # print all menu labels that were not printed yet
+                if not used:
+                    output.append(f"\n#\n# {label}\n#\n")
+                # mark the whole path from root as 'used'
+                label_path[label] = True
+            output.append(line + "\n")
+    # Remove comments from minimal config, while keeping menu labels
+    for comment in comments:
+        output.remove(f"\n#\n# {comment}\n#\n")
+    return "".join(output)
+
+
 def write_min_config(deprecated_options, config, filename):
     idf_version = os.environ.get("IDF_VERSION", "")
     target_symbol = config.syms["IDF_TARGET"]
@@ -435,8 +493,12 @@ def write_min_config(deprecated_options, config, filename):
     """
     )
 
+    if os.environ.get("ESP_IDF_KCONFIG_MIN_LABELS", False):
+        lines = min_config_with_labels(config, CONFIG_HEADING).splitlines()
+    else:
+        lines = config._min_config_contents(header=CONFIG_HEADING).splitlines()
+
     # convert `# CONFIG_XY is not set` to `CONFIG_XY=n` to improve readability
-    lines = config._min_config_contents(header=CONFIG_HEADING).splitlines()
     unset_match = re.compile(
         r"# {}([^ ]+) is not set".format(config.config_prefix)
     ).match
