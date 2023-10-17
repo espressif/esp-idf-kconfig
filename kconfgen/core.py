@@ -364,6 +364,12 @@ def main():
                 deprecated_options.replace(sdkconfig_in=name, sdkconfig_out=temp_file1)
                 _replace_empty_assignments(temp_file1, temp_file2)
                 config.load_config(temp_file2, replace=False)
+
+                for symbol, value in config.missing_syms:
+                    if deprecated_options.get_new_option(symbol) is None:
+                        print(
+                            f"warning: unknown kconfig symbol '{symbol}' assigned to '{value}' in {name}"
+                        )
             finally:
                 try:
                     os.remove(temp_file1)
