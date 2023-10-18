@@ -493,7 +493,7 @@ def write_min_config(deprecated_options, config, filename):
     """
     )
 
-    if os.environ.get("ESP_IDF_KCONFIG_MIN_LABELS", False):
+    if os.environ.get("ESP_IDF_KCONFIG_MIN_LABELS", False) == "1":
         lines = min_config_with_labels(config, CONFIG_HEADING).splitlines()
     else:
         lines = config._min_config_contents(header=CONFIG_HEADING).splitlines()

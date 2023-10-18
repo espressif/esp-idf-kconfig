@@ -394,7 +394,7 @@ class DefaultsTestCase(KconfgenBaseTestCase):
         with open(self.output_file, "r") as f:
             without_labels = f.readlines()
         # set min config labels
-        os.environ["ESP_IDF_KCONFIG_MIN_LABELS"] = "True"
+        os.environ["ESP_IDF_KCONFIG_MIN_LABELS"] = "1"
         # add cleanup to remove the env variable after test
         self.addCleanup(os.environ.pop, "ESP_IDF_KCONFIG_MIN_LABELS", None)
         # get result with labels
