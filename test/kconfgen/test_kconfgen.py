@@ -82,6 +82,7 @@ class KconfgenBaseTestCase(unittest.TestCase):
             pass  # probably a regex
 
         self.functions[test](self, out_text, result)
+        return result
 
 
 class CmakeTestCase(KconfgenBaseTestCase):
@@ -286,6 +287,27 @@ class DocsTestCase(KconfgenBaseTestCase):
     def setUpClass(self):
         super(DocsTestCase, self).setUpClass()
         self.args.update({"output": "docs", "env": "IDF_TARGET=esp32"})
+
+    def testMultipleRangesWithNegation(self):
+        out = self.invoke_and_test(
+            """
+        config IDF_TARGET
+            string "IDF target"
+            default "esp32"
+
+        config IDF_TARGET_ESP32
+            bool
+            default "y" if IDF_TARGET="esp32"
+
+        config SOME_SETTING
+            int "setting for the chip"
+            range 0 10 if IDF_TARGET_ESP32
+            range 0 100 if !IDF_TARGET_ESP32
+        """,
+            re.compile(r"Range:\n\s+- from 0 to 10"),
+            "regex",
+        )
+        assert "- from 0 to 100" not in out
 
     def testChoice(self):
         self.invoke_and_test(
