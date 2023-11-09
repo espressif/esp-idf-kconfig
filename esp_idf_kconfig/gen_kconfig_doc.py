@@ -258,7 +258,9 @@ def _minimize_expr(expr, visibility):
         if expr[0] == kconfiglib.NOT:
             new_expr = _minimize_expr(expr[1], visibility)
             return (
-                kconfiglib.Kconfig.y if new_expr == kconfiglib.Kconfig.n else new_expr
+                kconfiglib.Kconfig.y
+                if new_expr == kconfiglib.Kconfig.n
+                else kconfiglib.Kconfig.n
             )
         else:
             new_expr1 = _minimize_expr(expr[1], visibility)
