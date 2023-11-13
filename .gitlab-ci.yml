@@ -2,6 +2,14 @@ stages:
   - codecheck
   - test
 
+include:
+  - project: espressif/shared-ci-dangerjs
+    ref: master
+    file: danger.yaml
+run-danger-mr-linter:
+  stage: codecheck
+
+
 # WORKFLOW RULES
 # ------------------------------------------------------------------------------------------------------
 workflow:
