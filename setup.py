@@ -31,7 +31,7 @@ if sys.platform == "win32":
     _install_requires.append("windows-curses")
 
 setup(
-    name="esp-idf-kconfig",
+    name="test_pkg_kconfig",
     version=get_version("esp_idf_kconfig/__init__.py"),
     author="Espressif Systems",
     author_email="",
