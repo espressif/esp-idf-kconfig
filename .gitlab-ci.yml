@@ -91,14 +91,14 @@ test_kconfcheck:
     - ./test_kconfcheck.py
 
 # TESTS in VENV
-test_kconfgen_venv:
+test_kconfserver_venv:
   extends: .venv_template
   stage: test
   script:
     - cd test/kconfserver/
     - ./test_kconfserver.py
 
-test_kconfgen_venv:
+test_gen_kconfig_doc_venv:
   extends: .venv_template
   stage: test
   script:
