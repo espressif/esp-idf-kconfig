@@ -2,6 +2,14 @@ stages:
   - codecheck
   - test
 
+include:
+  - project: espressif/shared-ci-dangerjs
+    ref: master
+    file: danger.yaml
+run-danger-mr-linter:
+  stage: codecheck
+
+
 # WORKFLOW RULES
 # ------------------------------------------------------------------------------------------------------
 workflow:
@@ -83,14 +91,14 @@ test_kconfcheck:
     - ./test_kconfcheck.py
 
 # TESTS in VENV
-test_kconfgen_venv:
+test_kconfserver_venv:
   extends: .venv_template
   stage: test
   script:
     - cd test/kconfserver/
     - ./test_kconfserver.py
 
-test_kconfgen_venv:
+test_gen_kconfig_doc_venv:
   extends: .venv_template
   stage: test
   script:
