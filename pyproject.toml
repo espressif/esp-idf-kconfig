@@ -55,7 +55,7 @@ version = {attr = "esp_idf_kconfig.__version__"}
 [tool.commitizen]
 name = "cz_conventional_commits"
 tag_format = "v$version"
-version = "1.4.0"
+version = "1.4.1"
 version_scheme = "semver"
 version_files = ["esp_idf_kconfig/__init__.py"]
 bump_message = "ci: bump version $current_version → $new_version"
