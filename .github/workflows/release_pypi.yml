@@ -1,9 +1,8 @@
 name: PyPI release
 
 on:
-  push:
-    tags:
-      - 'v*'
+  release:
+    types: [released]
 
 jobs:
   build_and_upload:
