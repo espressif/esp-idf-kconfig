@@ -8,6 +8,8 @@ include:
     file: danger.yaml
 run-danger-mr-linter:
   stage: codecheck
+  variables:
+    ENABLE_CHECK_UPDATED_CHANGELOG: 'false'
 
 
 # WORKFLOW RULES
