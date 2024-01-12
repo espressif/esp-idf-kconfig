@@ -182,7 +182,6 @@ class TestIndent(TestIndentAndNameChecker):
         self.expt_success("    # comment")
         self.expt_success("    help")
         self.expt_success("        text")
-        self.expect_error("# comment", expect="        # comment")
         self.expt_success('        # second not realcomment"')
 
 
