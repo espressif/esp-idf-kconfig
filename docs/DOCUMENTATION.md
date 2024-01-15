@@ -14,6 +14,8 @@ python -m kconfcheck <path_to_kconfig_file_1> <"path to kconfig file 2 with spac
 ```
 where paths are divided by spaces and the ones with spaces should be surrounded by quotes (").
 
+When you are sure the line is correct and the tests are not passing because of the length and it would be too complicated to solve this error, the line can be skipped with `# NOERROR` at the end of the line (However it is not recommended to do so if not necessary).
+
 ## kconfserver.py
 
 kconfserver.py is a small Python program intended to support IDEs and other clients who want to allow editing sdkconfig, without needing to reproduce all of the kconfig logic in a particular program.
