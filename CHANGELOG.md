@@ -1,18 +1,18 @@
 ## v1.4.1 (2023-11-16)
 
-### Fix
+### Bug Fixes
 
 - **docs**: fix not expression evaluation for range parameter
 
 ## v1.4.0 (2023-10-20)
 
-### Feat
+### New Features
 
 - menu labels in min config
 - **doc**: generate hyperlink targets for choices
 - **min_config**: convert CONFIG_XY is not set to CONFIG_XY=n
 
-### Fix
+### Bug Fixes
 
 - add execute permissions for kconfcheck tests
 - remove unnecessary requirements

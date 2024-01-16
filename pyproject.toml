@@ -53,13 +53,26 @@ version = {attr = "esp_idf_kconfig.__version__"}
 
 
 [tool.commitizen]
-name = "cz_conventional_commits"
 tag_format = "v$version"
 version = "1.4.1"
-version_scheme = "semver"
+changelog_merge_prerelease = true
+annotated_tag = true
 version_files = ["esp_idf_kconfig/__init__.py"]
-bump_message = "ci: bump version $current_version → $new_version"
+bump_message = "change: Update version to $new_version"
 update_changelog_on_bump = true
+change_type_order = [
+    "BREAKING CHANGE",
+    "New Features",
+    "Bug Fixes",
+    "Code Refactoring",
+    "Performance Improvements"
+]
+
+[tool.commitizen.change_type_map]
+feat = "New Features"
+fix = "Bug Fixes"
+refactor = "Code Refactoring"
+perf = "Performance Improvements"
 
 [tool.mypy]
     disallow_incomplete_defs = false # Disallows defining functions with incomplete type annotations
