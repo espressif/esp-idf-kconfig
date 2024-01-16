@@ -1,3 +1,9 @@
+## v1.4.2 (2024-01-16)
+
+### Bug Fixes
+
+- **kconfcheck**: Fixed false-positive indent errors and extended limits
+
 ## v1.4.1 (2023-11-16)
 
 ### Bug Fixes
