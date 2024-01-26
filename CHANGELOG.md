@@ -1,3 +1,9 @@
+## v2.1.0 (2024-01-26)
+
+### New Features
+
+- **kconfcheck**: Added kconfcheck package to pre-commit hook
+
 ## v2.0.2 (2024-01-12)
 
 ### Bug Fixes
