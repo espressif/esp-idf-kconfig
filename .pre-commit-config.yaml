@@ -1,7 +1,5 @@
 # See https://pre-commit.com for more information
 # See https://pre-commit.com/hooks.html for more hooks
-default_install_hook_types: [pre-commit, commit-msg]
-
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v3.4.0
@@ -11,31 +9,31 @@ repos:
       - id: check-executables-have-shebangs
       - id: mixed-line-ending
         args: ['-f=lf']
-
-  - repo: https://github.com/PyCQA/flake8
-    rev: 5.0.4
+  - repo: https://github.com/asottile/reorder-python-imports
+    rev: v3.12.0
     hooks:
-      - id: flake8
-
-  - repo: https://github.com/pycqa/isort
-    rev: 5.11.5
-    hooks:
-      - id: isort
-        name: isort (python)
-        args: ["--profile", "black", "--filter-files"]
-
+      - id: reorder-python-imports
+        name: Reorder Python imports
+        args: [--py38-plus]
   - repo: https://github.com/pre-commit/mirrors-mypy
     rev: 'v0.971'
     hooks:
     -   id: mypy
-
-  - repo: https://github.com/psf/black
-    rev: 22.8.0
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.1.14
     hooks:
-      - id: black
-
+      - id: ruff # Runs ruff linter (replaces flake8 and black)
+        args: [--fix, --exit-non-zero-on-fix] # --fix for fixing errors
+      - id: ruff-format
+  - repo: https://github.com/espressif/check-copyright/
+    rev: v1.0.3
+    hooks:
+      - id: check-copyright
+        args: ['--ignore', 'check_copyright_ignore.txt', '--config', 'check_copyright_config.yaml']
   - repo: https://github.com/espressif/conventional-precommit-linter
     rev: v1.2.1
     hooks:
       - id: conventional-precommit-linter
         stages: [commit-msg]
+default_stages: [commit]
+default_install_hook_types: [pre-commit, commit-msg]

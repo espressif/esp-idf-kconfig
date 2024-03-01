@@ -7,22 +7,20 @@
 # Used internally by the ESP-IDF build system. But designed to be
 # non-IDF-specific.
 #
-# SPDX-FileCopyrightText: 2018-2023 Espressif Systems (Shanghai) CO LTD
+# SPDX-FileCopyrightText: 2018-2024 Espressif Systems (Shanghai) CO LTD
 # SPDX-License-Identifier: Apache-2.0
-
 import argparse
 import json
-import os
 import os.path
 import re
 import sys
 import tempfile
 import textwrap
-from collections import OrderedDict, defaultdict
-
-import kconfiglib
+from collections import defaultdict
+from collections import OrderedDict
 
 import esp_idf_kconfig.gen_kconfig_doc as gen_kconfig_doc
+import kconfiglib
 from esp_idf_kconfig import __version__
 
 
@@ -51,8 +49,7 @@ class DeprecatedOptions(object):
             if string.startswith(self.config_prefix):
                 return string[len(self.config_prefix) :]
             raise RuntimeError(
-                "Error in {} (line {}): Config {} is not prefixed with {}"
-                "".format(rep_path, line_number, string, self.config_prefix)
+                f"Error in {rep_path} (line {line_number}): Config {string} is not prefixed with {self.config_prefix}"
             )
 
         for rep_path in repl_paths:

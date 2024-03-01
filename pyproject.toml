@@ -9,7 +9,7 @@ authors = [
 ]
 description = "Kconfig tooling for esp-idf"
 readme = {file = "README.md", content-type = "text/markdown"}
-requires-python = ">=3.7"
+requires-python = ">=3.8"
 keywords = ["espressif", "embedded", "project", "configuration", "kconfig"]
 license = {file = "LICENSE"}
 classifiers = [
@@ -19,7 +19,6 @@ classifiers = [
     "Environment :: Console",
     "Topic :: Software Development :: Embedded Systems",
     "License :: OSI Approved :: Apache Software License",
-    "Programming Language :: Python :: 3.7",
     "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
@@ -78,6 +77,46 @@ perf = "Performance Improvements"
     disallow_incomplete_defs = false # Disallows defining functions with incomplete type annotations
     disallow_untyped_defs    = false # Disallows defining functions without type annotations or with incomplete type annotations
     ignore_missing_imports   = true  # Suppress error messages about imports that cannot be resolved
-    python_version           = "3.9" # Specifies the Python version used to parse and check the target program
+    python_version           = "3.8" # Specifies the Python version used to parse and check the target program
     warn_no_return           = true  # Shows errors for missing return statements on some execution paths
     warn_return_any          = true  # Shows a warning when returning a value with type Any from a function declared with a non- Any return type
+
+[tool.ruff]
+# https://docs.astral.sh/ruff/settings/
+# Exclude a variety of commonly ignored directories.
+exclude = [
+    ".eggs",
+    ".git",
+    "__pycache__"
+]
+
+line-length = 88
+
+select = ['E', 'F', 'W']
+ignore = ["E203"]
+
+# Assume Python 3.8
+target-version = "py38"
+
+[tool.ruff.per-file-ignores]
+
+[tool.ruff.lint]
+# Enable Pyflakes (`F`) and a subset of the pycodestyle (`E`)  codes by default.
+# Unlike Flake8, Ruff doesn't enable pycodestyle warnings (`W`) or
+# McCabe complexity (`C901`) by default.
+select = ["E4", "E7", "E9", "F"]
+ignore = []
+
+# Allow fix for all enabled rules (when `--fix`) is provided.
+fixable = ["ALL"]
+unfixable = []
+
+# Allow unused variables when underscore-prefixed.
+dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
+
+
+# ruff-format hook configuration
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+docstring-code-format = true

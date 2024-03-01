@@ -7,10 +7,8 @@
 # generated, allowing options to be referenced in other documents
 # (using :ref:`CONFIG_FOO`)
 #
-# SPDX-FileCopyrightText: 2017-2022 Espressif Systems (Shanghai) CO LTD
+# SPDX-FileCopyrightText: 2017-2024 Espressif Systems (Shanghai) CO LTD
 # SPDX-License-Identifier: Apache-2.0
-from __future__ import print_function
-
 import re
 
 import kconfiglib
@@ -36,9 +34,7 @@ class ConfigTargetVisibility(object):
     def __init__(self, config, target):
         # target actually is not necessary here because kconfiglib.expr_value() will evaluate it internally
         self.config = config
-        self.visibility = (
-            dict()
-        )  # node name to (x, y) mapping where x is the visibility (True/False) and y is the
+        self.visibility = dict()  # node name to (x, y) mapping where x is the visibility (True/False) and y is the
         # name of the config which implies the visibility
         self.target_env_var = "IDF_TARGET"
         self.direct_eval_set = frozenset(

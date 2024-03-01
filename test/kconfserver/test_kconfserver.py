@@ -1,6 +1,6 @@
 #!/usr/bin/env python
-from __future__ import print_function
-
+# SPDX-FileCopyrightText: 2024 Espressif Systems (Shanghai) CO LTD
+# SPDX-License-Identifier: Apache-2.0
 import argparse
 import json
 import os
@@ -144,7 +144,7 @@ def test_protocol_version(p, version):
 
     # run through each test case
     cases = parse_testcases(version)
-    for (desc, send, expected) in cases:
+    for desc, send, expected in cases:
         print(desc)
         req = {"version": version, "set": send}
         readback = send_request(p, req)
