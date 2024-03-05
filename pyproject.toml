@@ -30,7 +30,6 @@ classifiers = [
 ]
 dynamic = ['version']
 dependencies = [
-    "kconfiglib>=13.7.1",
     "windows-curses; platform_system=='Windows'"
 ]
 

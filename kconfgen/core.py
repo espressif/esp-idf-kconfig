@@ -20,7 +20,7 @@ from collections import defaultdict
 from collections import OrderedDict
 
 import esp_idf_kconfig.gen_kconfig_doc as gen_kconfig_doc
-import kconfiglib
+import kconfiglib.core as kconfiglib
 from esp_idf_kconfig import __version__
 
 

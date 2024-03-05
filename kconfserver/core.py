@@ -12,7 +12,7 @@ import sys
 import tempfile
 
 import kconfgen.core as kconfgen
-import kconfiglib
+import kconfiglib.core as kconfiglib
 from esp_idf_kconfig import __version__
 
 # Min/Max supported protocol versions

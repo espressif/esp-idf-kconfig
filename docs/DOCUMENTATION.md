@@ -2,7 +2,7 @@
 
 esp-idf-kconfig is the kconfig support used by the ESP-IDF CMake-based build system.
 
-It depends on the [kconfiglib](https://github.com/ulfalizer/Kconfiglib) package.
+This package is based on the [kconfiglib](https://github.com/ulfalizer/Kconfiglib) package. Original kconfiglib code is further updated and extended, e.g. new bugfixes and features are implemented. Upstream kconfiglib was forked from the [newest commit available](https://github.com/ulfalizer/Kconfiglib/commit/061e71f7d78cb057762d88de088055361863deff) at the time of forking.
 
 ## Kconfig checker
 
