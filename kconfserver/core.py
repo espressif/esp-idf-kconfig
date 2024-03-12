@@ -1,4 +1,6 @@
 #!/usr/bin/env python
+# SPDX-FileCopyrightText: 2024 Espressif Systems (Shanghai) CO LTD
+# SPDX-License-Identifier: Apache-2.0
 #
 # Long-running server process uses stdin & stdout to communicate JSON
 # with a caller
@@ -9,9 +11,8 @@ import os
 import sys
 import tempfile
 
-import kconfiglib
-
 import kconfgen.core as kconfgen
+import kconfiglib.core as kconfiglib
 from esp_idf_kconfig import __version__
 
 # Min/Max supported protocol versions
@@ -164,7 +165,6 @@ def run_server(
         before_visible = get_visible(config)
 
         if "load" in req:  # load a new sdkconfig
-
             if req.get("version", default_version) == 1:
                 # for V1 protocol, send all items when loading new sdkconfig.
                 # (V2+ will only send changes, same as when setting an item)
@@ -265,7 +265,7 @@ def handle_set(config, error, to_set):
         set_pass = [(k, v) for (k, v) in to_set.items() if k.visibility]
         if not set_pass:
             break  # no visible keys left
-        for (sym, val) in set_pass:
+        for sym, val in set_pass:
             if sym.type in (kconfiglib.BOOL, kconfiglib.TRISTATE):
                 if val is True:
                     sym.set_value(2)

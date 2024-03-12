@@ -1,17 +1,14 @@
 #!/usr/bin/env python
 #
-# SPDX-FileCopyrightText: 2018-2023 Espressif Systems (Shanghai) CO LTD
+# SPDX-FileCopyrightText: 2018-2024 Espressif Systems (Shanghai) CO LTD
 # SPDX-License-Identifier: Apache-2.0
-
 import unittest
 
-from kconfcheck.core import (
-    CONFIG_NAME_MAX_LENGTH,
-    IndentAndNameChecker,
-    InputError,
-    LineRuleChecker,
-    SourceChecker,
-)
+from kconfcheck.core import CONFIG_NAME_MAX_LENGTH
+from kconfcheck.core import IndentAndNameChecker
+from kconfcheck.core import InputError
+from kconfcheck.core import LineRuleChecker
+from kconfcheck.core import SourceChecker
 
 
 class ApplyLine(object):

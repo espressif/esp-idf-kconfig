@@ -1,13 +1,12 @@
 #!/usr/bin/env python
-from __future__ import unicode_literals
-
+# SPDX-FileCopyrightText: 2024 Espressif Systems (Shanghai) CO LTD
+# SPDX-License-Identifier: Apache-2.0
 import io
 import os
 import sys
 import unittest
 
-import kconfiglib
-
+import kconfiglib.core as kconfiglib
 from esp_idf_kconfig import gen_kconfig_doc
 
 

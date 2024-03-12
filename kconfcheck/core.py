@@ -4,7 +4,6 @@
 #
 # SPDX-FileCopyrightText: 2018-2024 Espressif Systems (Shanghai) CO LTD
 # SPDX-License-Identifier: Apache-2.0
-
 import argparse
 import os
 import re
@@ -278,8 +277,7 @@ class IndentAndNameChecker(BaseChecker):
                 raise InputError(
                     self.path_in_idf,
                     line_number,
-                    "{} is {} characters long and it should be {} at most"
-                    "".format(name, name_length, CONFIG_NAME_MAX_LENGTH),
+                    f"{name} is {name_length} characters long and it should be {CONFIG_NAME_MAX_LENGTH} at most",
                     line + "\n",
                 )  # no suggested correction for this
             if len(self.prefix_stack) == 0:
@@ -332,8 +330,7 @@ class IndentAndNameChecker(BaseChecker):
                     raise InputError(
                         self.path_in_idf,
                         line_number,
-                        'Common prefix "{}" should start with {}'
-                        "".format(common_prefix, parent_prefix),
+                        f"Common prefix '{common_prefix}' should start with {parent_prefix}",
                         line,
                     )  # no suggested correction for this
 
@@ -424,9 +421,7 @@ def valid_directory(path):
     return path
 
 
-def validate_kconfig_file(
-    kconfig_full_path, verbose=False
-):  # type: (str, bool) -> bool
+def validate_kconfig_file(kconfig_full_path, verbose=False):  # type: (str, bool) -> bool
     suggestions_full_path = kconfig_full_path + OUTPUT_SUFFIX
     fail = False
 

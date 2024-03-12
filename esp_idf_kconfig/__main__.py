@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2024 Espressif Systems (Shanghai) CO LTD
+# SPDX-License-Identifier: Apache-2.0
 print("ESP-IDF Kconfig tool")
 msg = "Please select a tool to run with command:"
 print(

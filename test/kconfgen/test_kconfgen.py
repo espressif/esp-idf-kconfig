@@ -1,5 +1,6 @@
 #!/usr/bin/env python
-
+# SPDX-FileCopyrightText: 2024 Espressif Systems (Shanghai) CO LTD
+# SPDX-License-Identifier: Apache-2.0
 import os
 import re
 import subprocess
@@ -37,7 +38,7 @@ class KconfgenBaseTestCase(unittest.TestCase):
     def invoke_kconfgen(self, args):
         call_args = ["python", "-m", "kconfgen"]
 
-        for (k, v) in args.items():
+        for k, v in args.items():
             if k != "output":
                 if isinstance(v, type("")):  # easy Python 2/3 compatible str/unicode
                     call_args += ["--{}".format(k), v]
