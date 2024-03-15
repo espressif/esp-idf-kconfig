@@ -1,3 +1,13 @@
+## v2.2.0 (2024-03-15)
+
+### New Features
+
+- **kconfiglib**: Remove kconfiglib as a dependency a make it modules
+
+### Bug Fixes
+
+- **menuconfig**: fix menuconfig incompatibility on Win, Python 3.12
+
 ## v2.1.0 (2024-01-26)
 
 ### New Features
