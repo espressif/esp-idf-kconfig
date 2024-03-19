@@ -3366,7 +3366,3 @@ def _change_c_lc_ctype_to_utf8():
             if try_set_locale(loc):
                 # LC_CTYPE successfully changed
                 return
-
-
-# if __name__ == "__main__":
-#    _main()
