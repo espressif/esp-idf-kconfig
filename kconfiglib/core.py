@@ -12,140 +12,6 @@ Kconfiglib is a Python 2/3 library for scripting and extracting information
 from Kconfig (https://www.kernel.org/doc/Documentation/kbuild/kconfig-language.txt)
 configuration systems.
 
-See the homepage at https://github.com/ulfalizer/Kconfiglib for a longer
-overview.
-
-Since Kconfiglib 12.0.0, the library version is available in
-kconfiglib.VERSION, which is a (<major>, <minor>, <patch>) tuple, e.g.
-(12, 0, 0).
-
-
-Using Kconfiglib on the Linux kernel with the Makefile targets
-==============================================================
-
-For the Linux kernel, a handy interface is provided by the
-scripts/kconfig/Makefile patch, which can be applied with either 'git am' or
-the 'patch' utility:
-
-  $ wget -qO- https://raw.githubusercontent.com/ulfalizer/Kconfiglib/master/makefile.patch | git am
-  $ wget -qO- https://raw.githubusercontent.com/ulfalizer/Kconfiglib/master/makefile.patch | patch -p1
-
-Warning: Not passing -p1 to patch will cause the wrong file to be patched.
-
-Please tell me if the patch does not apply. It should be trivial to apply
-manually, as it's just a block of text that needs to be inserted near the other
-*conf: targets in scripts/kconfig/Makefile.
-
-Look further down for a motivation for the Makefile patch and for instructions
-on how you can use Kconfiglib without it.
-
-If you do not wish to install Kconfiglib via pip, the Makefile patch is set up
-so that you can also just clone Kconfiglib into the kernel root:
-
-  $ git clone git://github.com/ulfalizer/Kconfiglib.git
-  $ git am Kconfiglib/makefile.patch  (or 'patch -p1 < Kconfiglib/makefile.patch')
-
-Warning: The directory name Kconfiglib/ is significant in this case, because
-it's added to PYTHONPATH by the new targets in makefile.patch.
-
-The targets added by the Makefile patch are described in the following
-sections.
-
-
-make kmenuconfig
-----------------
-
-This target runs the curses menuconfig interface with Python 3. As of
-Kconfiglib 12.2.0, both Python 2 and Python 3 are supported (previously, only
-Python 3 was supported, so this was a backport).
-
-
-make guiconfig
---------------
-
-This target runs the Tkinter menuconfig interface. Both Python 2 and Python 3
-are supported. To change the Python interpreter used, pass
-PYTHONCMD=<executable> to 'make'. The default is 'python'.
-
-
-make [ARCH=<arch>] iscriptconfig
---------------------------------
-
-This target gives an interactive Python prompt where a Kconfig instance has
-been preloaded and is available in 'kconf'. To change the Python interpreter
-used, pass PYTHONCMD=<executable> to 'make'. The default is 'python'.
-
-To get a feel for the API, try evaluating and printing the symbols in
-kconf.defined_syms, and explore the MenuNode menu tree starting at
-kconf.top_node by following 'next' and 'list' pointers.
-
-The item contained in a menu node is found in MenuNode.item (note that this can
-be one of the constants kconfiglib.MENU and kconfiglib.COMMENT), and all
-symbols and choices have a 'nodes' attribute containing their menu nodes
-(usually only one). Printing a menu node will print its item, in Kconfig
-format.
-
-If you want to look up a symbol by name, use the kconf.syms dictionary.
-
-
-make scriptconfig SCRIPT=<script> [SCRIPT_ARG=<arg>]
-----------------------------------------------------
-
-This target runs the Python script given by the SCRIPT parameter on the
-configuration. sys.argv[1] holds the name of the top-level Kconfig file
-(currently always "Kconfig" in practice), and sys.argv[2] holds the SCRIPT_ARG
-argument, if given.
-
-See the examples/ subdirectory for example scripts.
-
-
-make dumpvarsconfig
--------------------
-
-This target prints a list of all environment variables referenced from the
-Kconfig files, together with their values. See the
-Kconfiglib/examples/dumpvars.py script.
-
-Only environment variables that are referenced via the Kconfig preprocessor
-$(FOO) syntax are included. The preprocessor was added in Linux 4.18.
-
-
-Using Kconfiglib without the Makefile targets
-=============================================
-
-The make targets are only needed to pick up environment variables exported from
-the Kbuild makefiles and referenced inside Kconfig files, via e.g.
-'source "arch/$(SRCARCH)/Kconfig" and commands run via '$(shell,...)'.
-
-These variables are referenced as of writing (Linux 4.18), together with sample
-values:
-
-  srctree          (.)
-  ARCH             (x86)
-  SRCARCH          (x86)
-  KERNELVERSION    (4.18.0)
-  CC               (gcc)
-  HOSTCC           (gcc)
-  HOSTCXX          (g++)
-  CC_VERSION_TEXT  (gcc (Ubuntu 7.3.0-16ubuntu3) 7.3.0)
-
-Older kernels only reference ARCH, SRCARCH, and KERNELVERSION.
-
-If your kernel is recent enough (4.18+), you can get a list of referenced
-environment variables via 'make dumpvarsconfig' (see above). Note that this
-command is added by the Makefile patch.
-
-To run Kconfiglib without the Makefile patch, set the environment variables
-manually:
-
-  $ srctree=. ARCH=x86 SRCARCH=x86 KERNELVERSION=`make kernelversion` ... python(3)
-  >>> import kconfiglib
-  >>> kconf = kconfiglib.Kconfig()  # filename defaults to "Kconfig"
-
-Search the top-level Makefile for "Additional ARCH settings" to see other
-possibilities for ARCH and SRCARCH.
-
-
 Intro to symbol values
 ======================
 
@@ -538,13 +404,6 @@ the menu tree via the 'kconf' parameter will work, and it could potentially
 lead to a crash.
 
 Preferably, user-defined functions should be stateless.
-
-
-Feedback
-========
-
-Send bug reports, suggestions, and questions to ulfalizer a.t Google's email
-service, or open a ticket on the GitHub page.
 """
 import errno
 import importlib
@@ -559,9 +418,6 @@ from os.path import islink
 from os.path import join
 from os.path import realpath
 # Get rid of some attribute lookups. These are obvious in context.
-
-
-VERSION = (14, 1, 0)
 
 
 # File layout:
@@ -1408,28 +1264,6 @@ class Kconfig(object):
         elif self.warn_assign_override:
             self._warn(msg, filename, linenr)
 
-    def load_allconfig(self, filename):
-        """
-        Helper for all*config. Loads (merges) the configuration file specified
-        by KCONFIG_ALLCONFIG, if any. See Documentation/kbuild/kconfig.txt in
-        the Linux kernel.
-
-        Disables warnings for duplicated assignments within configuration files
-        for the duration of the call
-        (kconf.warn_assign_override/warn_assign_redun = False), and restores
-        the previous warning settings at the end. The KCONFIG_ALLCONFIG
-        configuration file is expected to override symbols.
-
-        Exits with sys.exit() (which raises a SystemExit exception) and prints
-        an error to stderr if KCONFIG_ALLCONFIG is set but the configuration
-        file can't be opened.
-
-        filename:
-          Command-specific configuration filename - "allyes.config",
-          "allno.config", etc.
-        """
-        load_allconfig(self, filename)
-
     def write_autoconf(self, filename=None, header=None):
         r"""
         Writes out symbol values as a C header file, matching the format used
@@ -1741,186 +1575,6 @@ class Kconfig(object):
 
         return "".join(chunks)
 
-    def sync_deps(self, path):
-        """
-        Creates or updates a directory structure that can be used to avoid
-        doing a full rebuild whenever the configuration is changed, mirroring
-        include/config/ in the kernel.
-
-        This function is intended to be called during each build, before
-        compiling source files that depend on configuration symbols.
-
-        See the Kconfig.__init__() docstring for raised exceptions
-        (OSError/IOError). KconfigError is never raised here.
-
-        path:
-          Path to directory
-
-        sync_deps(path) does the following:
-
-          1. If the directory <path> does not exist, it is created.
-
-          2. If <path>/auto.conf exists, old symbol values are loaded from it,
-             which are then compared against the current symbol values. If a
-             symbol has changed value (would generate different output in
-             autoconf.h compared to before), the change is signaled by
-             touch'ing a file corresponding to the symbol.
-
-             The first time sync_deps() is run on a directory, <path>/auto.conf
-             won't exist, and no old symbol values will be available. This
-             logically has the same effect as updating the entire
-             configuration.
-
-             The path to a symbol's file is calculated from the symbol's name
-             by replacing all '_' with '/' and appending '.h'. For example, the
-             symbol FOO_BAR_BAZ gets the file <path>/foo/bar/baz.h, and FOO
-             gets the file <path>/foo.h.
-
-             This scheme matches the C tools. The point is to avoid having a
-             single directory with a huge number of files, which the underlying
-             filesystem might not handle well.
-
-          3. A new auto.conf with the current symbol values is written, to keep
-             track of them for the next build.
-
-             If auto.conf exists and its contents is identical to what would
-             get written out, it is left untouched. This avoids updating file
-             metadata like the modification time and possibly triggering
-             redundant work in build tools.
-
-
-        The last piece of the puzzle is knowing what symbols each source file
-        depends on. Knowing that, dependencies can be added from source files
-        to the files corresponding to the symbols they depends on. The source
-        file will then get recompiled (only) when the symbol value changes
-        (provided sync_deps() is run first during each build).
-
-        The tool in the kernel that extracts symbol dependencies from source
-        files is scripts/basic/fixdep.c. Missing symbol files also correspond
-        to "not changed", which fixdep deals with by using the $(wildcard) Make
-        function when adding symbol prerequisites to source files.
-
-        In case you need a different scheme for your project, the sync_deps()
-        implementation can be used as a template.
-        """
-        if not exists(path):
-            os.mkdir(path, 0o755)
-
-        # Load old values from auto.conf, if any
-        self._load_old_vals(path)
-
-        for sym in self.unique_defined_syms:
-            # _write_to_conf is determined when the value is calculated. This
-            # is a hidden function call due to property magic.
-            #
-            # Note: In client code, you can check if sym.config_string is empty
-            # instead, to avoid accessing the internal _write_to_conf variable
-            # (though it's likely to keep working).
-            val = sym.str_value
-
-            # n tristate values do not get written to auto.conf and autoconf.h,
-            # making a missing symbol logically equivalent to n
-
-            if sym._write_to_conf:
-                if (
-                    sym._old_val is None
-                    and sym.orig_type in _BOOL_TRISTATE
-                    and val == "n"
-                ):
-                    # No old value (the symbol was missing or n), new value n.
-                    # No change.
-                    continue
-
-                if val == sym._old_val:
-                    # New value matches old. No change.
-                    continue
-
-            elif sym._old_val is None:
-                # The symbol wouldn't appear in autoconf.h (because
-                # _write_to_conf is false), and it wouldn't have appeared in
-                # autoconf.h previously either (because it didn't appear in
-                # auto.conf). No change.
-                continue
-
-            # 'sym' has a new value. Flag it.
-            _touch_dep_file(path, sym.name)
-
-        # Remember the current values as the "new old" values.
-        #
-        # This call could go anywhere after the call to _load_old_vals(), but
-        # putting it last means _sync_deps() can be safely rerun if it fails
-        # before this point.
-        self._write_old_vals(path)
-
-    def _load_old_vals(self, path):
-        # Loads old symbol values from auto.conf into a dedicated
-        # Symbol._old_val field. Mirrors load_config().
-        #
-        # The extra field could be avoided with some trickery involving dumping
-        # symbol values and restoring them later, but this is simpler and
-        # faster. The C tools also use a dedicated field for this purpose.
-
-        for sym in self.unique_defined_syms:
-            sym._old_val = None
-
-        try:
-            auto_conf = self._open(join(path, "auto.conf"), "r")
-        except EnvironmentError as e:
-            if e.errno == errno.ENOENT:
-                # No old values
-                return
-            raise
-
-        with auto_conf as f:
-            for line in f:
-                match = self._set_match(line)
-                if not match:
-                    # We only expect CONFIG_FOO=... (and possibly a header
-                    # comment) in auto.conf
-                    continue
-
-                name, val = match.groups()
-                if name in self.syms:
-                    sym = self.syms[name]
-
-                    if sym.orig_type is STRING:
-                        match = _conf_string_match(val)
-                        if not match:
-                            continue
-                        val = unescape(match.group(1))
-
-                    self.syms[name]._old_val = val
-                else:
-                    # Flag that the symbol no longer exists, in
-                    # case something still depends on it
-                    _touch_dep_file(path, name)
-
-    def _write_old_vals(self, path):
-        # Helper for writing auto.conf. Basically just a simplified
-        # write_config() that doesn't write any comments (including
-        # '# CONFIG_FOO is not set' comments). The format matches the C
-        # implementation, though the ordering is arbitrary there (depends on
-        # the hash table implementation).
-        #
-        # A separate helper function is neater than complicating write_config()
-        # by passing a flag to it, plus we only need to look at symbols here.
-
-        self._write_if_changed(
-            os.path.join(path, "auto.conf"), self._old_vals_contents()
-        )
-
-    def _old_vals_contents(self):
-        # _write_old_vals() helper. Returns the contents to write as a string.
-
-        # Temporary list instead of generator makes this a bit faster
-        return "".join(
-            [
-                sym.config_string
-                for sym in self.unique_defined_syms
-                if not (sym.orig_type in _BOOL_TRISTATE and not sym.tri_value)
-            ]
-        )
-
     def node_iter(self, unique_syms=False):
         """
         Returns a generator for iterating through all MenuNode's in the Kconfig
@@ -2003,94 +1657,6 @@ class Kconfig(object):
         self._tokens_i = 1  # Skip the 'if' token
 
         return expr_value(self._expect_expr_and_eol())
-
-    def unset_values(self):
-        """
-        Removes any user values from all symbols, as if Kconfig.load_config()
-        or Symbol.set_value() had never been called.
-        """
-        self._warn_assign_no_prompt = False
-        try:
-            # set_value() already rejects undefined symbols, and they don't
-            # need to be invalidated (because their value never changes), so we
-            # can just iterate over defined symbols
-            for sym in self.unique_defined_syms:
-                sym.unset_value()
-
-            for choice in self.unique_choices:
-                choice.unset_value()
-        finally:
-            self._warn_assign_no_prompt = True
-
-    def enable_warnings(self):
-        """
-        Do 'Kconfig.warn = True' instead. Maintained for backwards
-        compatibility.
-        """
-        self.warn = True
-
-    def disable_warnings(self):
-        """
-        Do 'Kconfig.warn = False' instead. Maintained for backwards
-        compatibility.
-        """
-        self.warn = False
-
-    def enable_stderr_warnings(self):
-        """
-        Do 'Kconfig.warn_to_stderr = True' instead. Maintained for backwards
-        compatibility.
-        """
-        self.warn_to_stderr = True
-
-    def disable_stderr_warnings(self):
-        """
-        Do 'Kconfig.warn_to_stderr = False' instead. Maintained for backwards
-        compatibility.
-        """
-        self.warn_to_stderr = False
-
-    def enable_undef_warnings(self):
-        """
-        Do 'Kconfig.warn_assign_undef = True' instead. Maintained for backwards
-        compatibility.
-        """
-        self.warn_assign_undef = True
-
-    def disable_undef_warnings(self):
-        """
-        Do 'Kconfig.warn_assign_undef = False' instead. Maintained for
-        backwards compatibility.
-        """
-        self.warn_assign_undef = False
-
-    def enable_override_warnings(self):
-        """
-        Do 'Kconfig.warn_assign_override = True' instead. Maintained for
-        backwards compatibility.
-        """
-        self.warn_assign_override = True
-
-    def disable_override_warnings(self):
-        """
-        Do 'Kconfig.warn_assign_override = False' instead. Maintained for
-        backwards compatibility.
-        """
-        self.warn_assign_override = False
-
-    def enable_redun_warnings(self):
-        """
-        Do 'Kconfig.warn_assign_redun = True' instead. Maintained for backwards
-        compatibility.
-        """
-        self.warn_assign_redun = True
-
-    def disable_redun_warnings(self):
-        """
-        Do 'Kconfig.warn_assign_redun = False' instead. Maintained for
-        backwards compatibility.
-        """
-        self.warn_assign_redun = False
 
     def __repr__(self):
         """
@@ -6348,55 +5914,6 @@ def standard_config_filename():
     return os.getenv("KCONFIG_CONFIG", ".config")
 
 
-def load_allconfig(kconf, filename):
-    """
-    Use Kconfig.load_allconfig() instead, which was added in Kconfiglib 13.4.0.
-    Supported for backwards compatibility. Might be removed at some point after
-    a long period of deprecation warnings.
-    """
-    allconfig = os.getenv("KCONFIG_ALLCONFIG")
-    if allconfig is None:
-        return
-
-    def std_msg(e):
-        # "Upcasts" a _KconfigIOError to an IOError, removing the custom
-        # __str__() message. The standard message is better here.
-        #
-        # This might also convert an OSError to an IOError in obscure cases,
-        # but it's probably not a big deal. The distinction is shaky (see
-        # PEP-3151).
-        return IOError(e.errno, e.strerror, e.filename)
-
-    old_warn_assign_override = kconf.warn_assign_override
-    old_warn_assign_redun = kconf.warn_assign_redun
-    kconf.warn_assign_override = kconf.warn_assign_redun = False
-
-    if allconfig in ("", "1"):
-        try:
-            print(kconf.load_config(filename, False))
-        except EnvironmentError as e1:
-            try:
-                print(kconf.load_config("all.config", False))
-            except EnvironmentError as e2:
-                sys.exit(
-                    "error: KCONFIG_ALLCONFIG is set, but neither {} "
-                    "nor all.config could be opened: {}, {}".format(
-                        filename, std_msg(e1), std_msg(e2)
-                    )
-                )
-    else:
-        try:
-            print(kconf.load_config(allconfig, False))
-        except EnvironmentError as e:
-            sys.exit(
-                f"error: KCONFIG_ALLCONFIG is set to '{allconfig}', which "
-                f"could not be opened: {std_msg(e)}"
-            )
-
-    kconf.warn_assign_override = old_warn_assign_override
-    kconf.warn_assign_redun = old_warn_assign_redun
-
-
 #
 # Internal functions
 #
@@ -6498,19 +6015,6 @@ def _sym_to_num(sym):
         if sym.orig_type in _BOOL_TRISTATE
         else int(sym.str_value, _TYPE_TO_BASE[sym.orig_type])
     )
-
-
-def _touch_dep_file(path, sym_name):
-    # If sym_name is MY_SYM_NAME, touches my/sym/name.h. See the sync_deps()
-    # docstring.
-
-    sym_path = path + os.sep + sym_name.lower().replace("_", os.sep) + ".h"
-    sym_path_dir = dirname(sym_path)
-    if not exists(sym_path_dir):
-        os.makedirs(sym_path_dir, 0o755)
-
-    # A kind of truncating touch, mirroring the C tools
-    os.close(os.open(sym_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o644))
 
 
 def _save_old(path):
