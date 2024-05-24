@@ -1944,21 +1944,10 @@ def _save_dialog(save_fn, default_filename, description):
     #
     # Return value:
     #   The path to the saved file, or None if no file was saved
-
-    filename = default_filename
-    while True:
-        filename = _input_dialog(
-            f"Filename to save {description} to", filename, _load_save_info()
-        )
-        if filename is None:
-            return None
-
-        filename = os.path.expanduser(filename)
-
-        msg = _try_save(save_fn, filename, description)
-        if msg:
-            _msg("Success", msg)
-            return filename
+    msg = _try_save(save_fn, default_filename, description)
+    if msg:
+        _msg("Success", msg)
+        return default_filename
 
 
 def _try_save(save_fn, filename, description):
