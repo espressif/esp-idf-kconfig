@@ -44,7 +44,7 @@ dev = [
 ]
 
 [tool.setuptools.packages]
-find = {}
+find = {exclude = ["test", "test.*"]}
 
 [tool.setuptools.dynamic]
 version = {attr = "esp_idf_kconfig.__version__"}
