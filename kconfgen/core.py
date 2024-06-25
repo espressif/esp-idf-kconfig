@@ -38,57 +38,83 @@ class DeprecatedOptions(object):
 
     def __init__(self, config_prefix: str, path_rename_files: List[str] = []):
         self.config_prefix = config_prefix
+        # sdkconfig.renames specification: each line contains a pair of config options separated by whitespace(s).
+        # The first option is the deprecated one, the second one is the new one.
+        # The new option can be prefixed with '!' to indicate inversion (n/not set -> y, y -> n).
+        self.rename_line_regex = re.compile(
+            rf"#.*|\s*\n|(?P<old>{self.config_prefix}[A-Z_0-9]+)\s+(?P<new>!?{self.config_prefix}[A-Z_0-9]+)"
+        )
+
         # r_dic maps deprecated options to new options; rev_r_dic maps in the opposite direction
-        self.r_dic, self.rev_r_dic = self._parse_replacements(path_rename_files)
+        # inversion is a list of deprecated options which will be inverted (n/not set -> y, y -> n)
+        self.r_dic, self.rev_r_dic, self.inversions = self._parse_replacements(
+            path_rename_files
+        )
 
         # note the '=' at the end of regex for not getting partial match of configs.
         # Also match if the config option is followed by a whitespace, this is the case
         # in sdkconfig.defaults files contaning "# CONFIG_MMM_NNN is not set".
-        self._RE_CONFIG = re.compile(r"{}(\w+)(=|\s+)".format(self.config_prefix))
+        self._RE_CONFIG = re.compile(rf"{self.config_prefix}(\w+)(=|\s+)")
 
-    def _parse_replacements(self, rename_paths: List[str]) -> Tuple[dict, defaultdict]:
+    def parse_line(self, line: str) -> Optional[re.Match]:
+        return self.rename_line_regex.match(line)
+
+    def remove_config_prefix(self, string: str) -> str:
+        if string.startswith(self.config_prefix):
+            return string[len(self.config_prefix) :]
+        elif string.startswith("!" + self.config_prefix):
+            return string[len("!" + self.config_prefix) :]
+        else:
+            return ""
+
+    def _parse_replacements(
+        self, rename_paths: List[str]
+    ) -> Tuple[dict, defaultdict, list]:
         rep_dic: Dict[str, str] = {}
         rev_rep_dic = defaultdict(list)
-
-        def remove_config_prefix(string: str) -> str:
-            if string.startswith(self.config_prefix):
-                return string[len(self.config_prefix) :]
-            else:
-                raise RuntimeError(
-                    f"Error in {rename_path} (line {line_number}): Config {string} is not prefixed with {self.config_prefix}"
-                )
+        inversions: List[str] = []
 
         for rename_path in rename_paths:
             with open(rename_path) as rename_file:
                 for line_number, line in enumerate(rename_file, start=1):
-                    split_line = line.split()
-                    if len(split_line) == 0 or split_line[0].startswith("#"):
+                    parsed_line = self.parse_line(line)
+                    if not parsed_line:
+                        raise RuntimeError(
+                            f"Syntax error in {rename_path} (line {line_number})"
+                        )
+                    if not parsed_line["old"]:
                         # empty line or comment
                         continue
-                    if len(split_line) != 2 or not (
-                        all(x.startswith(self.config_prefix) for x in split_line)
-                    ):
-                        raise RuntimeError(
-                            "Syntax error in {} (line {})".format(
-                                rename_path, line_number
-                            )
-                        )
-                    if split_line[0] in rep_dic:
+                    if parsed_line["old"] in rep_dic:
                         raise RuntimeError(
                             "Error in {} (line {}): Replacement {} exist for {} and new "
                             "replacement {} is defined".format(
                                 rename_path,
                                 line_number,
-                                rep_dic[split_line[0]],
-                                split_line[0],
-                                split_line[1],
+                                rep_dic[parsed_line["old"]],
+                                parsed_line["old"],
+                                parsed_line["new"],
                             )
                         )
 
-                    (dep_opt, new_opt) = (remove_config_prefix(x) for x in split_line)
+                    (dep_opt, new_opt) = (
+                        self.remove_config_prefix(parsed_line["old"]),
+                        self.remove_config_prefix(parsed_line["new"]),
+                    )
+                    for opt in (dep_opt, new_opt):
+                        if not opt:
+                            raise RuntimeError(
+                                f"Error in {rename_path} (line {line_number}): Config {opt} is not prefixed with {self.config_prefix}"
+                            )
                     rep_dic[dep_opt] = new_opt
                     rev_rep_dic[new_opt].append(dep_opt)
-        return rep_dic, rev_rep_dic
+                    if parsed_line["new"].startswith("!"):
+                        inversions.append(dep_opt)
+
+        return rep_dic, rev_rep_dic, inversions
+
+    def is_inversion(self, deprecated_option: str) -> bool:
+        return deprecated_option in self.inversions
 
     def get_deprecated_option(self, new_option: str) -> list:
         return self.rev_r_dic.get(new_option, [])
@@ -111,11 +137,38 @@ class DeprecatedOptions(object):
                     if m and m.group(1) in self.r_dic:  # Deprecated option found
                         depr_opt = self.config_prefix + m.group(1)
                         new_opt = self.config_prefix + self.r_dic[m.group(1)]
-                        line = line.replace(depr_opt, new_opt)
+                        line = self.replace_line(
+                            line, depr_opt=depr_opt, new_opt=new_opt
+                        )
                         print(
-                            f"{sdkconfig_in}:{line_number} {depr_opt} was replaced with {new_opt}"
+                            "{}:{} {} was replaced with {} {}".format(
+                                sdkconfig_in,
+                                line_number,
+                                depr_opt,
+                                new_opt,
+                                "and inverted"
+                                if depr_opt[len(self.config_prefix) :]
+                                in self.inversions
+                                else "",
+                            )
                         )
                 output_file.write(line)
+
+    def replace_line(
+        self, line: str, depr_opt: str, new_opt: str, depr_to_new: bool = True
+    ) -> str:
+        depr_name = self.remove_config_prefix(depr_opt)
+        to_replace = depr_opt if depr_to_new else new_opt
+        replace_with = new_opt if depr_to_new else depr_opt
+
+        if depr_name in self.inversions:
+            if any(substring in line for substring in ("is not set", "=n")):
+                line = f"{replace_with}=y\n"
+            else:
+                line = f"{replace_with}=n\n"
+        else:
+            line = line.replace(to_replace, replace_with)
+        return line
 
     def append_doc(
         self,
@@ -156,9 +209,10 @@ class DeprecatedOptions(object):
                     ):
                         # everything except config for a choice (no link reference for those in the docs)
                         f_o.write(
-                            "- {}{} (:ref:`{}{}`)\n".format(
+                            "- {}{} ({}:ref:`{}{}`)\n".format(
                                 config.config_prefix,
                                 dep_opt,
+                                "inversion of " if dep_opt in self.inversions else "",
                                 config.config_prefix,
                                 new_opt,
                             )
@@ -189,9 +243,11 @@ class DeprecatedOptions(object):
                     if c_string:
                         for dep_name in self.rev_r_dic[item.name]:
                             tmp_list.append(
-                                c_string.replace(
-                                    self.config_prefix + item.name,
-                                    self.config_prefix + dep_name,
+                                self.replace_line(
+                                    c_string,
+                                    depr_opt=self.config_prefix + dep_name,
+                                    new_opt=self.config_prefix + item.name,
+                                    depr_to_new=False,
                                 )
                             )
 
@@ -227,9 +283,10 @@ class DeprecatedOptions(object):
                     new_opt = self.r_dic[dep_opt]
                     if new_opt in config.syms and _opt_defined(config.syms[new_opt]):
                         output_file.write(
-                            "#define {}{} {}{}\n".format(
+                            "#define {}{} {}{}{}\n".format(
                                 self.config_prefix,
                                 dep_opt,
+                                "!" if dep_opt in self.inversions else "",
                                 self.config_prefix,
                                 new_opt,
                             )
@@ -397,6 +454,11 @@ def write_cmake(
                 configs_list.append(prefix + sym.name)
                 dep_opts = deprecated_options.get_deprecated_option(sym.name)
                 for opt in dep_opts:
+                    if deprecated_options.is_inversion(opt) and sym.orig_type in (
+                        kconfiglib.BOOL,
+                        kconfiglib.TRISTATE,
+                    ):
+                        val = "y" if not val else ""
                     tmp_dep_list.append('set({}{} "{}")\n'.format(prefix, opt, val))
                     configs_list.append(prefix + opt)
 
@@ -671,7 +733,6 @@ def main():
         default="space",
         help="Separator used in environment list variables (COMPONENT_SDKCONFIG_RENAMES)",
     )
-
     args = parser.parse_args()
 
     for fmt, filename in args.output:
