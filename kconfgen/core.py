@@ -18,6 +18,11 @@ import tempfile
 import textwrap
 from collections import defaultdict
 from collections import OrderedDict
+from typing import Dict
+from typing import List
+from typing import Optional
+from typing import Set
+from typing import Tuple
 
 import esp_idf_kconfig.gen_kconfig_doc as gen_kconfig_doc
 import kconfiglib.core as kconfiglib
@@ -25,13 +30,13 @@ from esp_idf_kconfig import __version__
 
 
 class DeprecatedOptions(object):
-    _REN_FILE = "sdkconfig.rename"
+    _RENAME_FILE_NAME = "sdkconfig.rename"
     _DEP_OP_BEGIN = "# Deprecated options for backward compatibility"
     _DEP_OP_END = "# End of deprecated options"
     _RE_DEP_OP_BEGIN = re.compile(_DEP_OP_BEGIN)
     _RE_DEP_OP_END = re.compile(_DEP_OP_END)
 
-    def __init__(self, config_prefix, path_rename_files=[]):
+    def __init__(self, config_prefix: str, path_rename_files: List[str] = []):
         self.config_prefix = config_prefix
         # r_dic maps deprecated options to new options; rev_r_dic maps in the opposite direction
         self.r_dic, self.rev_r_dic = self._parse_replacements(path_rename_files)
@@ -41,76 +46,84 @@ class DeprecatedOptions(object):
         # in sdkconfig.defaults files contaning "# CONFIG_MMM_NNN is not set".
         self._RE_CONFIG = re.compile(r"{}(\w+)(=|\s+)".format(self.config_prefix))
 
-    def _parse_replacements(self, repl_paths):
-        rep_dic = {}
+    def _parse_replacements(self, rename_paths: List[str]) -> Tuple[dict, defaultdict]:
+        rep_dic: Dict[str, str] = {}
         rev_rep_dic = defaultdict(list)
 
-        def remove_config_prefix(string):
+        def remove_config_prefix(string: str) -> str:
             if string.startswith(self.config_prefix):
                 return string[len(self.config_prefix) :]
-            raise RuntimeError(
-                f"Error in {rep_path} (line {line_number}): Config {string} is not prefixed with {self.config_prefix}"
-            )
+            else:
+                raise RuntimeError(
+                    f"Error in {rename_path} (line {line_number}): Config {string} is not prefixed with {self.config_prefix}"
+                )
 
-        for rep_path in repl_paths:
-            with open(rep_path) as f_rep:
-                for line_number, line in enumerate(f_rep, start=1):
-                    sp_line = line.split()
-                    if len(sp_line) == 0 or sp_line[0].startswith("#"):
+        for rename_path in rename_paths:
+            with open(rename_path) as rename_file:
+                for line_number, line in enumerate(rename_file, start=1):
+                    split_line = line.split()
+                    if len(split_line) == 0 or split_line[0].startswith("#"):
                         # empty line or comment
                         continue
-                    if len(sp_line) != 2 or not all(
-                        x.startswith(self.config_prefix) for x in sp_line
+                    if len(split_line) != 2 or not (
+                        all(x.startswith(self.config_prefix) for x in split_line)
                     ):
                         raise RuntimeError(
-                            "Syntax error in {} (line {})".format(rep_path, line_number)
+                            "Syntax error in {} (line {})".format(
+                                rename_path, line_number
+                            )
                         )
-                    if sp_line[0] in rep_dic:
+                    if split_line[0] in rep_dic:
                         raise RuntimeError(
                             "Error in {} (line {}): Replacement {} exist for {} and new "
                             "replacement {} is defined".format(
-                                rep_path,
+                                rename_path,
                                 line_number,
-                                rep_dic[sp_line[0]],
-                                sp_line[0],
-                                sp_line[1],
+                                rep_dic[split_line[0]],
+                                split_line[0],
+                                split_line[1],
                             )
                         )
 
-                    (dep_opt, new_opt) = (remove_config_prefix(x) for x in sp_line)
+                    (dep_opt, new_opt) = (remove_config_prefix(x) for x in split_line)
                     rep_dic[dep_opt] = new_opt
                     rev_rep_dic[new_opt].append(dep_opt)
         return rep_dic, rev_rep_dic
 
-    def get_deprecated_option(self, new_option):
+    def get_deprecated_option(self, new_option: str) -> list:
         return self.rev_r_dic.get(new_option, [])
 
-    def get_new_option(self, deprecated_option):
+    def get_new_option(self, deprecated_option: str) -> Optional[str]:
         return self.r_dic.get(deprecated_option, None)
 
-    def replace(self, sdkconfig_in, sdkconfig_out):
+    def replace(self, sdkconfig_in: str, sdkconfig_out: str) -> None:
         replace_enabled = True
-        with open(sdkconfig_in, "r") as f_in, open(sdkconfig_out, "w") as f_out:
-            for line_num, line in enumerate(f_in, start=1):
-                if self._RE_DEP_OP_BEGIN.search(line):
+        with open(sdkconfig_in, "r") as input_file, open(
+            sdkconfig_out, "w"
+        ) as output_file:
+            for line_number, line in enumerate(input_file, start=1):
+                if self._RE_DEP_OP_BEGIN.search(line):  # Begin of deprecated options
                     replace_enabled = False
-                elif self._RE_DEP_OP_END.search(line):
+                elif self._RE_DEP_OP_END.search(line):  # End of deprecated options
                     replace_enabled = True
                 elif replace_enabled:
                     m = self._RE_CONFIG.search(line)
-                    if m and m.group(1) in self.r_dic:
+                    if m and m.group(1) in self.r_dic:  # Deprecated option found
                         depr_opt = self.config_prefix + m.group(1)
                         new_opt = self.config_prefix + self.r_dic[m.group(1)]
                         line = line.replace(depr_opt, new_opt)
                         print(
-                            "{}:{} {} was replaced with {}".format(
-                                sdkconfig_in, line_num, depr_opt, new_opt
-                            )
+                            f"{sdkconfig_in}:{line_number} {depr_opt} was replaced with {new_opt}"
                         )
-                f_out.write(line)
+                output_file.write(line)
 
-    def append_doc(self, config, visibility, path_output):
-        def option_was_written(opt):
+    def append_doc(
+        self,
+        config: kconfiglib.Kconfig,
+        visibility: gen_kconfig_doc.ConfigTargetVisibility,
+        path_output: str,
+    ) -> None:
+        def option_was_written(opt: str) -> bool:
             # named choices were written if any of the symbols in the choice were visible
             if new_opt in config.named_choices:
                 syms = config.named_choices[new_opt].syms
@@ -165,10 +178,10 @@ class DeprecatedOptions(object):
                                     # config options doesn't have references
                                     f_o.write("    - {}\n".format(", ".join(dep_names)))
 
-    def append_config(self, config, path_output):
+    def append_config(self, config: kconfiglib.Kconfig, path_output: str) -> None:
         tmp_list = []
 
-        def append_config_node_process(node):
+        def append_config_node_process(node: kconfiglib.MenuNode) -> None:
             item = node.item
             if isinstance(item, kconfiglib.Symbol) and item.env_var is None:
                 if item.name in self.rev_r_dic:
@@ -191,7 +204,7 @@ class DeprecatedOptions(object):
                 f_o.writelines(tmp_list)
                 f_o.write("{}\n".format(self._DEP_OP_END))
 
-    def append_header(self, config, path_output):
+    def append_header(self, config: kconfiglib.Kconfig, path_output: str) -> None:
         def _opt_defined(opt):
             if (
                 opt.orig_type in (kconfiglib.BOOL, kconfiglib.TRISTATE)
@@ -208,16 +221,389 @@ class DeprecatedOptions(object):
             return opt_defined
 
         if len(self.r_dic) > 0:
-            with open(path_output, "a") as f_o:
-                f_o.write("\n/* List of deprecated options */\n")
+            with open(path_output, "a") as output_file:
+                output_file.write("\n/* List of deprecated options */\n")
                 for dep_opt in sorted(self.r_dic):
                     new_opt = self.r_dic[dep_opt]
                     if new_opt in config.syms and _opt_defined(config.syms[new_opt]):
-                        f_o.write(
+                        output_file.write(
                             "#define {}{} {}{}\n".format(
-                                self.config_prefix, dep_opt, self.config_prefix, new_opt
+                                self.config_prefix,
+                                dep_opt,
+                                self.config_prefix,
+                                new_opt,
                             )
                         )
+
+
+def write_config(
+    deprecated_options: DeprecatedOptions, config: kconfiglib.Kconfig, filename: str
+) -> None:
+    idf_version = os.environ.get("IDF_VERSION", "")
+    CONFIG_HEADING = textwrap.dedent(
+        f"""\
+    #
+    # Automatically generated file. DO NOT EDIT.
+    # Espressif IoT Development Framework (ESP-IDF) {idf_version} Project Configuration
+    #
+    """
+    )
+    config.write_config(filename, header=CONFIG_HEADING)
+    deprecated_options.append_config(config, filename)
+
+
+def min_config_with_labels(config: kconfiglib.Kconfig, header: str) -> str:
+    """Return minimal config containing menu labels"""
+    all_options = config._config_contents("").splitlines()
+    min_options = config._min_config_contents("").splitlines()
+
+    end_regex = re.compile(r"^# end of (.*)$").match
+    # `label_path` marks the current path from the root; labels represent tree nodes.
+    # The path is represented as an ordered Dict; the last element in the Dict is closest to the leaves.
+    # The label name is the key, and a boolean value indicates whether the label was added to the output (i.e., the label is used in the output).
+    # We need to track used labels to ensure correct timing when printing the label ending.
+    # Note that label names are not necessarily unique, so the order is significant.
+    label_path: OrderedDict[str, bool] = OrderedDict()
+    output = [header]
+    possibly_label = False
+    current = None  # None stands for tree root
+    comments = []
+
+    # Using depth search first, we go down the tree and save the path from the root.
+    # If we find an option from min config, we update the whole path to used (True) and print all menu labels.
+    # When we go back up the tree, we print all label endings that were marked as used
+    for line in all_options:
+        end_match = end_regex(line)
+        if end_match:
+            # we have found an end of a menu section
+            current = end_match.group(1)
+            label = None
+            while label != current and label_path:
+                # remove any labels that appeared outside of used sections
+                label, used = label_path.popitem()
+                if used and label != current:
+                    # used label without end -> comment
+                    comments.append(label)
+            if used:
+                # menu label was used - print menu label ending
+                output.append(f"{line}\n")
+            # find the new current (the last in list); if tree is empty return back to the root
+            current = next(reversed(label_path.keys())) if label_path else None
+        elif line == "#":
+            # starting/ending possible menu label
+            possibly_label = not possibly_label
+        elif possibly_label:
+            current = line[2:]  # remove leading '# '
+            label_path[current] = False  # label not yet used
+        elif line in min_options:
+            # minimal config option detected
+            for label, used in label_path.items():
+                # print all menu labels that were not printed yet
+                if not used:
+                    output.append(f"\n#\n# {label}\n#\n")
+                # mark the whole path from root as 'used'
+                label_path[label] = True
+            output.append(line + "\n")
+    # Remove comments from minimal config, while keeping menu labels
+    for comment in comments:
+        output.remove(f"\n#\n# {comment}\n#\n")
+    return "".join(output)
+
+
+def write_min_config(_, config: kconfiglib.Kconfig, filename: str) -> None:
+    idf_version = os.environ.get("IDF_VERSION", "")
+    target_symbol = config.syms["IDF_TARGET"]
+    # 'esp32` is harcoded here because the default value of IDF_TARGET is set on the first run from the environment
+    # variable. I.E. `esp32  is not defined as default value.
+    write_target = target_symbol.str_value != "esp32"
+
+    CONFIG_HEADING = textwrap.dedent(
+        f"""\
+    # This file was generated using idf.py save-defconfig. It can be edited manually.
+    # Espressif IoT Development Framework (ESP-IDF) {idf_version} Project Minimal Configuration
+    #
+    {target_symbol.config_string if write_target else ""}\
+    """
+    )
+
+    if os.environ.get("ESP_IDF_KCONFIG_MIN_LABELS", False) == "1":
+        lines = min_config_with_labels(config, CONFIG_HEADING).splitlines()
+    else:
+        lines = config._min_config_contents(header=CONFIG_HEADING).splitlines()
+
+    # convert `# CONFIG_XY is not set` to `CONFIG_XY=n` to improve readability
+    unset_match = re.compile(
+        r"# {}([^ ]+) is not set".format(config.config_prefix)
+    ).match
+    for idx, line in enumerate(lines):
+        match = unset_match(line)
+        if match:
+            lines[idx] = f"{config.config_prefix}{match.group(1)}=n"
+    lines[-1] += "\n"
+    config._write_if_changed(filename, "\n".join(lines))
+
+
+def write_header(
+    deprecated_options: DeprecatedOptions, config: kconfiglib.Kconfig, filename: str
+) -> None:
+    idf_version = os.environ.get("IDF_VERSION", "")
+    CONFIG_HEADING = f"""/*
+ * Automatically generated file. DO NOT EDIT.
+ * Espressif IoT Development Framework (ESP-IDF) {idf_version} Configuration Header
+ */
+#pragma once
+"""
+    config.write_autoconf(filename, header=CONFIG_HEADING)
+    deprecated_options.append_header(config, filename)
+
+
+def write_cmake(
+    deprecated_options: DeprecatedOptions, config: kconfiglib.Kconfig, filename: str
+) -> None:
+    with open(filename, "w") as f:
+        tmp_dep_list = []
+        prefix = config.config_prefix
+
+        f.write(
+            textwrap.dedent(
+                """#
+                # Automatically generated file. DO NOT EDIT.
+                # Espressif IoT Development Framework (ESP-IDF) Configuration cmake include file
+                #
+                """
+            )
+        )
+
+        configs_list = list()
+
+        def write_node(node: kconfiglib.MenuNode):
+            sym = node.item
+            if not isinstance(sym, kconfiglib.Symbol):
+                return
+
+            if sym.config_string:
+                val = sym.str_value
+                if (
+                    sym.orig_type in (kconfiglib.BOOL, kconfiglib.TRISTATE)
+                    and val == "n"
+                ):
+                    val = ""  # write unset values as empty variables
+                elif sym.orig_type == kconfiglib.STRING:
+                    val = kconfiglib.escape(val)
+                elif sym.orig_type == kconfiglib.HEX:
+                    val = hex(int(val, 16))  # ensure 0x prefix
+                f.write(f'set({prefix}{sym.name} "{val}")\n')
+
+                configs_list.append(prefix + sym.name)
+                dep_opts = deprecated_options.get_deprecated_option(sym.name)
+                for opt in dep_opts:
+                    tmp_dep_list.append('set({}{} "{}")\n'.format(prefix, opt, val))
+                    configs_list.append(prefix + opt)
+
+        for n in config.node_iter():
+            write_node(n)
+        f.write("set(CONFIGS_LIST {})".format(";".join(configs_list)))
+
+        if len(tmp_dep_list) > 0:
+            f.write("\n# List of deprecated options for backward compatibility\n")
+            f.writelines(tmp_dep_list)
+
+
+def get_json_values(config: kconfiglib.Kconfig) -> dict:
+    config_dict = {}
+
+    def write_node(node: kconfiglib.MenuNode) -> None:
+        sym = node.item
+        if not isinstance(sym, kconfiglib.Symbol):
+            return
+
+        if sym.config_string:
+            val = sym.str_value
+            if sym.type in [kconfiglib.BOOL, kconfiglib.TRISTATE]:
+                val = val != "n"
+            elif sym.type == kconfiglib.HEX:
+                val = int(val, 16)
+            elif sym.type == kconfiglib.INT:
+                val = int(val)
+            config_dict[sym.name] = val
+
+    for n in config.node_iter(False):
+        write_node(n)
+    return config_dict
+
+
+def write_json(_, config: kconfiglib.Kconfig, filename: str) -> None:
+    config_dict = get_json_values(config)
+    with open(filename, "w") as f:
+        json.dump(config_dict, f, indent=4, sort_keys=True)
+
+
+def get_menu_node_id(node: kconfiglib.MenuNode) -> str:
+    """Given a menu node, return a unique id
+    which can be used to identify it in the menu structure
+
+    Will either be the config symbol name, or a menu identifier
+    'slug'
+
+    """
+    try:
+        if not isinstance(node.item, kconfiglib.Choice):
+            return str(node.item.name)  # type: ignore
+    except AttributeError:
+        pass
+
+    result = []
+    while node.parent is not None and node.prompt:
+        slug = re.sub(r"\W+", "-", node.prompt[0]).lower()
+        result.append(slug)
+        node = node.parent
+
+    return "-".join(reversed(result))
+
+
+def write_json_menus(_, config: kconfiglib.Kconfig, filename: str) -> None:
+    existing_ids: Set[str] = set()
+    result: List = []  # root level items
+    node_lookup: Dict = {}  # lookup from MenuNode to an item in result
+
+    def write_node(node: kconfiglib.MenuNode) -> None:
+        try:
+            json_parent = node_lookup[node.parent]["children"]
+        except KeyError:
+            assert (
+                node.parent not in node_lookup
+            )  # if fails, we have a parent node with no "children" entity (ie a bug)
+            json_parent = result  # root level node
+
+        # node.kconfig.y means node has no dependency,
+        if node.dep is node.kconfig.y:
+            depends = None
+        else:
+            depends = kconfiglib.expr_str(node.dep)
+
+        try:
+            # node.is_menuconfig is True in newer kconfiglibs for menus and choices as well
+            is_menuconfig = node.is_menuconfig and isinstance(
+                node.item, kconfiglib.Symbol
+            )
+        except AttributeError:
+            is_menuconfig = False
+
+        new_json = None
+        if node.item == kconfiglib.MENU or is_menuconfig:
+            new_json = {
+                "type": "menu",
+                "title": node.prompt[0] if node.prompt else "",
+                "depends_on": depends,
+                "children": [],
+            }
+            if is_menuconfig:
+                sym = node.item
+                new_json["name"] = sym.name  # type: ignore
+                new_json["help"] = node.help
+                new_json["is_menuconfig"] = is_menuconfig
+                greatest_range = None
+                if (
+                    isinstance(sym, (kconfiglib.Symbol, kconfiglib.MenuNode))
+                    and len(sym.ranges) > 0
+                ):
+                    # Note: Evaluating the condition using kconfiglib's expr_value
+                    # should have one condition which is true
+                    for min_range, max_range, cond_expr in sym.ranges:
+                        if kconfiglib.expr_value(cond_expr):
+                            greatest_range = [min_range, max_range]
+                new_json["range"] = greatest_range
+
+        elif isinstance(node.item, kconfiglib.Symbol):
+            sym = node.item
+            greatest_range = None
+            if len(sym.ranges) > 0:
+                # Note: Evaluating the condition using kconfiglib's expr_value
+                # should have one condition which is true
+                for min_range, max_range, cond_expr in sym.ranges:
+                    if kconfiglib.expr_value(cond_expr):
+                        base = 16 if sym.type == kconfiglib.HEX else 10
+                        greatest_range = [
+                            int(min_range.str_value, base),
+                            int(max_range.str_value, base),
+                        ]
+                        break
+
+            new_json = {
+                "type": kconfiglib.TYPE_TO_STR[sym.type],
+                "name": sym.name,
+                "title": node.prompt[0] if node.prompt else None,
+                "depends_on": depends,
+                "help": node.help,
+                "range": greatest_range,
+                "children": [],
+            }
+        elif isinstance(node.item, kconfiglib.Choice):
+            choice = node.item
+            new_json = {
+                "type": "choice",
+                "title": node.prompt[0] if node.prompt else "",
+                "name": choice.name,
+                "depends_on": depends,
+                "help": node.help,
+                "children": [],
+            }
+
+        if new_json:
+            node_id = get_menu_node_id(node)
+            if node_id in existing_ids:
+                raise RuntimeError(
+                    f"Config file contains two items with the same id: {node_id} ({node.prompt[0] if node.prompt else ''}). "
+                    "Please rename one of these items to avoid ambiguity."
+                )
+            new_json["id"] = node_id
+
+            json_parent.append(new_json)
+            node_lookup[node] = new_json
+
+    for n in config.node_iter():
+        write_node(n)
+    with open(filename, "w") as f:
+        f.write(json.dumps(result, sort_keys=True, indent=4))
+
+
+def write_docs(
+    deprecated_options: DeprecatedOptions, config: kconfiglib.Kconfig, filename: str
+) -> None:
+    try:
+        target = os.environ["IDF_TARGET"]
+    except KeyError:
+        print("IDF_TARGET environment variable must be defined!")
+        sys.exit(1)
+
+    visibility = gen_kconfig_doc.ConfigTargetVisibility(config, target)
+    gen_kconfig_doc.write_docs(config, visibility, filename)
+    deprecated_options.append_doc(config, visibility, filename)
+
+
+def update_if_changed(source: str, destination: str) -> None:
+    with open(source, "r") as f:
+        source_contents = f.read()
+
+    if os.path.exists(destination):
+        with open(destination, "r") as f:
+            dest_contents = f.read()
+        if source_contents == dest_contents:
+            return  # nothing to update
+
+    with open(destination, "w") as f:
+        f.write(source_contents)
+
+
+OUTPUT_FORMATS = {
+    "config": write_config,
+    "header": write_header,
+    "cmake": write_cmake,
+    "docs": write_docs,
+    "json": write_json,
+    "json_menus": write_json_menus,
+    "savedefconfig": write_min_config,
+}
 
 
 def main():
@@ -318,7 +704,6 @@ def main():
     config.warn_assign_override = False
 
     sdkconfig_renames_sep = ";" if args.list_separator == "semicolon" else " "
-
     sdkconfig_renames = [args.sdkconfig_rename] if args.sdkconfig_rename else []
     sdkconfig_renames_from_env = os.environ.get("COMPONENT_SDKCONFIG_RENAMES")
     if sdkconfig_renames_from_env:
@@ -329,7 +714,9 @@ def main():
 
     if len(args.defaults) > 0:
 
-        def _replace_empty_assignments(path_in, path_out):
+        def _replace_empty_assignments(
+            path_in, path_out
+        ):  # empty assignment: CONFIG_FOO=
             with open(path_in, "r") as f_in, open(path_out, "w") as f_out:
                 for line_num, line in enumerate(f_in, start=1):
                     line = line.strip()
@@ -343,7 +730,7 @@ def main():
                     f_out.write(line)
                     f_out.write("\n")
 
-        # always load defaults first, so any items which are not defined in that config
+        # always load defaults first, so any items which are not defined in the args.config
         # will have the default defined in the defaults file
         for name in args.defaults:
             print("Loading defaults file %s..." % name)
@@ -374,7 +761,7 @@ def main():
                 except OSError:
                     pass
 
-    # If config file previously exists, load it
+    # If previous sdkconfig file exists, load it
     if args.config and os.path.exists(args.config):
         # ... but replace deprecated options before that
         with tempfile.NamedTemporaryFile(prefix="kconfgen_tmp", delete=False) as f:
@@ -409,360 +796,3 @@ def main():
                 os.remove(temp_file)
             except OSError:
                 pass
-
-
-def write_config(deprecated_options, config, filename):
-    idf_version = os.environ.get("IDF_VERSION", "")
-    CONFIG_HEADING = f"""#
-# Automatically generated file. DO NOT EDIT.
-# Espressif IoT Development Framework (ESP-IDF) {idf_version} Project Configuration
-#
-"""
-    config.write_config(filename, header=CONFIG_HEADING)
-    deprecated_options.append_config(config, filename)
-
-
-def min_config_with_labels(config: kconfiglib.Kconfig, header: str) -> str:
-    """Return minimal config containing menu labels"""
-    all_options = config._config_contents("").splitlines()
-    min_options = config._min_config_contents("").splitlines()
-
-    end_regex = re.compile(r"^# end of (.*)$").match
-    # `label_path` marks the current path from the root; labels represent tree nodes.
-    # The path is represented as an ordered Dict; the last element in the Dict is closest to the leaves.
-    # The label name is the key, and a boolean value indicates whether the label was added to the output (i.e., the label is used in the output).
-    # We need to track used labels to ensure correct timing when printing the label ending.
-    # Note that label names are not necessarily unique, so the order is significant.
-    label_path: OrderedDict[str, bool] = OrderedDict()
-    output = [header]
-    possibly_label = False
-    current = None  # None stands for tree root
-    comments = []
-
-    # Using depth search first, we go down the tree and save the path from the root.
-    # If we find an option from min config, we update the whole path to used (True) and print all menu labels.
-    # When we go back up the tree, we print all label endings that were marked as used
-    for line in all_options:
-        end_match = end_regex(line)
-        if end_match:
-            # we have found an end of a menu section
-            current = end_match.group(1)
-            label = None
-            while label != current and label_path:
-                # remove any labels that appeared outside of used sections
-                label, used = label_path.popitem()
-                if used and label != current:
-                    # used label without end -> comment
-                    comments.append(label)
-            if used:
-                # menu label was used - print menu label ending
-                output.append(f"{line}\n")
-            # find the new current (the last in list); if tree is empty return back to the root
-            current = next(reversed(label_path.keys())) if label_path else None
-        elif line == "#":
-            # starting/ending possible menu label
-            possibly_label = not possibly_label
-        elif possibly_label:
-            current = line[2:]  # remove leading '# '
-            label_path[current] = False  # label not yet used
-        elif line in min_options:
-            # minimal config option detected
-            for label, used in label_path.items():
-                # print all menu labels that were not printed yet
-                if not used:
-                    output.append(f"\n#\n# {label}\n#\n")
-                # mark the whole path from root as 'used'
-                label_path[label] = True
-            output.append(line + "\n")
-    # Remove comments from minimal config, while keeping menu labels
-    for comment in comments:
-        output.remove(f"\n#\n# {comment}\n#\n")
-    return "".join(output)
-
-
-def write_min_config(deprecated_options, config, filename):
-    idf_version = os.environ.get("IDF_VERSION", "")
-    target_symbol = config.syms["IDF_TARGET"]
-    # 'esp32` is harcoded here because the default value of IDF_TARGET is set on the first run from the environment
-    # variable. I.E. `esp32  is not defined as default value.
-    write_target = target_symbol.str_value != "esp32"
-
-    CONFIG_HEADING = textwrap.dedent(
-        f"""\
-    # This file was generated using idf.py save-defconfig. It can be edited manually.
-    # Espressif IoT Development Framework (ESP-IDF) {idf_version} Project Minimal Configuration
-    #
-    {target_symbol.config_string if write_target else ""}\
-    """
-    )
-
-    if os.environ.get("ESP_IDF_KCONFIG_MIN_LABELS", False) == "1":
-        lines = min_config_with_labels(config, CONFIG_HEADING).splitlines()
-    else:
-        lines = config._min_config_contents(header=CONFIG_HEADING).splitlines()
-
-    # convert `# CONFIG_XY is not set` to `CONFIG_XY=n` to improve readability
-    unset_match = re.compile(
-        r"# {}([^ ]+) is not set".format(config.config_prefix)
-    ).match
-    for idx, line in enumerate(lines):
-        match = unset_match(line)
-        if match:
-            lines[idx] = f"{config.config_prefix}{match.group(1)}=n"
-    lines[-1] += "\n"
-    config._write_if_changed(filename, "\n".join(lines))
-
-
-def write_header(deprecated_options, config, filename):
-    idf_version = os.environ.get("IDF_VERSION", "")
-    CONFIG_HEADING = f"""/*
- * Automatically generated file. DO NOT EDIT.
- * Espressif IoT Development Framework (ESP-IDF) {idf_version} Configuration Header
- */
-#pragma once
-"""
-    config.write_autoconf(filename, header=CONFIG_HEADING)
-    deprecated_options.append_header(config, filename)
-
-
-def write_cmake(deprecated_options, config, filename):
-    with open(filename, "w") as f:
-        tmp_dep_list = []
-        write = f.write
-        prefix = config.config_prefix
-
-        write(
-            """#
-# Automatically generated file. DO NOT EDIT.
-# Espressif IoT Development Framework (ESP-IDF) Configuration cmake include file
-#
-"""
-        )
-
-        configs_list = list()
-
-        def write_node(node):
-            sym = node.item
-            if not isinstance(sym, kconfiglib.Symbol):
-                return
-
-            if sym.config_string:
-                val = sym.str_value
-                if (
-                    sym.orig_type in (kconfiglib.BOOL, kconfiglib.TRISTATE)
-                    and val == "n"
-                ):
-                    val = ""  # write unset values as empty variables
-                elif sym.orig_type == kconfiglib.STRING:
-                    val = kconfiglib.escape(val)
-                elif sym.orig_type == kconfiglib.HEX:
-                    val = hex(int(val, 16))  # ensure 0x prefix
-                write('set({}{} "{}")\n'.format(prefix, sym.name, val))
-
-                configs_list.append(prefix + sym.name)
-                dep_opts = deprecated_options.get_deprecated_option(sym.name)
-                for opt in dep_opts:
-                    tmp_dep_list.append('set({}{} "{}")\n'.format(prefix, opt, val))
-                    configs_list.append(prefix + opt)
-
-        for n in config.node_iter():
-            write_node(n)
-        write("set(CONFIGS_LIST {})".format(";".join(configs_list)))
-
-        if len(tmp_dep_list) > 0:
-            write("\n# List of deprecated options for backward compatibility\n")
-            f.writelines(tmp_dep_list)
-
-
-def get_json_values(config):
-    config_dict = {}
-
-    def write_node(node):
-        sym = node.item
-        if not isinstance(sym, kconfiglib.Symbol):
-            return
-
-        if sym.config_string:
-            val = sym.str_value
-            if sym.type in [kconfiglib.BOOL, kconfiglib.TRISTATE]:
-                val = val != "n"
-            elif sym.type == kconfiglib.HEX:
-                val = int(val, 16)
-            elif sym.type == kconfiglib.INT:
-                val = int(val)
-            config_dict[sym.name] = val
-
-    for n in config.node_iter(False):
-        write_node(n)
-    return config_dict
-
-
-def write_json(deprecated_options, config, filename):
-    config_dict = get_json_values(config)
-    with open(filename, "w") as f:
-        json.dump(config_dict, f, indent=4, sort_keys=True)
-
-
-def get_menu_node_id(node):
-    """Given a menu node, return a unique id
-    which can be used to identify it in the menu structure
-
-    Will either be the config symbol name, or a menu identifier
-    'slug'
-
-    """
-    try:
-        if not isinstance(node.item, kconfiglib.Choice):
-            return node.item.name
-    except AttributeError:
-        pass
-
-    result = []
-    while node.parent is not None:
-        slug = re.sub(r"\W+", "-", node.prompt[0]).lower()
-        result.append(slug)
-        node = node.parent
-
-    result = "-".join(reversed(result))
-    return result
-
-
-def write_json_menus(deprecated_options, config, filename):
-    existing_ids = set()
-    result = []  # root level items
-    node_lookup = {}  # lookup from MenuNode to an item in result
-
-    def write_node(node):
-        try:
-            json_parent = node_lookup[node.parent]["children"]
-        except KeyError:
-            assert (
-                node.parent not in node_lookup
-            )  # if fails, we have a parent node with no "children" entity (ie a bug)
-            json_parent = result  # root level node
-
-        # node.kconfig.y means node has no dependency,
-        if node.dep is node.kconfig.y:
-            depends = None
-        else:
-            depends = kconfiglib.expr_str(node.dep)
-
-        try:
-            # node.is_menuconfig is True in newer kconfiglibs for menus and choices as well
-            is_menuconfig = node.is_menuconfig and isinstance(
-                node.item, kconfiglib.Symbol
-            )
-        except AttributeError:
-            is_menuconfig = False
-
-        new_json = None
-        if node.item == kconfiglib.MENU or is_menuconfig:
-            new_json = {
-                "type": "menu",
-                "title": node.prompt[0],
-                "depends_on": depends,
-                "children": [],
-            }
-            if is_menuconfig:
-                sym = node.item
-                new_json["name"] = sym.name
-                new_json["help"] = node.help
-                new_json["is_menuconfig"] = is_menuconfig
-                greatest_range = None
-                if len(sym.ranges) > 0:
-                    # Note: Evaluating the condition using kconfiglib's expr_value
-                    # should have one condition which is true
-                    for min_range, max_range, cond_expr in sym.ranges:
-                        if kconfiglib.expr_value(cond_expr):
-                            greatest_range = [min_range, max_range]
-                new_json["range"] = greatest_range
-
-        elif isinstance(node.item, kconfiglib.Symbol):
-            sym = node.item
-            greatest_range = None
-            if len(sym.ranges) > 0:
-                # Note: Evaluating the condition using kconfiglib's expr_value
-                # should have one condition which is true
-                for min_range, max_range, cond_expr in sym.ranges:
-                    if kconfiglib.expr_value(cond_expr):
-                        base = 16 if sym.type == kconfiglib.HEX else 10
-                        greatest_range = [
-                            int(min_range.str_value, base),
-                            int(max_range.str_value, base),
-                        ]
-                        break
-
-            new_json = {
-                "type": kconfiglib.TYPE_TO_STR[sym.type],
-                "name": sym.name,
-                "title": node.prompt[0] if node.prompt else None,
-                "depends_on": depends,
-                "help": node.help,
-                "range": greatest_range,
-                "children": [],
-            }
-        elif isinstance(node.item, kconfiglib.Choice):
-            choice = node.item
-            new_json = {
-                "type": "choice",
-                "title": node.prompt[0],
-                "name": choice.name,
-                "depends_on": depends,
-                "help": node.help,
-                "children": [],
-            }
-
-        if new_json:
-            node_id = get_menu_node_id(node)
-            if node_id in existing_ids:
-                raise RuntimeError(
-                    "Config file contains two items with the same id: %s (%s). "
-                    % (node_id, node.prompt[0])
-                    + "Please rename one of these items to avoid ambiguity."
-                )
-            new_json["id"] = node_id
-
-            json_parent.append(new_json)
-            node_lookup[node] = new_json
-
-    for n in config.node_iter():
-        write_node(n)
-    with open(filename, "w") as f:
-        f.write(json.dumps(result, sort_keys=True, indent=4))
-
-
-def write_docs(deprecated_options, config, filename):
-    try:
-        target = os.environ["IDF_TARGET"]
-    except KeyError:
-        print("IDF_TARGET environment variable must be defined!")
-        sys.exit(1)
-
-    visibility = gen_kconfig_doc.ConfigTargetVisibility(config, target)
-    gen_kconfig_doc.write_docs(config, visibility, filename)
-    deprecated_options.append_doc(config, visibility, filename)
-
-
-def update_if_changed(source, destination):
-    with open(source, "r") as f:
-        source_contents = f.read()
-
-    if os.path.exists(destination):
-        with open(destination, "r") as f:
-            dest_contents = f.read()
-        if source_contents == dest_contents:
-            return  # nothing to update
-
-    with open(destination, "w") as f:
-        f.write(source_contents)
-
-
-OUTPUT_FORMATS = {
-    "config": write_config,
-    "header": write_header,
-    "cmake": write_cmake,
-    "docs": write_docs,
-    "json": write_json,
-    "json_menus": write_json_menus,
-    "savedefconfig": write_min_config,
-}
