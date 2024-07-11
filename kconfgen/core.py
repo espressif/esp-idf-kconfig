@@ -106,6 +106,10 @@ class DeprecatedOptions(object):
                             raise RuntimeError(
                                 f"Error in {rename_path} (line {line_number}): Config {opt} is not prefixed with {self.config_prefix}"
                             )
+                    if dep_opt == new_opt:
+                        raise RuntimeError(
+                            f"Error in {rename_path} (line {line_number}): Replacement name is the same as original name ({dep_opt})."
+                        )
                     rep_dic[dep_opt] = new_opt
                     rev_rep_dic[new_opt].append(dep_opt)
                     if parsed_line["new"].startswith("!"):
