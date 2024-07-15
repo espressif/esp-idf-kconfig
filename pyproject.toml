@@ -89,7 +89,7 @@ exclude = [
     "__pycache__"
 ]
 
-line-length = 88
+line-length = 120
 
 select = ['E', 'F', 'W']
 ignore = ["E203"]
