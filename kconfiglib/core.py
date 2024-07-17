@@ -417,6 +417,9 @@ from os.path import expandvars
 from os.path import islink
 from os.path import join
 from os.path import realpath
+from typing import Optional
+from typing import Tuple
+from typing import Union
 # Get rid of some attribute lookups. These are obvious in context.
 
 
@@ -3912,6 +3915,7 @@ class Symbol(object):
         "user_value",
         "weak_rev_dep",
     )
+    name: str
 
     #
     # Public interface
@@ -5308,6 +5312,14 @@ class MenuNode(object):
         "implies",
         "ranges",
     )
+    item: Union[Symbol, Choice, int]
+    parent: Optional["MenuNode"]
+    next: Optional["MenuNode"]
+    prompt: Optional[Tuple]
+    dep: Optional[Tuple]
+    kconfig: "Kconfig"
+    is_menuconfig: bool
+    help: Optional[str]
 
     def __init__(self):
         # Properties defined on this particular menu node. A local 'depends on'

@@ -50,10 +50,10 @@ class KconfgenBaseTestCase(unittest.TestCase):
             args["output"],
             self.output_file,
         ]  # these arguments belong together
+        print(f"Running: {call_args}")
+        subprocess.run(call_args, capture_output=True, text=True, check=True)
 
-        subprocess.check_call(call_args)
-
-    def invoke_and_test(self, in_text, out_text, test="in"):
+    def invoke_and_test(self, in_text, out_text, test="in", expected_error=None):
         """
         Main utility function for testing kconfgen:
 
@@ -72,7 +72,13 @@ class KconfgenBaseTestCase(unittest.TestCase):
 
         self.args["kconfig"] = f.name
 
-        self.invoke_kconfgen(self.args)
+        try:
+            self.invoke_kconfgen(self.args)
+        except subprocess.CalledProcessError as e:
+            if expected_error:
+                self.assertIn(expected_error, str(e.stderr))
+            else:
+                raise
 
         with open(self.output_file) as f_result:
             result = f_result.read()
@@ -218,26 +224,7 @@ class RenameConfigTestCase(KconfgenBaseTestCase):
             default y
         """
 
-    def setUp(self):
-        super(RenameConfigTestCase, self).setUp()
-        # Setup the actual test. What we want to do is to have a configuration file containing which
-        # option should be enabled or not, this is the equivalent of the `sdkconfig` that we can find
-        # in the examples.
-        with tempfile.NamedTemporaryFile(
-            mode="w+", prefix="test_kconfgen_", delete=False
-        ) as f:
-            self.addCleanup(os.remove, f.name)
-            # The current file name will be given to `kconfgen.py` after `--config` argument.
-            self.args.update({"config": f.name})
-            # Specify the content of that configuration file, in our case, we want to explicitely
-            # have an option, which needs to be renamed, disabled/not set.
-            f.write(
-                textwrap.dedent(
-                    """
-            # CONFIG_NAMED_OPTION is not set
-            """
-                )
-            )
+    def prepare_rename_file(self, text):
         # The configuration file is ready, we need to prepare a `rename` configuration file which will
         # provide the new name for `CONFIG_NAMED_OPTION` we defined above
         with tempfile.NamedTemporaryFile(
@@ -248,18 +235,83 @@ class RenameConfigTestCase(KconfgenBaseTestCase):
             # parameter followed by the current temporary file name.
             self.args.update({"sdkconfig-rename": f.name})
             # The content of our `rename` file is simple: replace `CONFIG_NAMED_OPTION` by `CONFIG_RENAMED_OPTION`
-            f.write(
-                textwrap.dedent(
-                    """
-            CONFIG_NAMED_OPTION             CONFIG_RENAMED_OPTION
-            """
-                )
-            )
+            f.write(text)
+            return f.name
+
+    def prepare_sdkconifg_file(self, text):
+        with tempfile.NamedTemporaryFile(
+            mode="w+", prefix="test_kconfgen_", delete=False
+        ) as f:
+            self.addCleanup(os.remove, f.name)
+            # The current file name will be given to `kconfgen.py` after `--config` argument.
+            self.args.update({"config": f.name})
+            # Specify the content of that configuration file, in our case, we want to explicitely
+            # have an option, which needs to be renamed, disabled/not set.
+            f.write(text)
 
     def testRenamedOptionDisabled(self):
+        # Setup the test. What we want to do is to have a configuration file containing which
+        # option should be enabled or not, this is the equivalent of the `sdkconfig` that we can find
+        # in the examples.
+
+        rename_text = textwrap.dedent(
+            """
+            CONFIG_NAMED_OPTION             CONFIG_RENAMED_OPTION
+            """
+        )
+        self.prepare_rename_file(rename_text)
+
+        sdkconfig_text = textwrap.dedent(
+            """
+            # CONFIG_NAMED_OPTION is not set
+            """
+        )
+        self.prepare_sdkconifg_file(sdkconfig_text)
         # Invoke the unit test, specify that the final `sdkconfig` generated must contain the string:
         # "# CONFIG_RENAMED_OPTION is not set"
+
         self.invoke_and_test(self.input, "# CONFIG_RENAMED_OPTION is not set")
+
+    def testRenameInversion(self):
+        rename_text = textwrap.dedent(
+            """
+            CONFIG_NAMED_OPTION             !CONFIG_RENAMED_OPTION
+            """
+        )
+        self.prepare_rename_file(rename_text)
+
+        sdkconfig_text = textwrap.dedent(
+            """
+            # CONFIG_NAMED_OPTION is not set
+            """
+        )
+        self.prepare_sdkconifg_file(sdkconfig_text)
+        self.invoke_and_test(self.input, "CONFIG_RENAMED_OPTION=y")
+
+    def testForbiddenRenaming(self):
+        invalid_rename_file_1 = textwrap.dedent(
+            """
+            CONFIG_NAMED_OPTION             CONFIG_NAMED_OPTION
+            """
+        )
+        input_file = self.prepare_rename_file(invalid_rename_file_1)
+        self.invoke_and_test(
+            self.input,
+            "",
+            expected_error=f"RuntimeError: Error in {input_file} (line 2): Replacement name is the same as original name (NAMED_OPTION).",
+        )
+
+        invalid_rename_file_2 = textwrap.dedent(
+            """
+            CONFIG_NAMED_OPTION             !CONFIG_NAMED_OPTION
+            """
+        )
+        input_file = self.prepare_rename_file(invalid_rename_file_2)
+        self.invoke_and_test(
+            self.input,
+            "",
+            expected_error=f"RuntimeError: Error in {input_file} (line 2): Replacement name is the same as original name (NAMED_OPTION).",
+        )
 
 
 class HeaderTestCase(KconfgenBaseTestCase):
