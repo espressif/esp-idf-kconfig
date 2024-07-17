@@ -2827,8 +2827,8 @@ class Kconfig(object):
                         node.defaults.append((self._lookup_const_sym(os.environ[env_var]), self.y))
                     else:
                         self._warn(
-                            f"{env_var} has 'option env=\"{node.item.name}\"', "
-                            f"but the environment variable {node.item.name} is not set",
+                            f"{node.item.name} has 'option env=\"{env_var}\"', "
+                            f"but the environment variable {env_var} is not set",
                             self.filename,
                             self.linenr,
                         )
