@@ -491,6 +491,50 @@ class DefaultsTestCase(KconfgenBaseTestCase):
         self.assertEqual(without_labels, with_labels_strip)
 
 
+class NonSetValuesTestCase(KconfgenBaseTestCase):
+    @classmethod
+    def setUpClass(self):
+        super(NonSetValuesTestCase, self).setUpClass()
+        self.args.update({"output": "savedefconfig"})
+        self.input = textwrap.dedent(
+            """
+                    menu "Test No Numerical Defaults"
+                        config IDF_TARGET
+                            string "IDF target"
+                            default "esp32"
+
+                        config INTEGER
+                            int "This is an integer without default value."
+                            default 1 if IDF_TARGET="esp48"
+
+                        config HEXADECIMAL
+                            hex "This is a hexadecimal without default value."
+                            default 0xAA if IDF_TARGET="esp48"
+
+                    endmenu
+        """
+        )
+
+    def setUp(self):
+        super(NonSetValuesTestCase, self).setUp()
+        with tempfile.NamedTemporaryFile(
+            mode="w+", prefix="test_kconfgen_", delete=False
+        ) as f:
+            self.addCleanup(os.remove, f.name)
+            self.args.update(
+                {"config": f.name}
+            )  # this is input in contrast with {'output': 'config'}
+            f.write("")
+
+    def testNoNumDefault(self):
+        """
+        Testing whether configuration is created even if no default value for a specific target is set.
+        """
+        self.args.update({"output": "config"})
+        self.invoke_and_test(self.input, "CONFIG_INTEGER=1", test="not in")
+        self.invoke_and_test(self.input, "CONFIG_HEXADECIMAL=0xAA", test="not in")
+
+
 # Used by multiple testHexPrefix() test cases to verify correct hex output for each format
 HEXPREFIX_KCONFIG = """
 config HEX_NOPREFIX
