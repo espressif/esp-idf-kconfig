@@ -485,7 +485,16 @@ def get_json_values(config: kconfiglib.Kconfig) -> dict:
 
         if sym.config_string:
             val = sym.str_value
-            if sym.type in [kconfiglib.BOOL, kconfiglib.TRISTATE]:
+            if not val and sym.type in (
+                kconfiglib.INT,
+                kconfiglib.HEX,
+            ):
+                print(
+                    f"warning: {sym.name} has no value set in the configuration."
+                    " This can be caused e.g. by missing default value for the current chip version."
+                )
+                val = None
+            elif sym.type in [kconfiglib.BOOL, kconfiglib.TRISTATE]:
                 val = val != "n"
             elif sym.type == kconfiglib.HEX:
                 val = int(val, 16)
