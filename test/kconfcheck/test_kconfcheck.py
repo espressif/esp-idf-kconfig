@@ -117,7 +117,7 @@ class TestIndent(TestIndentAndNameChecker):
 
     def test_help_content(self):
         self.expt_success('menu "test"')
-        self.expt_success("    config")
+        self.expt_success("    config CONFIG_NAME")
         self.expt_success("        help")
         self.expt_success("            description")
         self.expt_success("            config keyword in the help")
@@ -139,7 +139,7 @@ class TestIndent(TestIndentAndNameChecker):
         self.expect_error("test", expect="    test")
         self.expt_success("    not_a_keyword")
         self.expt_success("    config")
-        self.expt_success("    menuconfig")
+        self.expt_success("    menuconfig MENUCONFIG_NAME")
         self.expect_error("test", expect="        test")
         self.expect_error("   test", expect="        test")
         self.expt_success("    menu")
@@ -159,7 +159,7 @@ class TestIndent(TestIndentAndNameChecker):
         self.expt_success("endmenu")
 
     def test_config_without_menu(self):
-        self.expt_success("menuconfig")
+        self.expt_success("menuconfig MENUCONFIG_NAME")
         self.expt_success("    help")
         self.expt_success("        text")
         self.expt_success("")
@@ -168,14 +168,14 @@ class TestIndent(TestIndentAndNameChecker):
         self.expt_success("    help")
 
     def test_source_after_config(self):
-        self.expt_success("menuconfig")
+        self.expt_success("menuconfig MENUCONFIG_NAME")
         self.expt_success("    help")
         self.expt_success("        text")
         self.expect_error("    source", expect="source")
         self.expt_success('source "Kconfig.in"')
 
     def test_comment_after_config(self):
-        self.expt_success("menuconfig")
+        self.expt_success("menuconfig MENUCONFIG_NAME")
         self.expt_success("    # comment")
         self.expt_success("    help")
         self.expt_success("        text")
@@ -199,6 +199,30 @@ class TestName(TestIndentAndNameChecker):
         self.expt_success("    choice " + ("X" * max_length))
         self.expect_error("    choice " + ("X" * too_long), expect=None)
         self.expt_success("endmenu")
+
+    def test_name_sanity(self):
+        self.expt_success(
+            'prompt "test" if OK_VAL || "$(OK_ENVVAR)" || 0x00 || 1 && y && "y"'
+        )
+        self.expt_success("range C_MIN MAX_123 if OK_VAL || SOMETHING_EXTREMELY_LONG")
+        self.expt_success("depends on OK_VAL")
+        self.expt_success(
+            'default TEST_A if TEST_B=0x01 && TEST_C>42 || TEST_D="working" && TEST_E="y"'
+        )
+        self.expt_success("imply TEST_VAL if TEST_VAL=42")
+        self.expt_success("select TEST_VAL if TEST_VAL>=42")
+        self.expt_success("visible if TEST_VAL!=42")
+        self.expt_success("config THIS_IS_FINE")
+        self.expt_success("choice OK_CHOICE")
+        self.expt_success("endchoice")
+        self.expt_success("menuconfig OK_MENUCONFIG")
+        self.expt_success('    select OK if "$(Envvar)"')  # Envvar is valid envvar name
+        # It is ok to test only one case for errors; if the previous ones passed, symbols are recognized correctly.
+        self.expect_error("config Not_possible", expect="config NOT_POSSIBLE")
+        self.expect_error(
+            'prompt "test" if Ok_VAL || "$(OK_ENVVAR)" || 0x00 || 1 && y && "y"',
+            expect='prompt "test" if OK_VAL || "$(OK_ENVVAR)" || 0x00 || 1 && y && "y"',
+        )
 
 
 class TestPrefix(TestIndentAndNameChecker):
