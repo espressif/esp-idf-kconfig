@@ -712,8 +712,8 @@ def main():
     if args.env_file is not None:
         env = json.load(args.env_file)
         os.environ.update(env)
-
-    config = kconfiglib.Kconfig(args.kconfig)
+    parser_version = int(os.environ.get("KCONFIG_PARSER_VERSION", "1"))
+    config = kconfiglib.Kconfig(args.kconfig, parser_version=parser_version)
     config.warn_assign_redun = False
     config.warn_assign_override = False
 

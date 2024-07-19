@@ -41,6 +41,7 @@ dev = [
     "commitizen",
     "pre-commit",
     "pexpect",
+    "pyparsing",
 ]
 
 [tool.setuptools.packages]

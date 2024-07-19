@@ -716,6 +716,7 @@ class Kconfig(object):
         "warnings",
         "y",
         # Parsing-related
+        "parser_version",
         "_parsing_kconfigs",
         "_readline",
         "root_file",
@@ -740,6 +741,7 @@ class Kconfig(object):
         warn_to_stderr=True,
         encoding="utf-8",
         suppress_traceback=False,
+        parser_version=None,
     ):
         self.modules = None
         """
@@ -820,7 +822,7 @@ class Kconfig(object):
           propagated when suppress_traceback is True.
         """
         try:
-            self._init(filename, warn, warn_to_stderr, encoding)
+            self._init(filename, warn, warn_to_stderr, encoding, parser_version)
         except (EnvironmentError, KconfigError) as e:
             if suppress_traceback:
                 cmd = sys.argv[0]  # Empty string if missing
@@ -832,9 +834,10 @@ class Kconfig(object):
                 sys.exit(cmd + str(e).strip())
             raise
 
-    def _init(self, filename, warn, warn_to_stderr, encoding):
+    def _init(self, filename, warn, warn_to_stderr, encoding, parser_version):
         # See __init__()
         self._encoding = encoding
+        self.parser_version = parser_version if parser_version else int(os.environ.get("KCONFIG_PARSER_VERSION", "1"))
         self.srctree = os.getenv("srctree", "")
         # A prefix we can reliably strip from glob() results to get a filename
         # relative to $srctree. relpath() can cause issues for symlinks,
@@ -946,7 +949,6 @@ class Kconfig(object):
         # part of the construct currently being parsed. This is kinda like an
         # unget operation.
         self._reuse_tokens = False
-
         self()
 
     def __call__(self):
@@ -962,9 +964,13 @@ class Kconfig(object):
             # Parse the Kconfig files. Returns the last node, which we
             # terminate with '.next = None'.
             # NOTE: is prev.next = None needed?
-            prev = self._parse_block(None, self.top_node, self.top_node)
-            self.top_node.list = self.top_node.next
-            prev.next = None
+            if self.parser_version == 1:
+                prev = self._parse_block(None, self.top_node, self.top_node)
+                self.top_node.list = self.top_node.next
+                prev.next = None
+            else:
+                prev = self._new_parse(None, self.top_node, self.top_node)
+                prev.next = None
             self.top_node.next = None
         except UnicodeDecodeError as e:
             _decoding_error(e, self.filename)
@@ -2482,6 +2488,29 @@ class Kconfig(object):
 
         return (OR, e1, e2)
 
+    def _new_parse(self, end_token, parent, last_node):
+        """
+        Temporary function to parse with new Parser
+
+        end_token: deprecated, unused
+        parent: parent node - to which node to add the top node parsed here
+                e.g.: parent = top_node -> to this node, we add (expected) MainMenu from file
+        last_node: node that was parsed as a last one before calling this function
+                   will be deprecated probably as the call logic is different from the original
+
+
+        returns node that was parsed as a last one in this function.
+                probably will be deprecated as the call logic is different from the original.
+        """
+        from kconfiglib.kconfig_parser import Parser
+
+        parser = Parser(kconfig=self)
+
+        parser.parse_all()
+
+        last = self.top_node
+        return last
+
     def _parse_block(self, end_token, parent, prev):
         # Parses a block, which is the contents of either a file or an if,
         # menu, or choice statement.
@@ -2773,7 +2802,6 @@ class Kconfig(object):
 
             elif t0 is _T_RANGE:
                 node.ranges.append((self._expect_sym(), self._expect_sym(), self._parse_cond()))
-                pass
 
             elif t0 is _T_IMPLY:
                 if node.item.__class__ is not Symbol:
@@ -2786,7 +2814,6 @@ class Kconfig(object):
                     self._parse_error("expected 'if' after 'visible'")
 
                 node.visibility = self._make_and(node.visibility, self._expect_expr_and_eol())
-                pass
 
             elif t0 is _T_OPTION:
                 if self._check_token(_T_ENV):
@@ -3807,11 +3834,12 @@ class Symbol(object):
     parent: Optional["MenuNode"]
     next: Optional["MenuNode"]
     prompt: Optional[Tuple]
-    dep: Optional[Tuple]
+    dep: Optional[Union[Tuple, "Symbol"]]
     kconfig: "Kconfig"
     is_menuconfig: bool
     help: Optional[str]
     is_constant: bool
+    env_var: Optional[str]
 
     #
     # Public interface
@@ -5202,11 +5230,11 @@ class MenuNode(object):
         "implies",
         "ranges",
     )
-    item: Union[Symbol, Choice, int]
+    item: Optional[Union[Symbol, Choice, int]]
     parent: Optional["MenuNode"]
     next: Optional["MenuNode"]
     prompt: Optional[Tuple]
-    dep: Optional[Tuple]
+    dep: Optional[Union[Tuple, "Symbol"]]
     kconfig: "Kconfig"
     is_menuconfig: bool
     help: Optional[str]
@@ -5807,7 +5835,13 @@ def standard_kconfig(description=None):
         help="Top-level Kconfig file (default: Kconfig)",
     )
 
-    return Kconfig(parser.parse_args().kconfig, suppress_traceback=True)
+    parsed_args = parser.parse_args()
+
+    # Temporary parser version selection voia envvar. After the refactor,
+    # there would be a dedicated option for this.
+    parser_version = int(os.environ.get("KCONFIG_PARSER_VERSION", "1"))
+    kconfig = Kconfig(parsed_args.kconfig, suppress_traceback=True, parser_version=parser_version)
+    return kconfig
 
 
 def standard_config_filename():
