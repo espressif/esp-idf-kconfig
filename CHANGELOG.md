@@ -1,3 +1,9 @@
+## v1.4.3 (2024-07-23)
+
+### Bug Fixes
+
+- **kconfgen**: Improve error message for int/hex without default
+
 ## v1.4.2 (2024-01-16)
 
 ### Bug Fixes
