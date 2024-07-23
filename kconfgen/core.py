@@ -517,7 +517,7 @@ def write_header(deprecated_options, config, filename):
  * Espressif IoT Development Framework (ESP-IDF) {idf_version} Configuration Header
  */
 #pragma once
-"""
+"""  # noqa
     config.write_autoconf(filename, header=CONFIG_HEADING)
     deprecated_options.append_header(config, filename)
 
@@ -581,7 +581,16 @@ def get_json_values(config):
 
         if sym.config_string:
             val = sym.str_value
-            if sym.type in [kconfiglib.BOOL, kconfiglib.TRISTATE]:
+            if not val and sym.type in (
+                kconfiglib.INT,
+                kconfiglib.HEX,
+            ):
+                print(
+                    f"warning: {sym.name} has no value set in the configuration."
+                    " This can be caused e.g. by missing default value for the current chip version."
+                )
+                val = None
+            elif sym.type in [kconfiglib.BOOL, kconfiglib.TRISTATE]:
                 val = val != "n"
             elif sym.type == kconfiglib.HEX:
                 val = int(val, 16)
