@@ -200,6 +200,40 @@ class IndentAndNameChecker(BaseChecker):
             re.X,
         )
 
+        # regexes to get lines containing expressions
+        # Unquoted symbols are either config names, y/n or (hex)num literals. Catching also no-uppercase config names (TyPO_NAME) to throw an error later on.
+        # Quoted symbols are "y"/"n", env_vars or string literals; the last two categories can contain anyhting between the quotes, thus it is broader.
+        symbol = r"\w+|\".+?\"|'.+?'"
+        reg_prompt = re.compile(r"^\".*?\"\s+(?:if)\s+(?P<expression0>.*)$")
+        reg_default = re.compile(
+            r"^(?P<expression0>.*)\s+(?:if)\s+(?P<expression1>.*)$"
+        )
+        reg_select_imply = re.compile(
+            rf"^(?P<expression0>{symbol})\s+(?:if)\s+(?P<expression1>.*)$"
+        )
+        reg_range = re.compile(
+            rf"^(?P<expression0>{symbol})\s+(?P<expression1>{symbol})\s+(?:if)\s+(?P<expression2>.*)$"
+        )
+        reg_depends_on_visible_if = re.compile(r"^(?P<expression0>.*)$")
+        reg_config_menuconfig_choice = re.compile(rf"^(?P<expression>{symbol})$")
+        self.reg_switch = re.compile(
+            r"^\s*(?P<keyword>prompt|default|select|imply|range|depends on|config|menuconfig|choice|visible if)\s+(?P<body>.*)$"
+        )
+        self.reg_symbol = re.compile(rf"{symbol}", re.X)
+
+        self.kw_to_regex = {
+            "prompt": reg_prompt,
+            "default": reg_default,
+            "select": reg_select_imply,
+            "imply": reg_select_imply,
+            "range": reg_range,
+            "depends on": reg_depends_on_visible_if,
+            "visible if": reg_depends_on_visible_if,
+            "config": reg_config_menuconfig_choice,
+            "menuconfig": reg_config_menuconfig_choice,
+            "choice": reg_config_menuconfig_choice,
+        }
+
     def __exit__(self, type, value, traceback):
         super(IndentAndNameChecker, self).__exit__(type, value, traceback)
         if len(self.prefix_stack) > 0:
@@ -266,6 +300,35 @@ class IndentAndNameChecker(BaseChecker):
         if self.debug:
             print(self.level_stack)
         return len(self.level_stack)
+
+    def check_name_sanity(self, line: str, line_number: int) -> None:
+        def is_hex(s: str) -> bool:
+            return re.search(r"^0x[0-9a-fA-F]+$", s) is not None
+
+        line = line[: line.index("#")] + "\n" if "#" in line else line
+        line_with_symbols = self.reg_switch.match(line)
+
+        if line_with_symbols:
+            expressions = self.kw_to_regex[line_with_symbols.group("keyword")].match(
+                line_with_symbols.group("body")
+            )
+            if expressions:
+                for k in expressions.groupdict().keys():
+                    symbols = self.reg_symbol.findall(expressions.groupdict()[k])
+                    for symbol in symbols:
+                        if not (
+                            symbol in ("y", '"y"', "n", '"n"')
+                            or symbol.isupper()
+                            or symbol.isnumeric()
+                            or is_hex(symbol)
+                            or symbol.startswith(('"', "'"))
+                        ):
+                            raise InputError(
+                                self.path_in_idf,
+                                line_number,
+                                f"config name {symbol} should be all uppercase",
+                                line.replace(symbol, symbol.upper()),
+                            )
 
     def check_name_and_update_prefix(self, line, line_number):
         m = self.re_name.search(line)
@@ -395,6 +458,7 @@ class IndentAndNameChecker(BaseChecker):
 
         # name has to be checked after increase/decrease indentation level
         # otherwise false-positive indentation error for lines bellow name is raised
+        self.check_name_sanity(line, line_number)
         self.check_name_and_update_prefix(stripped_line, line_number)
 
         expected_indent = current_level * SPACES_PER_INDENT
