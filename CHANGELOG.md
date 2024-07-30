@@ -1,3 +1,20 @@
+## v2.3.0 (2024-07-30)
+
+### New Features
+
+- **kconfcheck**: add check whether symbol name is all uppercase
+- **kconfgen**: Support renames with inversion in sdkconfig.renames
+
+### Bug Fixes
+
+- **kconfgen**: Improve error message for int/hex without default
+- **kconfgen**: Disallow rename to the same name in sdkconfig.renames
+- Dont ask for the filename when saving configuration
+
+### Code Refactoring
+
+- **kconfgen**: Improve code quality of kconfgen.py
+
 ## v2.2.0 (2024-03-15)
 
 ### New Features
