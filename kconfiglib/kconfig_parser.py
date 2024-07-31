@@ -1,0 +1,535 @@
+# SPDX-FileCopyrightText: 2024 Espressif Systems (Shanghai) CO LTD
+# SPDX-License-Identifier: Apache-2.0
+import os
+from dataclasses import dataclass
+from glob import iglob
+from os.path import dirname
+from os.path import expandvars
+from os.path import join
+from typing import List
+from typing import Tuple
+from typing import Union
+
+from pyparsing import line as pyparsing_line
+from pyparsing import lineno
+from pyparsing import ParserElement
+from pyparsing import ParseResults
+
+from .core import AND
+from .core import BOOL
+from .core import Choice
+from .core import COMMENT
+from .core import EQUAL
+from .core import GREATER
+from .core import GREATER_EQUAL
+from .core import HEX
+from .core import INT
+from .core import Kconfig
+from .core import KconfigError
+from .core import LESS
+from .core import LESS_EQUAL
+from .core import MENU
+from .core import MenuNode
+from .core import NOT
+from .core import OR
+from .core import STRING
+from .core import Symbol
+from .core import TRISTATE
+from .core import UNEQUAL
+from kconfiglib.kconfig_grammar import KconfigGrammar
+
+ParserElement.enablePackrat()  # Speeds up parsing by caching intermediate results
+
+
+@dataclass
+class Orphan:
+    """
+    Pyparsing parses the elements with a "bottom-up" approach, thus children are parsed before their parents.
+    This class is used to store the nodes and their metadata that are not part of the menu tree (without parent).
+    """
+
+    locations: List[Tuple[str, int]]
+    node: MenuNode
+
+    def __repr__(self) -> str:
+        return "Orphan({}, {})".format(self.node, self.locations)
+
+
+class Parser:
+    """
+    The Parser class is responsible for parsing the Kconfig file and building the menu tree.
+
+    Parsing logic: pyparsing is used to parse the input Kconfig file(s) and provide tokens. It is supposed that new formats (beside Kconfig) will be supported in the future, so the grammar describing Kconfig
+    is in its separate class KconfigGrammar.
+
+    In contrast to the previous (C-like) parsing char-by-char, the new approach utlizes pyparsing
+    library and semantic actions (called parse actions in this context and behaving like callbacks).
+    """
+
+    def __init__(self, kconfig: "Kconfig", filename: str = None) -> None:
+        self.kconfig = kconfig
+
+        self.grammar = KconfigGrammar(self)
+        self.orphans: List[Orphan] = []
+
+        if not filename:
+            self.file_stack = [self.kconfig.filename]
+        else:
+            self.file_stack = [filename]
+        self.location_stack: List[Tuple[str, int]] = []
+
+    def parse_all(self) -> None:
+        self.grammar(self.kconfig.filename)
+
+    def get_children(self, parent: MenuNode, location: Tuple[str, int]) -> None:
+        if not self.orphans:
+            return
+        orphans_for_adoption = []
+        while self.orphans:
+            adopted = False
+            for file, start in self.orphans[-1].locations:
+                if file == location[0] and location[1] < start:
+                    orphan = self.orphans.pop().node
+                    orphan.parent = parent
+                    orphans_for_adoption.append(orphan)
+                    adopted = True
+                    break
+            if not adopted:
+                break
+
+        # NOTE: this situation with linear list is inherited from the original implementation of kconfiglib and should be refactored
+        orphans_for_adoption.reverse()
+        # MenuNode.list = first child element
+        for orphan in orphans_for_adoption:
+            if parent.list:  # there are already children
+                # TODO change list and next to normal Python list of children during refactor
+                orphans_sibling = parent.list
+                while orphans_sibling.next:
+                    orphans_sibling = orphans_sibling.next
+                orphans_sibling.next = orphan
+            else:
+                parent.list = orphan
+
+    ############################
+    # Parse Actions
+    ############################
+    def parse_mainmenu(self, s: str, loc: int, parsed_mainmenu: ParseResults) -> None:
+        self.kconfig.top_node.prompt = (parsed_mainmenu[1], self.kconfig.y)
+        self.get_children(self.kconfig.top_node, (self.file_stack[0], 0))
+
+    def parse_config(self, s: str, loc: int, parsed_config: ParseResults) -> None:
+        sym = self.kconfig._lookup_sym(parsed_config[1])
+        self.kconfig.defined_syms.append(sym)
+
+        node = MenuNode()
+        node.kconfig = self.kconfig
+        node.item = sym
+        node.is_menuconfig = parsed_config[0] == "menuconfig"
+        node.filename = self.file_stack[-1]
+        node.linenr = lineno(loc, s)
+        node.include_path = self.kconfig._include_path
+        node.prompt = None
+        node.help = ""
+        node.visibility = self.kconfig.y
+
+        sym.nodes.append(node)
+        self.parse_options(node, parsed_config)
+
+        orphan = Orphan(
+            node=node,
+            locations=[location for location in self.location_stack if self.location_stack]
+            + [(self.file_stack[-1], lineno(loc, s))],
+        )
+        self.orphans.append(orphan)
+
+    def parse_menu(self, s: str, loc: int, parsed_menu: ParseResults) -> None:
+        menunode = MenuNode()
+        menunode.kconfig = self.kconfig
+        menunode.item = MENU
+        # NOTE: it means its children should be presented in a separate window/menu (true for menu(config) and choice)
+        menunode.is_menuconfig = True
+
+        #                    menu name     condition = always true for menu
+        menunode.prompt = (parsed_menu[1], self.kconfig.y)
+        menunode.visibility = self.kconfig.y
+        menunode.filename = self.file_stack[-1]
+        menunode.linenr = lineno(loc, s)
+        menunode.include_path = self.kconfig._include_path
+        menunode.dep = self.kconfig.y
+
+        if parsed_menu.menu_opts:
+            menu_options = parsed_menu.menu_opts
+            if menu_options.depends_on:  # depends on
+                for depend in menu_options.depends_on:
+                    expr = self.parse_expression(depend.as_list() if isinstance(depend, ParseResults) else depend)
+                    menunode.dep = self.kconfig._make_and(menunode.dep, expr)
+            if menu_options.visible_if:  # visible if
+                # visible_expr: Union[str, List] = (
+                # )
+                #                visible_expr = self.infix_to_prefix(visible_expr)  # mypy: ignore
+                # visible_expr = self.kconfigize_expr(visible_expr)  # mypy: ignore
+
+                menunode.visibility = self.kconfig._make_and(
+                    menunode.visibility,
+                    self.parse_expression(
+                        menu_options.visible_if[0].as_list()
+                        if isinstance(menu_options.visible_if[0], ParseResults)
+                        else menu_options.visible_if[0]
+                    ),
+                )
+
+        self.kconfig.menus.append(menunode)
+        self.get_children(menunode, (self.file_stack[-1], lineno(loc, s)))
+        orphan = Orphan(
+            node=menunode,
+            locations=[location for location in self.location_stack if self.location_stack]
+            + [(self.file_stack[-1], lineno(loc, s))],
+        )
+
+        self.orphans.append(orphan)
+
+    def parse_sourced(self, s: str, loc: int, parsed_source) -> None:
+        path = expandvars(parsed_source.path)
+        if parsed_source[0] in ["rsource", "orsource"]:
+            path = join(dirname(self.file_stack[-1]), path)
+
+        # NOTE: We most probably do not use srctree -> remove when refactoring
+        filenames = sorted(iglob(join(self.kconfig._srctree_prefix, path)))
+
+        if not filenames and parsed_source[0] in ["source", "rsource"]:
+            raise KconfigError(
+                "{}:{}: '{}' not found (in '{}'). Check that "
+                "environment variables are set correctly (e.g. "
+                "$srctree, which is {}). Also note that unset "
+                "environment variables expand to the empty string.".format(
+                    self.file_stack[-1],
+                    lineno(loc, s),
+                    path,
+                    pyparsing_line(loc, s).strip(),
+                    f"set to '{self.kconfig.srctree}'" if self.kconfig.srctree else "unset or blank",
+                )
+            )
+
+        for filename in filenames:
+            self.location_stack.append((self.file_stack[-1], lineno(loc, s)))
+            self.file_stack.append(filename)
+            KconfigGrammar(self)(filename, sourced=True)
+            self.file_stack.pop()
+            self.location_stack.pop()
+
+    def parse_choice(self, s: str, loc: int, parsed_choice: ParseResults) -> None:
+        line_number = lineno(loc, s)
+        if parsed_choice.name:
+            choice = self.kconfig.named_choices.get(parsed_choice.name)
+            if not choice:
+                choice = Choice()
+                choice.name = parsed_choice.name
+                choice.direct_dep = self.kconfig.n
+                self.kconfig.named_choices[parsed_choice.name] = choice
+        else:
+            choice = Choice()
+            choice.direct_dep = self.kconfig.n
+        self.kconfig.choices.append(choice)
+        self.kconfig._set_type(choice, BOOL)  # NOTE: tristate will be removed, so there is no need to support it
+
+        node = MenuNode()
+        node.kconfig = choice.kconfig = self.kconfig
+        node.item = choice
+        node.is_menuconfig = True
+        node.prompt = node.help = None
+        node.filename = self.file_stack[-1]
+        node.linenr = line_number
+        node.include_path = self.kconfig._include_path
+        node.visibility = self.kconfig.y
+        node.dep = self.kconfig.y
+        choice.nodes.append(node)
+
+        self.parse_options(node, parsed_choice)
+        if not node.prompt:
+            self.kconfig._warn(
+                f"<choice {choice.name}> (defined at {self.file_stack[-1]}:{node.linenr}) defined without a prompt"
+            )
+
+        self.get_children(node, (self.file_stack[-1], line_number))
+        child = node.list
+        children_with_default = []
+        while child:
+            if not isinstance(child.item, int) and child.item.defaults:
+                children_with_default.append(child)
+                break
+            else:
+                child = child.next
+
+        for child in children_with_default:
+            self.kconfig._warn(
+                f"default on the choice symbol {child.item.name} (defined at {self.file_stack[-1]}:{child.linenr}) will have no effect, as defaults do not affect choice symbols"
+            )
+
+        orphan = Orphan(
+            node=node,
+            locations=[location for location in self.location_stack if self.location_stack]
+            + [(self.file_stack[-1], line_number)],
+        )
+        self.orphans.append(orphan)
+
+    def parse_comment(self, s: str, loc: int, parsed_comment: ParseResults) -> None:
+        node = MenuNode()
+        node.kconfig = self.kconfig
+        node.item = COMMENT
+        node.is_menuconfig = False
+        node.list = None
+        node.filename = self.file_stack[-1]
+        node.linenr = lineno(loc, s)
+        node.include_path = self.kconfig._include_path
+        node.visibility = self.kconfig.y
+        node.dep = self.kconfig.y
+
+        self.kconfig.comments.append(node)
+        self.parse_prompt(node, [parsed_comment[1]])
+        orphan = Orphan(
+            node=node,
+            locations=[location for location in self.location_stack if self.location_stack]
+            + [(self.file_stack[-1], lineno(loc, s))],
+        )
+        self.orphans.append(orphan)
+
+        if parsed_comment.comment_opts and parsed_comment.comment_opts[0].depends_on:
+            for depend in parsed_comment.comment_opts[0].depends_on:
+                expr = depend
+                expr = self.infix_to_prefix(expr)
+                expr = self.kconfigize_expr(expr)
+                node.dep = self.kconfig._make_and(node.dep, expr)
+        else:
+            node.dep = self.kconfig.y
+
+    def parse_prompt(self, node: MenuNode, prompt: ParseResults) -> None:
+        if node.prompt:
+            self.kconfig._warn(node.item.name_and_loc + " defined with multiple prompts in single location")  # type: ignore
+        prompt_str = prompt[0]
+        condition: Union["Symbol", str, Tuple] = self.kconfig.y
+        if len(prompt) > 1:
+            condition = self.parse_expression(prompt[1].as_list())
+        node.prompt = (prompt_str, condition)
+
+    def parse_if_entry(self, s: str, loc: int, located_if_entry: ParseResults) -> None:
+        parsed_if_entry = located_if_entry
+        expression = self.parse_expression(parsed_if_entry[0])
+
+        node = MenuNode()
+        node.item = None
+        node.prompt = None
+        node.dep = expression  # type: ignore
+
+        self.get_children(node, (self.file_stack[-1], lineno(loc, s)))
+        orphan = Orphan(
+            node=node,
+            locations=[location for location in self.location_stack if self.location_stack]
+            + [(self.file_stack[-1], lineno(loc, s))],
+        )
+        self.orphans.append(orphan)
+
+    def parse_expression(self, expr: list) -> Union[str, tuple, Symbol]:
+        for i, element in enumerate(expr):
+            if isinstance(element, str):
+                if element.startswith(("'", '"')):
+                    expr[i] = element[1:-1]
+        expr = expr[0] if len(expr) == 1 else expr
+        prefix_expr = self.infix_to_prefix(expr)
+        kconfigized_expr: Union[str, tuple, Symbol] = self.kconfigize_expr(prefix_expr)  # type: ignore
+        return kconfigized_expr
+
+    def parse_options(self, node: MenuNode, parsed_config: ParseResults) -> None:
+        #####################
+        # _parse_props() functionality
+        #####################
+        config_options = parsed_config.config_opts
+        if not config_options:  # choice can have no options
+            return
+
+        # set type (and optional prompt)
+        if config_options.type:
+            self.kconfig._set_type(node.item, self.str_to_kconfig_type[config_options.type[0]])
+        else:
+            if not isinstance(node.item, Choice):  # Choices can have implicit type by their first child
+                raise ValueError(
+                    f"Config {parsed_config[1]}, defined in {self.file_stack[-1]}:{node.linenr} has no type."
+                )
+
+        if len(config_options.type) > 1:  # there is and inline prompt
+            self.parse_prompt(node, config_options.type[1:])
+
+            # parse default
+        if config_options.default:
+            for default in config_options.default:
+                # cannot use list() as an argument, because list("abc") is ["a", "b", "c"], not ["abc"]
+                value = self.parse_expression([default[0]])
+                if len(default) > 1:
+                    # Unfortunately, pyparsing groups the expression only if it is ParseResults, string is not grouped
+                    expr = self.parse_expression(
+                        default[1].as_list() if isinstance(default[1], ParseResults) else default[1][0].as_list()
+                    )
+                    node.defaults.append((value, expr))
+                else:
+                    node.defaults.append((value, self.kconfig.y))
+
+        # set help
+        # NOTE: some special characters may not be supported.
+        if config_options.help_text:
+            node.help = config_options.help_text
+
+        # set depends_on
+        node.dep = self.kconfig.y  # basic dependency is always true
+        if config_options.depends_on:
+            for depend in config_options.depends_on:
+                expr = self.parse_expression(depend.as_list() if isinstance(depend, ParseResults) else depend)
+                node.dep = self.kconfig._make_and(node.dep, expr)
+
+        # parse select
+        if config_options.select:
+            for select in config_options.select:
+                sym = self.kconfigize_expr(select[0])
+                if len(select) > 1:
+                    expr = self.parse_expression(select[1].as_list())
+                    # expr = self.infix_to_prefix(select[1].as_list())
+                    # expr = self.kconfigize_expr(expr)
+                    node.selects.append((sym, expr))
+                else:
+                    node.selects.append((sym, self.kconfig.y))
+
+        # parse imply
+        if config_options.imply:
+            for imply in config_options.imply:
+                sym = self.kconfigize_expr(imply[0])
+                if len(imply) > 1:
+                    expr = self.infix_to_prefix(imply[1])  # type: ignore
+                    node.implies.append((sym, expr))
+                else:
+                    node.implies.append((sym, self.kconfig.y))
+
+        # parse prompt
+        if config_options.prompt:
+            self.parse_prompt(node, config_options.prompt)
+
+        # parse range
+        if config_options.range:
+            for range_entry in config_options.range:
+                if len(range_entry) not in (2, 3):
+                    raise ValueError("Range must have two values and optional condition")
+                condition: Union["Symbol", Tuple, str] = self.kconfig.y
+                if len(range_entry) == 3:
+                    condition = self.parse_expression(range_entry[2])
+                sym0 = self.kconfigize_expr(range_entry[0])
+                sym1 = self.kconfigize_expr(range_entry[1])
+                node.ranges.append((sym0, sym1, condition))
+
+        # parse option
+        if config_options.option:
+            env_var = config_options.option[0]
+            node.item.env_var = env_var  # type: ignore
+            if env_var in os.environ:
+                sym_name = os.environ.get(env_var) or ""
+                node.defaults.append((self.kconfig._lookup_const_sym(sym_name), self.kconfig.y))
+            else:
+                self.kconfig._warn(
+                    f"{node.item.name} has 'option env=\"{env_var}\"', "  # type: ignore
+                    f"but the environment variable {env_var} is not set",
+                    self.file_stack[-1],
+                    node.linenr,
+                )
+
+    def infix_to_prefix(self, parsed_expr: Union[str, list, "Symbol"]) -> Union[str, tuple, Symbol]:
+        """
+        Converts a nested list of operands and operators from infix to prefix notation, because Kconfig uses it.
+        """
+        if isinstance(parsed_expr, (str, Symbol)):  # operand
+            return parsed_expr
+        else:
+            if parsed_expr[0] == "!":  # negation; !EXPRESSION
+                return ("!", self.infix_to_prefix(parsed_expr[1]))
+            elif len(parsed_expr) == 3:  # binary operation; OPERAND OPERATOR OPERAND
+                return (parsed_expr[1], self.infix_to_prefix(parsed_expr[0]), self.infix_to_prefix(parsed_expr[2]))
+            elif (
+                len(parsed_expr) % 2 == 1 and len(parsed_expr) > 1
+            ):  # multiple operators; OPERAND OPERATOR OPERAND OPERATOR OPERAND ...
+                return (parsed_expr[1], self.infix_to_prefix(parsed_expr[0]), self.infix_to_prefix(parsed_expr[2:]))
+            elif len(parsed_expr) == 1:  # single operand
+                return self.infix_to_prefix(parsed_expr[0])
+            else:
+                raise ValueError(f"{self.file_stack[-1]}: Malformed expression {parsed_expr}")
+
+    def create_envvar(self, name: str) -> "Symbol":
+        """
+        Creates an environment variable from a string
+        """
+        if name in os.environ:
+            self.kconfig.env_vars.add(name)
+            value = os.environ.get(name) or ""
+            env_var_sym = self.kconfig._lookup_const_sym(value)
+        else:
+            env_var_sym = self.kconfig._lookup_const_sym("")
+        return env_var_sym
+
+    def kconfigize_expr(self, expr: Union[str, tuple, list, Symbol]) -> Union[str, tuple, "Symbol", int]:
+        """
+        Converts a string or a list of operands and operators to the corresponding Kconfig symbols and operators.
+        """
+        operators = ("&&", "||", "!", "=", "!=", "<", "<=", ">", ">=")
+        if isinstance(expr, str):
+            if expr in operators:
+                return self.kconfigize_operator[expr]
+            elif expr.startswith(("$(", "$")):  # environment variable
+                if expr.startswith("$("):
+                    return self.create_envvar(expr[2:-1])  # remove $( and )
+                else:
+                    return self.create_envvar(expr[1:])  # remove $
+            else:  # symbol
+                if expr == "n":
+                    return self.kconfig.n
+                elif expr == "y":
+                    return self.kconfig.y
+                else:
+                    if expr.startswith(("'", '"')) or not expr.isupper():
+                        sym = self.kconfig._lookup_const_sym(expr[1:-1] if expr.startswith(("'", '"')) else expr)
+                    else:
+                        sym = self.kconfig._lookup_sym(expr)
+                    return sym
+        elif isinstance(expr, (tuple, list)):
+            if expr[0] in operators:
+                if len(expr) == 3:  # expr operator expr
+                    return (
+                        self.kconfigize_operator[expr[0]],
+                        self.kconfigize_expr(expr[1]),
+                        self.kconfigize_expr(expr[2]),
+                    )
+                else:  # negation, ! variable
+                    return (self.kconfigize_operator[expr[0]], self.kconfigize_expr(expr[1]))
+            else:
+                raise ValueError(f"Invalid operator {expr[0]}")
+        else:
+            raise ValueError(f"Invalid expression, was {type(expr)}, expected tuple or string.")
+
+    """
+    Converts a string operator to the corresponding Kconfig operator.
+    NOTE: kconfig uses _T_<NAME> constants (tokens) for operators, here, we are using standard constants
+    because it makes no sense to use tokens here.
+    """
+    kconfigize_operator = {
+        "&&": AND,
+        "||": OR,
+        "!": NOT,
+        "=": EQUAL,
+        "!=": UNEQUAL,
+        "<": LESS,
+        "<=": LESS_EQUAL,
+        ">": GREATER,
+        ">=": GREATER_EQUAL,
+    }
+
+    # NOTE: in the future, make e.g. "constants.py" file and move the constants form core and parser there
+    str_to_kconfig_type = {
+        "bool": BOOL,
+        "tristate": TRISTATE,
+        "string": STRING,
+        "int": INT,
+        "hex": HEX,
+    }
