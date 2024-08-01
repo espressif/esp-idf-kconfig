@@ -42,6 +42,7 @@ dev = [
     "pre-commit",
     "pexpect",
     "pyparsing",
+    "pytest",
 ]
 
 [tool.setuptools.packages]

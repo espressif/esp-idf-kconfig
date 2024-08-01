@@ -1,0 +1,12 @@
+#
+# Automatically generated file. DO NOT EDIT.
+# Espressif IoT Development Framework (ESP-IDF)  Project Configuration
+#
+CONFIG_A=y
+CONFIG_B=y
+# CONFIG_D is not set
+CONFIG_S="this is a string"
+CONFIG_RANGE=5
+# CONFIG_DEPENDENT is not set
+# CONFIG_TEST_ENV_UNSET is not set
+CONFIG_TEST_ENV_SET=y

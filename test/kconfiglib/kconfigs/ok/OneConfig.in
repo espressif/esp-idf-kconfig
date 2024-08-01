@@ -1,0 +1,10 @@
+# Only one config with most used entries
+mainmenu "Simple kconfig"
+
+    config ONLY_CONFIG
+        bool
+        prompt "This is a prompt."
+        default y
+        help
+            This is a help.
+            This is also a help.

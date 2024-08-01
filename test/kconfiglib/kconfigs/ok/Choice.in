@@ -1,0 +1,46 @@
+# test if choice keyword is working
+mainmenu "mainmenu"
+
+    config A
+        bool "a"
+        default y
+        help
+            help for a
+
+    comment "Named choice"
+
+    choice "named choice"
+        prompt "prompt for named choice"
+
+        config FOO
+            bool "foo"
+            help
+                help for foo
+
+        config BAR
+            bool "bar"
+            help
+                help for bar
+
+    endchoice
+
+    comment "Unnamed choice"
+
+    choice
+        bool "bool choice"
+        default BAZ
+        help
+            help for bool choice
+
+        config BAZ
+            bool "baz"
+            help
+                help for baz
+            depends on A
+
+        config QUX
+            bool "qux"
+            help
+                help for qux
+
+    endchoice

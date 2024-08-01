@@ -1,0 +1,49 @@
+# More complex kconfig with several configs that can depend on each other.
+mainmenu "Main menu"
+
+    config A
+        bool "Inline prompt for A"
+        default y
+        select B
+
+    config B
+        bool "Should be y because of select B in the definition of A"
+        default n
+
+    config C
+        bool
+        default n
+        select D
+
+    config D
+        bool "should be n"
+        default n
+
+    config S
+        string
+        default "this is a string"
+        help
+            Help text for string config
+
+    config RANGE
+        int "Test of range entry"
+        help
+            This option enables my custom feature.
+        range 0 15
+        default 5
+
+    config DEPENDENT
+        bool "Dependent config, should be y"
+        depends on A && B || y
+
+    config TEST_ENV_UNSET
+        bool "config with unset envvar"
+        option env="TEST_ENV_UNSET"
+        help
+            This config uses environemnt variable TEST_ENV_UNSET, which is not set.
+
+    config TEST_ENV_SET
+        bool "config with set envvar"
+        option env="TEST_ENV_SET"
+        help
+            This config uses environemnt variable TEST_ENV_SET, which is set.

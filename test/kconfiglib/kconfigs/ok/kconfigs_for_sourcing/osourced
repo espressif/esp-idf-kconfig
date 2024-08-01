@@ -1,0 +1,3 @@
+config OSOURCED
+    bool "osourced config"
+    default y

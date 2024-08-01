@@ -78,6 +78,13 @@ test_kconfserver:
     - cd test/kconfserver/
     - ./test_kconfserver.py
 
+test_kconfiglib:
+  extends: .base_template
+  stage: test
+  script:
+    - cd test/kconfiglib/
+    - pytest --verbose
+
 test_gen_kconfig_doc:
   extends: .base_template
   stage: test

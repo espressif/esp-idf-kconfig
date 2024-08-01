@@ -1,0 +1,29 @@
+# Test if help text is parsed correctly
+mainmenu "Main menu"
+
+    config HELP
+        bool
+        default y
+        help
+            This is a long help with and example of a command which should be parsed as is:
+
+            espfuture.py --chip esp64 burn_linux
+
+            The output should look like:
+
+            Distro: {Fedora 42}
+
+                * RAM: 64 MB
+                * CPU: Triple core HTP
+                ...
+            Done.
+
+            And this is the end.
+
+    config JUST_CHECKING
+        bool "Prompt"
+        default y
+        help
+            Just checking if the parsing of previous help text really stopped.
+
+    comment "If you see this in the output, the parsing (probably) succeeded."

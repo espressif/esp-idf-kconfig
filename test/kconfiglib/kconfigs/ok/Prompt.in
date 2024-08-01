@@ -1,0 +1,35 @@
+# Test prompts and conditions both explicit and inline
+# explicit: prompt "prompt" if EXPRESSION
+# inline: bool "prompt" if EXPRESSION
+mainmenu "Main menu"
+
+    config INLINE_SIMPLE
+        bool "Inline simple prompt"
+        default y
+
+    config INLINE_CONDITIONED
+        bool "Inline complex prompt" if INLINE_SIMPLE
+        default y
+
+    config INLINE_COMPLEX
+        bool "Inline complex prompt" if INLINE_SIMPLE || SOMETHING_ELSE && !SOMETHING_MORE
+        default y
+
+    config EXPLICIT_SIMPLE
+        bool
+        prompt "Explicit simple prompt"
+        default y
+
+    config EXPLICIT_CONDITIONED
+        bool
+        prompt "Explicit complex prompt" if INLINE_SIMPLE
+        default y
+
+    config EXPLICIT_COMPLEX
+        bool
+        prompt "Explicit complex prompt" if !INLINE_SIMPLE && !SOMETHING_ELSE || SOMETHING_MORE
+        default y
+
+    config SPECIAL_CHARS
+        bool "Special characters: _ {}"
+        default y

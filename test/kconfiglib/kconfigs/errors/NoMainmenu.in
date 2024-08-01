@@ -1,0 +1,9 @@
+menu "missing mainmenu"
+
+    config NO_MATTERS
+        bool
+        default y
+        help
+            This config does not matter, it should not be parsed.
+
+endmenu

@@ -1,0 +1,17 @@
+# Test comment keyword
+mainmenu "Test comments"
+
+    comment "always visible comment"
+
+    config COMMENTS_SHOWN
+        bool
+        default y
+
+    comment "Visible conditional comment"
+        depends on COMMENTS_SHOWN
+
+    comment "Invisible conditional comment"
+
+    config BELOW_COMMENT
+        bool
+        default y

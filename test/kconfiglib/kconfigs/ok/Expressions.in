@@ -1,0 +1,33 @@
+# Test expressions.
+mainmenu "Main menu"
+
+    config A
+        bool "Test only unnecessary parentheses"
+        depends on (X)
+
+    config B
+        bool "Test if longer name is correctly handled"
+        default y if VERY_LONG_AND_COMPLEX_NAME_WHICH_I_HAD_HARD_TIME_TO_COME_UP_WITH_AND_I_HOPE_IT_IS_LONG_ENOUGH_TO_TEST_IF_IT_IS_HANDLED_PROPERLY
+
+    config SEVERAL_IDENTICAL_OR
+        bool "Several identical operands without parentheses"
+        default y if A || B || C || D
+
+    config SEVERAL_IDENTICAL_AND
+        bool "Several identical operands without parentheses"
+        default y if A && B && C && D
+
+    config PARENS
+        bool "Several operands with parentheses"
+        default y if (A || B) && (C) || (D && E)
+
+    config PARENS_2
+        bool "Several operands with parentheses next to another option"
+        default y
+        depends on (A || B) && (C) || (D && E)
+
+    config PARENS_3
+        bool
+        prompt "Several operands with parentheses next to another option" if (A || B) && (C) || (D && E)
+        default y
+        depends on X
