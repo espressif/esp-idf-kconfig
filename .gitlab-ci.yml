@@ -1,6 +1,8 @@
 stages:
   - codecheck
   - test
+  - build_docs
+  - deploy_docs
 
 include:
   - project: espressif/shared-ci-dangerjs
@@ -9,8 +11,7 @@ include:
 run-danger-mr-linter:
   stage: codecheck
   variables:
-    ENABLE_CHECK_UPDATED_CHANGELOG: 'false'
-
+    ENABLE_CHECK_UPDATED_CHANGELOG: "false"
 
 # WORKFLOW RULES
 # ------------------------------------------------------------------------------------------------------
@@ -19,11 +20,10 @@ workflow:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
     - if: '$CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS && $CI_PIPELINE_SOURCE == "push"'
       when: never
-    - if: '$CI_COMMIT_BRANCH'
+    - if: "$CI_COMMIT_BRANCH"
 # ------------------------------------------------------------------------------------------------------
 
-
-# TEMPLATES
+# COMMON TEMPLATES
 # ------------------------------------------------------------------------------------------------------
 .base_template:
   image: python:3.8-bookworm
@@ -42,8 +42,8 @@ workflow:
     - python -m venv venv
     - source venv/bin/activate
     - python -m pip install -e .[dev] --prefer-binary
-# --------------------------------------------------------------------------------------------------
 
+# --------------------------------------------------------------------------------------------------
 
 # JOBS
 # ------------------------------------------------------------------------------------------------------
@@ -68,7 +68,6 @@ pre-commit_hooks_MR:
 # ------------------------------------------------------------------------------------------------------
 
 # FORMATTING
-
 
 # TESTS
 test_kconfserver:
@@ -136,3 +135,74 @@ test_kconfcheck_venv:
   script:
     - cd test/kconfcheck/
     - ./test_kconfcheck.py
+
+# ------------------------------------------------------------------------------------------------------
+# BUILD AND DEPLOY DOCS
+# ------------------------------------------------------------------------------------------------------
+build_docs:
+  stage: build_docs
+  image: python:3.12-bookworm
+  tags:
+    - build_docs
+  rules:
+    - changes:
+        - "docs/**/*"
+  needs: []
+  artifacts:
+    when: always
+    paths:
+      - docs/_build/*/*/*.txt
+      - docs/_build/*/*/html/*
+    expire_in: 4 days
+  script:
+    - pip install -e .[docs] --prefer-binary
+    - cd docs
+    - build-docs -l en
+
+.deploy_docs_template:
+  stage: deploy_docs
+  image: python:3.12-bookworm
+  tags:
+    - deploy
+  needs:
+    - build_docs
+  before_script:
+    - source ${CI_PROJECT_DIR}/docs/utils.sh
+    - add_doc_server_ssh_keys $DOCS_DEPLOY_PRIVATEKEY $DOCS_DEPLOY_SERVER $DOCS_DEPLOY_SERVER_USER
+    - export GIT_VER=$(git describe --always)
+    - pip install -e .[docs] --prefer-binary
+  script:
+    - deploy-docs
+
+deploy_docs_preview:
+  extends:
+    - .deploy_docs_template
+  rules:
+    - if: $CI_COMMIT_REF_NAME == "master"
+      when: never
+    - changes:
+        - "docs/**/*"
+  variables:
+    TYPE: "preview"
+    DOCS_BUILD_DIR: "${CI_PROJECT_DIR}/docs/_build/"
+    DOCS_DEPLOY_PRIVATEKEY: "$DOCS_PREVIEW_PRIVATEKEY"
+    DOCS_DEPLOY_SERVER: "$DOCS_PREVIEW_SERVER"
+    DOCS_DEPLOY_SERVER_USER: "$DOCS_PREVIEW_USER"
+    DOCS_DEPLOY_PATH: "$DOCS_PREVIEW_PATH"
+    DOCS_DEPLOY_URL_BASE: "$DOCS_PREVIEW_URL_BASE"
+
+deploy_docs_production:
+  extends:
+    - .deploy_docs_template
+  rules:
+    - if: $CI_COMMIT_REF_NAME == "master"
+      changes:
+      - "docs/**/*"
+  variables:
+    TYPE: "production"
+    DOCS_BUILD_DIR: "${CI_PROJECT_DIR}/docs/_build/"
+    DOCS_DEPLOY_PRIVATEKEY: "$DOCS_PROD_PRIVATEKEY"
+    DOCS_DEPLOY_SERVER: "$DOCS_PROD_SERVER"
+    DOCS_DEPLOY_SERVER_USER: "$DOCS_PROD_USER"
+    DOCS_DEPLOY_PATH: "$DOCS_PROD_PATH"
+    DOCS_DEPLOY_URL_BASE: "$DOCS_PROD_URL_BASE"

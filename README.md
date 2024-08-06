@@ -4,28 +4,19 @@ The ```esp-idf-kconfig``` package is part of the [ESP-IDF](https://github.com/es
 
 It is responsible for enabling project configuration using the ```kconfig``` language, providing IDE support for configuration and configuration documentation generation.
 
-For more information about how it works go to the [documentation](https://github.com/espressif/esp-idf-kconfig/blob/master/docs/DOCUMENTATION.md).
+For more information about how it works go to the [documentation](https://docs.espressif.com/projects/esp-idf-kconfig/en/latest/index.html).
 
 ## Contributing
 
-### Code Style & Static Analysis
+Contributions are welcome!
 
-Please follow these coding standards when writing code for ``esp-idf-kconfig``:
+Detailed guide on how to contribute can be found in the [Developer Guide](https://docs.espressif.com/projects/esp-idf-kconfig/en/latest/developer-guide/contributing.html)
 
-#### Pre-commit checks
+## Reporting issues
 
-[pre-commit](https://pre-commit.com/) is a framework for managing pre-commit hooks. These hooks help to identify simple issues before committing code for review.
+If you find a bug or have a feature request, please open an issue on GitHub. But before doing so, please check if a similar issue ticket exists. If you are reporting a bug, please provide as much information as possible, e.g. the version of the package, the version of Python you are using, the steps to reproduce the bug, etc.
 
-To use the tool, first install ``pre-commit``. Then enable the ``pre-commit`` and ``commit-msg`` git hooks:
+Before reporting a bug, please check:
 
-```sh
-python -m pip install pre-commit
-pre-commit install -t pre-commit -t commit-msg
-```
-
-On the first commit ``pre-commit`` will install the hooks, subsequent checks will be significantly faster. If an error is found an appropriate error message will be displayed.
-
-
-#### Conventional Commits
-
-``esp-idf-kconfig`` complies with the [Conventional Commits standard](https://www.conventionalcommits.org/en/v1.0.0/#specification). Every commit message is checked with [Conventional Precommit Linter](https://github.com/espressif/conventional-precommit-linter), ensuring it adheres to the standard.
+- Differences between esp-idf-kconfig and kconfiglib, see [list of differences](https://docs.espressif.com/projects/esp-idf-kconfig/en/latest/kconfiglib/differences.html).
+- Already reported issues, see [GitHub Issues](https://github.com/espressif/esp-idf-kconfig/issues?q=is%3Aissue).
