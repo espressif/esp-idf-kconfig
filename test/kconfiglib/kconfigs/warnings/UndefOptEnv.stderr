@@ -1,0 +1,1 @@
+warning: IDF_ENV_FPGA has 'option env="IDF_ENV_FPGA_DEFINITELY_NOT_SET"', but the environment variable IDF_ENV_FPGA_DEFINITELY_NOT_SET is not set

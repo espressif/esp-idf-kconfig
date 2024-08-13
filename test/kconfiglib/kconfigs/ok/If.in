@@ -1,0 +1,27 @@
+# test the if block keyword
+# This specific case is especially tricky; due to pyparsing being primarily
+# non-whitespace parser, a regression when "default y" and "if A" are parsed together occurs.
+mainmenu "Test if block keyword"
+    menu "menumenu"
+
+        config A
+            bool "a"
+            default y
+
+        if A
+
+            config IFA
+                bool "A is true"
+                default y
+
+        endif
+
+        if !A || B
+
+            config IFB
+                bool "B is true"
+                default y
+
+        endif
+
+    endmenu

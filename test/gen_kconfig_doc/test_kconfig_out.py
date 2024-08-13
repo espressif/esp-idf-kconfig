@@ -29,9 +29,7 @@ class TestDocOutput(unittest.TestCase):
 
     def get_doc_out(self, config_name):
         with io.StringIO() if sys.version_info.major == 3 else io.BytesIO() as output:
-            gen_kconfig_doc.write_menu_item(
-                output, self.get_config(config_name), self.visibility
-            )
+            gen_kconfig_doc.write_menu_item(output, self.get_config(config_name), self.visibility)
             output.seek(0)
             return output.read()
 
@@ -84,6 +82,15 @@ class TestDocOutput(unittest.TestCase):
             "- Yes (enabled) if :ref:`CONFIG_CHOICE_FOR_CHIPA_OP2<CONFIG_CHOICE_FOR_CHIPA_OP2>`",
             s,
         )
+
+
+class TestDocOutputv2(TestDocOutput):
+    @classmethod
+    def setUpClass(cls):
+        os.environ["IDF_TARGET"] = "chipa"
+        cls.target = os.environ["IDF_TARGET"]
+        cls.config = kconfiglib.Kconfig("Kconfig", parser_version=2)
+        cls.visibility = gen_kconfig_doc.ConfigTargetVisibility(cls.config, cls.target)
 
 
 if __name__ == "__main__":

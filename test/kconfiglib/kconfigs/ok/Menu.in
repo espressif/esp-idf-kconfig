@@ -1,0 +1,23 @@
+# test if menu keyword is working
+mainmenu "mainmenu"
+
+    menu "menu with one config"
+
+        config ONE
+            bool "only config in menu"
+            default y
+
+    endmenu
+
+    config A
+        bool
+        default y
+
+    menu "menu with visible if"
+        visible if A
+
+        config B
+            bool "config in menu with visible if"
+            default y
+
+    endmenu

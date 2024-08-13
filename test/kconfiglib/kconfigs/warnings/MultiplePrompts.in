@@ -1,0 +1,15 @@
+mainmenu "config and choice with multiple prompts"
+
+    config A
+        bool "First prompt"
+        prompt "Second prompt"
+
+    choice CHOICE_NAME
+        prompt "Choice prompt"
+        prompt "Choice prompt 2"
+
+        config C1
+            bool "C1"
+            prompt "C1 prompt"
+
+    endchoice

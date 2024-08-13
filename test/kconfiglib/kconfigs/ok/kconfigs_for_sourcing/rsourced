@@ -1,0 +1,7 @@
+menu "rsourced menu"
+
+    config RSOURCED
+	bool "rsourced config"
+	default y
+
+endmenu

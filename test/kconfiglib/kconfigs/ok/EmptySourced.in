@@ -1,0 +1,3 @@
+mainmenu "Empty source"
+
+    rsource "kconfigs_for_sourcing/empty"

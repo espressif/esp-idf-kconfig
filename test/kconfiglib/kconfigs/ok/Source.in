@@ -1,0 +1,8 @@
+# test [o|r|or]source entries
+mainmenu "Source mainmenu"
+    source "$TEST_FILE_PREFIX/sourced"
+    rsource "kconfigs_for_sourcing/rsourced"
+    osource "$TEST_FILE_PREFIX/osourced"
+    osource "test/kconfiglib/kconfigs/ok/kconfigs_for_sourcing/osourced_not_existing"
+    orsource "kconfigs_for_sourcing/orsourced"
+    orsource "kconfigs_for_sourcing/orsourced_not_existing"

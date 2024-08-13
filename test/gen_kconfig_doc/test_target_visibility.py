@@ -2,16 +2,19 @@
 # SPDX-FileCopyrightText: 2024 Espressif Systems (Shanghai) CO LTD
 # SPDX-License-Identifier: Apache-2.0
 import os
-import unittest
+
+import pytest
 
 import kconfiglib.core as kconfiglib
 from esp_idf_kconfig import gen_kconfig_doc
 
 
-class ConfigTargetVisibilityTestCase(unittest.TestCase):
-    def setUp(self):
+class ConfigTargetVisibilityTestCase:
+    @pytest.fixture(autouse=True)
+    def setup_class(self, request):
+        self.parser_version = request.param
         self.target = os.environ["IDF_TARGET"]
-        self.config = kconfiglib.Kconfig("Kconfig")
+        self.config = kconfiglib.Kconfig("Kconfig", parser_version=self.parser_version)
         self.v = gen_kconfig_doc.ConfigTargetVisibility(self.config, self.target)
 
     def _get_config(self, name):
@@ -24,18 +27,22 @@ class ConfigTargetVisibilityTestCase(unittest.TestCase):
         raise RuntimeError("Unimplemented {}".format(name))
 
     def visible(self, config_name):
-        self.assertTrue(self.v.visible(self._get_config(config_name)))
+        assert self.v.visible(self._get_config(config_name))
 
     def invisible(self, config_name):
-        self.assertFalse(self.v.visible(self._get_config(config_name)))
+        assert not self.v.visible(self._get_config(config_name))
 
 
-class ConfigTargetVisibilityChipA(ConfigTargetVisibilityTestCase):
-    @classmethod
-    def setUpClass(cls):
+@pytest.mark.parametrize("setup_class", [1, 2], indirect=True)
+class TestConfigTargetVisibilityChipA(ConfigTargetVisibilityTestCase):
+    @pytest.fixture(scope="class", autouse=True)
+    def setup_chip(self):
         os.environ["IDF_TARGET"] = "chipa"
 
     def test_config_visibility(self):
+        assert os.environ.get("IDF_TARGET") == "chipa"
+        assert self.parser_version == self.config.parser_version
+
         self.invisible("IDF_TARGET")
         self.invisible("IDF_TARGET_CHIPA")
         self.visible("ALWAYS_VISIBLE")
@@ -67,12 +74,16 @@ class ConfigTargetVisibilityChipA(ConfigTargetVisibilityTestCase):
         self.visible("CHIPA_FEATURE_FROM_V3")
 
 
-class ConfigTargetVisibilityChipB(ConfigTargetVisibilityTestCase):
-    @classmethod
-    def setUpClass(cls):
+@pytest.mark.parametrize("setup_class", [1, 2], indirect=True)
+class TestConfigTargetVisibilityChipB(ConfigTargetVisibilityTestCase):
+    @pytest.fixture(scope="class", autouse=True)
+    def setup_chip(self):
         os.environ["IDF_TARGET"] = "chipb"
 
     def test_config_visibility(self):
+        assert os.environ.get("IDF_TARGET") == "chipb"
+        assert self.parser_version == self.config.parser_version
+
         self.invisible("IDF_TARGET")
         self.invisible("IDF_TARGET_CHIPA")
         self.visible("ALWAYS_VISIBLE")
@@ -102,7 +113,3 @@ class ConfigTargetVisibilityChipB(ConfigTargetVisibilityTestCase):
         self.invisible("CHIPA_REV_MIN")
         self.invisible("CHIPA_FEATURE_FROM_V1")
         self.invisible("CHIPA_FEATURE_FROM_V3")
-
-
-if __name__ == "__main__":
-    unittest.main()

@@ -1,0 +1,10 @@
+#
+# Automatically generated file. DO NOT EDIT.
+# Espressif IoT Development Framework (ESP-IDF)  Project Configuration
+#
+CONFIG_HELP=y
+CONFIG_JUST_CHECKING=y
+
+#
+# If you see this in the output, the parsing (probably) succeeded.
+#
