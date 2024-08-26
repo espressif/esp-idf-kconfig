@@ -3,3 +3,6 @@
 
 # Making line len 120 chars long:
 b0086a6ff55f13f8a06e39a0bf1d436b0b184571
+
+# Reformatting strings, removing Py2 support
+320a188c811a559c23a928a403846d6455a84fca
