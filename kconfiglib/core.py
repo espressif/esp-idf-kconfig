@@ -1709,23 +1709,18 @@ class Kconfig(object):
 
         try:
             return open(filename, "r", encoding=self._encoding)
-        except EnvironmentError:
+        except OSError:
             # This will try opening the same file twice if $srctree is unset,
             # but it's not a big deal
             try:
                 return open(join(self.srctree, filename), "r", encoding=self._encoding)
-            except EnvironmentError as e2:
-                # This is needed for Python 3, because e2 is deleted after
-                # the try block:
-                #
-                # https://docs.python.org/3/reference/compound_stmts.html#the-try-statement
-                e = e2
+            except OSError as e:
                 env_var_value = f"set to '{self.srctree}'" if self.srctree else "unset or blank"
-            raise _KconfigIOError(
-                e,
-                f"Could not open '{filename}' ({errno.errorcode[e.errno]}: {e.strerror}). Check that the $srctree "
-                f"environment variable ({env_var_value}) is set correctly.",
-            )
+                raise _KconfigIOError(
+                    e,
+                    f"Could not open '{filename}' ({errno.errorcode[e.errno]}: {e.strerror}). Check that the $srctree "
+                    f"environment variable ({env_var_value}) is set correctly.",
+                )
 
     def _enter_file(self, filename):
         # Jumps to the beginning of a sourced Kconfig file, saving the previous
