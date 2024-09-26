@@ -25,7 +25,7 @@ from typing import Union
 Overview
 ========
 
-Kconfiglib is a Python 2/3 library for scripting and extracting information
+Kconfiglib is a Python 3 library for scripting and extracting information
 from Kconfig (https://www.kernel.org/doc/Documentation/kbuild/kconfig-language.txt)
 configuration systems.
 
@@ -756,10 +756,7 @@ class Kconfig(object):
         Raises KconfigError on syntax/semantic errors, and OSError or (possibly
         a subclass of) IOError on IO errors ('errno', 'strerror', and
         'filename' are available). Note that IOError is an alias for OSError on
-        Python 3, so it's enough to catch OSError there. If you need Python 2/3
-        compatibility, it's easiest to catch EnvironmentError, which is a
-        common base class of OSError/IOError on Python 2 and an alias for
-        OSError on Python 3.
+        Python 3, so it's enough to catch OSError there.
 
         filename (default: "Kconfig"):
           The Kconfig file to load. For the Linux kernel, you'll want "Kconfig"
@@ -801,11 +798,6 @@ class Kconfig(object):
 
           The "utf-8" default avoids exceptions on systems that are configured
           to use the C locale, which implies an ASCII encoding.
-
-          This parameter has no effect on Python 2, due to implementation
-          issues (regular strings turning into Unicode strings, which are
-          distinct in Python 2). Python 2 doesn't decode regular strings
-          anyway.
 
           Related PEP: https://www.python.org/dev/peps/pep-0538/
 
@@ -855,8 +847,8 @@ class Kconfig(object):
 
         self.config_prefix = os.getenv("CONFIG_", "CONFIG_")
         # Regular expressions for parsing .config files
-        self._set_match = _re_match(self.config_prefix + r"([^=]+)=(.*)")
-        self._unset_match = _re_match(rf"# {self.config_prefix}([^ ]+) is not set")
+        self._set_match = re.compile(self.config_prefix + r"([^=]+)=(.*)", re.ASCII).match
+        self._unset_match = re.compile(rf"# {self.config_prefix}([^ ]+) is not set", re.ASCII).match
 
         self.config_header = os.getenv("KCONFIG_CONFIG_HEADER", "")
         self.header_header = os.getenv("KCONFIG_AUTOHEADER_HEADER", "")
@@ -957,7 +949,7 @@ class Kconfig(object):
         """
         # Open the top-level Kconfig file. Store the readline() method directly
         # as a small optimization.
-        self._readline = self._open(join(self.srctree, self.filename), "r").readline
+        self._readline = open(join(self.srctree, self.filename), "r", encoding=self._encoding).readline
         self.root_file = join(self.srctree, self.filename)
 
         try:
@@ -1436,7 +1428,7 @@ class Kconfig(object):
         if save_old:
             _save_old(filename)
 
-        with self._open(filename, "w") as f:
+        with open(filename, "w", encoding=self._encoding) as f:
             f.write(contents)
 
         return f"Configuration saved to '{filename}'"
@@ -1689,15 +1681,15 @@ class Kconfig(object):
         return "<{}>".format(
             ", ".join(
                 (
-                    "configuration with {} symbols".format(len(self.syms)),
-                    'main menu prompt "{}"'.format(self.mainmenu_text),
-                    "srctree is current directory" if not self.srctree else 'srctree "{}"'.format(self.srctree),
-                    'config symbol prefix "{}"'.format(self.config_prefix),
-                    "warnings " + status(self.warn),
-                    "printing of warnings to stderr " + status(self.warn_to_stderr),
-                    "undef. symbol assignment warnings " + status(self.warn_assign_undef),
-                    "overriding symbol assignment warnings " + status(self.warn_assign_override),
-                    "redundant symbol assignment warnings " + status(self.warn_assign_redun),
+                    f"configuration with {len(self.syms)} symbols",
+                    f'main menu prompt "{self.mainmenu_text}"',
+                    "srctree is current directory" if not self.srctree else f'srctree "{self.srctree}"',
+                    f'config symbol prefix "{self.config_prefix}"',
+                    f"warnings {status(self.warn)}",
+                    f"printing of warnings to stderr {status(self.warn_to_stderr)}",
+                    f"undef. symbol assignment warnings {status(self.warn_assign_undef)}",
+                    f"overriding symbol assignment warnings {status(self.warn_assign_override)}",
+                    f"redundant symbol assignment warnings {status(self.warn_assign_redun)}",
                 )
             )
         )
@@ -1716,29 +1708,19 @@ class Kconfig(object):
         # loaded.
 
         try:
-            return self._open(filename, "r")
-        except EnvironmentError:
+            return open(filename, "r", encoding=self._encoding)
+        except OSError:
             # This will try opening the same file twice if $srctree is unset,
             # but it's not a big deal
             try:
-                return self._open(join(self.srctree, filename), "r")
-            except EnvironmentError as e2:
-                # This is needed for Python 3, because e2 is deleted after
-                # the try block:
-                #
-                # https://docs.python.org/3/reference/compound_stmts.html#the-try-statement
-                e = e2
-
-            raise _KconfigIOError(
-                e,
-                "Could not open '{}' ({}: {}). Check that the $srctree "
-                "environment variable ({}) is set correctly.".format(
-                    filename,
-                    errno.errorcode[e.errno],
-                    e.strerror,
-                    f"set to '{self.srctree}'" if self.srctree else "unset or blank",
-                ),
-            )
+                return open(join(self.srctree, filename), "r", encoding=self._encoding)
+            except OSError as e:
+                env_var_value = f"set to '{self.srctree}'" if self.srctree else "unset or blank"
+                raise _KconfigIOError(
+                    e,
+                    f"Could not open '{filename}' ({errno.errorcode[e.errno]}: {e.strerror}). Check that the $srctree "
+                    f"environment variable ({env_var_value}) is set correctly.",
+                )
 
     def _enter_file(self, filename):
         # Jumps to the beginning of a sourced Kconfig file, saving the previous
@@ -1790,24 +1772,17 @@ class Kconfig(object):
                         self.filename,
                         self.linenr,
                         rel_filename,
-                        "\n".join("{}:{}".format(name, linenr) for name, linenr in self._include_path),
+                        "\n".join(f"{name}:{linenr}" for name, linenr in self._include_path),
                     )
                 )
 
         try:
-            self._readline = self._open(filename, "r").readline
+            self._readline = open(filename, "r", encoding=self._encoding).readline
         except EnvironmentError as e:
             # We already know that the file exists
             raise _KconfigIOError(
                 e,
-                "{}:{}: Could not open '{}' (in '{}') ({}: {})".format(
-                    self.filename,
-                    self.linenr,
-                    filename,
-                    self._line.strip(),
-                    errno.errorcode[e.errno],
-                    e.strerror,
-                ),
+                f"{self.filename}:{self.linenr}: Could not open '{filename}' (in '{self._line.strip()}') ({errno.errorcode[e.errno]}: {e.strerror})",
             )
 
         self.filename = rel_filename
@@ -1887,7 +1862,7 @@ class Kconfig(object):
 
         if self._contents_eq(filename, contents):
             return False
-        with self._open(filename, "w") as f:
+        with open(filename, "w", encoding=self._encoding) as f:
             f.write(contents)
         return True
 
@@ -1896,7 +1871,7 @@ class Kconfig(object):
         # and False otherwise (including if 'filename' can't be opened/read)
 
         try:
-            with self._open(filename, "r") as f:
+            with open(filename, "r", encoding=self._encoding) as f:
                 # Robust re. things like encoding and line endings (mmap()
                 # trickery isn't)
                 return f.read(len(contents) + 1) == contents
@@ -3385,11 +3360,7 @@ class Kconfig(object):
 
                     elif not num_ok(default, sym.orig_type):  # INT/HEX
                         self._warn(
-                            "the {0} symbol {1} has a non-{0} default {2}".format(
-                                TYPE_TO_STR[sym.orig_type],
-                                sym.name_and_loc,
-                                default.name_and_loc,
-                            )
+                            f"the {TYPE_TO_STR[sym.orig_type]} symbol {sym.name_and_loc} has a non-{TYPE_TO_STR[sym.orig_type]} default {default.name_and_loc}"
                         )
 
                 if sym.selects or sym.implies:
@@ -3407,12 +3378,7 @@ class Kconfig(object):
                     for low, high, _ in sym.ranges:
                         if not num_ok(low, sym.orig_type) or not num_ok(high, sym.orig_type):
                             self._warn(
-                                "the {0} symbol {1} has a non-{0} range [{2}, {3}]".format(
-                                    TYPE_TO_STR[sym.orig_type],
-                                    sym.name_and_loc,
-                                    low.name_and_loc,
-                                    high.name_and_loc,
-                                )
+                                f"the {TYPE_TO_STR[sym.orig_type]} symbol {sym.name_and_loc} has a non-{TYPE_TO_STR[sym.orig_type]} range [{low.name_and_loc}, {high.name_and_loc}]"
                             )
 
     def _check_choice_sanity(self):
@@ -3481,44 +3447,6 @@ class Kconfig(object):
     def _trailing_tokens_error(self):
         self._parse_error("extra tokens at end of line")
 
-    def _open(self, filename, mode):
-        # open() wrapper:
-        #
-        # - Enable universal newlines mode on Python 2 to ease
-        #   interoperability between Linux and Windows. It's already the
-        #   default on Python 3.
-        #
-        #   The "U" flag would currently work for both Python 2 and 3, but it's
-        #   deprecated on Python 3, so play it future-safe.
-        #
-        #   io.open() defaults to universal newlines on Python 2 (and is an
-        #   alias for open() on Python 3), but it returns 'unicode' strings and
-        #   slows things down:
-        #
-        #     Parsing x86 Kconfigs on Python 2
-        #
-        #     with open(..., "rU"):
-        #
-        #       real  0m0.930s
-        #       user  0m0.905s
-        #       sys   0m0.025s
-        #
-        #     with io.open():
-        #
-        #       real  0m1.069s
-        #       user  0m1.040s
-        #       sys   0m0.029s
-        #
-        #   There's no appreciable performance difference between "r" and
-        #   "rU" for parsing performance on Python 2.
-        #
-        # - For Python 3, force the encoding. Forcing the encoding on Python 2
-        #   turns strings into Unicode strings, which gets messy. Python 2
-        #   doesn't decode regular strings anyway.
-        return (
-            open(filename, "rU" if mode == "r" else mode) if _IS_PY2 else open(filename, mode, encoding=self._encoding)
-        )
-
     def _check_undef_syms(self):
         # Prints warnings for all references to undefined symbols within the
         # Kconfig files
@@ -3546,7 +3474,7 @@ class Kconfig(object):
 
             return True
 
-        for sym in (self.syms.viewvalues if _IS_PY2 else self.syms.values)():
+        for sym in self.syms.values():
             # - sym.nodes empty means the symbol is undefined (has no
             #   definition locations)
             #
@@ -3558,7 +3486,7 @@ class Kconfig(object):
                 msg = f"undefined symbol {sym.name}:"
                 for node in self.node_iter():
                     if sym in node.referenced:
-                        msg += "\n\n- Referenced at {}:{}:\n\n{}".format(node.filename, node.linenr, node)
+                        msg += f"\n\n- Referenced at {node.filename}:{node.linenr}:\n\n{node}"
                 self._warn(msg)
 
     def _warn(self, msg, filename=None, linenr=None):
@@ -3987,15 +3915,8 @@ class Symbol(object):
                 if has_active_range and not low <= user_val <= high:
                     num2str = str if base == 10 else hex
                     self.kconfig._warn(
-                        "user value {} on the {} symbol {} ignored due to "
-                        "being outside the active range ([{}, {}]) -- falling "
-                        "back on defaults".format(
-                            num2str(user_val),
-                            TYPE_TO_STR[self.orig_type],
-                            self.name_and_loc,
-                            num2str(low),
-                            num2str(high),
-                        )
+                        f"user value {num2str(user_val)} on the {TYPE_TO_STR[self.orig_type]} symbol {self.name_and_loc} ignored due to "
+                        f"being outside the active range ([{num2str(low)}, {num2str(high)}]) -- falling back on defaults"
                     )
                 else:
                     # If the user value is well-formed and satisfies range
@@ -4041,14 +3962,8 @@ class Symbol(object):
                         if has_default:
                             num2str = str if base == 10 else hex
                             self.kconfig._warn(
-                                "default value {} on {} clamped to {} due to "
-                                "being outside the active range ([{}, {}])".format(
-                                    val_num,
-                                    self.name_and_loc,
-                                    num2str(clamp),
-                                    num2str(low),
-                                    num2str(high),
-                                )
+                                f"default value {val_num} on {self.name_and_loc} clamped to {num2str(clamp)} due to "
+                                f"being outside the active range ([{num2str(low)}, {num2str(high)}])"
                             )
 
         elif self.orig_type is STRING:
@@ -4567,13 +4482,8 @@ class Symbol(object):
         # whose direct dependencies evaluate to m is selected to y.
 
         msg = (
-            "{} has direct dependencies {} with value {}, but is "
-            "currently being {}-selected by the following symbols:".format(
-                self.name_and_loc,
-                expr_str(self.direct_dep),
-                TRI_TO_STR[expr_value(self.direct_dep)],
-                TRI_TO_STR[expr_value(self.rev_dep)],
-            )
+            f"{self.name_and_loc} has direct dependencies {expr_str(self.direct_dep)} with value {TRI_TO_STR[expr_value(self.direct_dep)]}, but is "
+            f"currently being {TRI_TO_STR[expr_value(self.rev_dep)]}-selected by the following symbols:"
         )
 
         # The reverse dependencies from each select are ORed together
@@ -4871,7 +4781,7 @@ class Choice(object):
             # Display tristate values as n, m, y in the warning
             self.kconfig._warn(
                 "the value {} is invalid for {}, which has type {} -- assignment ignored".format(
-                    TRI_TO_STR[value] if value in TRI_TO_STR else "'{}'".format(value),
+                    TRI_TO_STR[value] if value in TRI_TO_STR else f"'{value}'",
                     self.name_and_loc,
                     TYPE_TO_STR[self.orig_type],
                 )
@@ -6273,9 +6183,7 @@ def _decoding_error(e, filename, macro_linenr=None):
     raise KconfigError(
         "\nMalformed {} in {}\nContext: {}\nProblematic data: {}\nReason: {}".format(
             e.encoding,
-            "'{}'".format(filename)
-            if macro_linenr is None
-            else "output from macro at {}:{}".format(filename, macro_linenr),
+            f"'{filename}'" if macro_linenr is None else f"output from macro at {filename}:{macro_linenr}",
             e.object[max(e.start - 40, 0) : e.end + 40],
             e.object[e.start : e.end],
             e.reason,
@@ -6330,12 +6238,11 @@ def _shell_fn(kconf, _, command):
 
     stdout, stderr = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE).communicate()
 
-    if not _IS_PY2:
-        try:
-            stdout = stdout.decode(kconf._encoding)
-            stderr = stderr.decode(kconf._encoding)
-        except UnicodeDecodeError as e:
-            _decoding_error(e, kconf.filename, kconf.linenr)
+    try:
+        stdout = stdout.decode(kconf._encoding)
+        stderr = stderr.decode(kconf._encoding)
+    except UnicodeDecodeError as e:
+        _decoding_error(e, kconf.filename, kconf.linenr)
 
     if stderr:
         kconf._warn(
@@ -6347,10 +6254,6 @@ def _shell_fn(kconf, _, command):
     # Universal newlines with splitlines() (to prevent e.g. stray \r's in
     # command output on Windows), trailing newline removal, and
     # newline-to-space conversion.
-    #
-    # On Python 3 versions before 3.6, it's not possible to specify the
-    # encoding when passing universal_newlines=True to Popen() (the 'encoding'
-    # parameter was added in 3.6), so we do this manual version instead.
     return "\n".join(stdout.splitlines()).rstrip("\n").replace("\n", " ")
 
 
@@ -6374,9 +6277,6 @@ STR_TO_TRI = {
 # distinct from a cached None (no selection). Any object that's not None or a
 # Symbol will do. We test this with 'is'.
 _NO_CACHED_SELECTION = 0
-
-# Are we running on Python 2?
-_IS_PY2 = sys.version_info[0] < 3
 
 try:
     _UNAME_RELEASE = os.uname()[2]
@@ -6679,20 +6579,6 @@ _RELATIONS = frozenset(
     }
 )
 
-# Helper functions for getting compiled regular expressions, with the needed
-# matching function returned directly as a small optimization.
-#
-# Use ASCII regex matching on Python 3. It's already the default on Python 2.
-
-
-def _re_match(regex):
-    return re.compile(regex, 0 if _IS_PY2 else re.ASCII).match
-
-
-def _re_search(regex):
-    return re.compile(regex, 0 if _IS_PY2 else re.ASCII).search
-
-
 # Various regular expressions used during parsing
 
 # The initial token on a line. Also eats leading and trailing whitespace, so
@@ -6703,31 +6589,31 @@ def _re_search(regex):
 #
 # '$' is included to detect preprocessor variable assignments with macro
 # expansions in the left-hand side.
-_command_match = _re_match(r"\s*([A-Za-z0-9_$-]+)\s*")
+_command_match = re.compile(r"\s*([A-Za-z0-9_$-]+)\s*", re.ASCII).match
 
 # An identifier/keyword after the first token. Also eats trailing whitespace.
 # '$' is included to detect identifiers containing macro expansions.
-_id_keyword_match = _re_match(r"([A-Za-z0-9_$/.-]+)\s*")
+_id_keyword_match = re.compile(r"([A-Za-z0-9_$/.-]+)\s*", re.ASCII).match
 
 # A fragment in the left-hand side of a preprocessor variable assignment. These
 # are the portions between macro expansions ($(foo)). Macros are supported in
 # the LHS (variable name).
-_assignment_lhs_fragment_match = _re_match("[A-Za-z0-9_-]*")
+_assignment_lhs_fragment_match = re.compile("[A-Za-z0-9_-]*", re.ASCII).match
 
 # The assignment operator and value (right-hand side) in a preprocessor
 # variable assignment
-_assignment_rhs_match = _re_match(r"\s*(=|:=|\+=)\s*(.*)")
+_assignment_rhs_match = re.compile(r"\s*(=|:=|\+=)\s*(.*)", re.ASCII).match
 
 # Special characters/strings while expanding a macro ('(', ')', ',', and '$(')
-_macro_special_search = _re_search(r"\(|\)|,|\$\(")
+_macro_special_search = re.compile(r"\(|\)|,|\$\(", re.ASCII).search
 
 # Special characters/strings while expanding a string (quotes, '\', and '$(')
-_string_special_search = _re_search(r'"|\'|\\|\$\(')
+_string_special_search = re.compile(r'"|\'|\\|\$\(', re.ASCII).search
 
 # Special characters/strings while expanding a symbol name. Also includes
 # end-of-line, in case the macro is the last thing on the line.
-_name_special_search = _re_search(r"[^A-Za-z0-9_$/.-]|\$\(|$")
+_name_special_search = re.compile(r"[^A-Za-z0-9_$/.-]|\$\(|$", re.ASCII).search
 
 # A valid right-hand side for an assignment to a string symbol in a .config
 # file, including escaped characters. Extracts the contents.
-_conf_string_match = _re_match(r'"((?:[^\\"]|\\.)*)"')
+_conf_string_match = re.compile(r'"((?:[^\\"]|\\.)*)"', re.ASCII).match
