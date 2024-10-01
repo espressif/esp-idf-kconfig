@@ -146,7 +146,6 @@ class Parser:
 
         #                    menu name     condition = always true for menu
         menunode.prompt = (parsed_menu[1], self.kconfig.y)
-        # menunode.include_path = self.kconfig._include_path
 
         if parsed_menu.menu_opts:
             menu_options = parsed_menu.menu_opts

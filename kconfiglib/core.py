@@ -27,9 +27,9 @@ from typing import Union
 Overview
 ========
 
-Kconfiglib is a Python 3 library for scripting and extracting information
+Kconfiglib is a Python 3 library and part of esp-idf-kconfig for parsing and extracting information
 from Kconfig (https://www.kernel.org/doc/Documentation/kbuild/kconfig-language.txt)
-configuration systems.
+configuration system.
 
 Intro to symbol values
 ======================
@@ -424,8 +424,6 @@ lead to a crash.
 
 Preferably, user-defined functions should be stateless.
 """
-# Get rid of some attribute lookups. These are obvious in context.
-
 
 # File layout:
 #
@@ -433,9 +431,6 @@ Preferably, user-defined functions should be stateless.
 # Public functions
 # Internal functions
 # Global constants
-
-# Line length: 79 columns
-
 
 #
 # Public classes
@@ -451,234 +446,6 @@ class Kconfig(object):
 
     The following attributes are available. They should be treated as
     read-only, and some are implemented through @property magic.
-
-    syms:
-      A dictionary with all symbols in the configuration, indexed by name. Also
-      includes all symbols that are referenced in expressions but never
-      defined, except for constant (quoted) symbols.
-
-      Undefined symbols can be recognized by Symbol.nodes being empty -- see
-      the 'Intro to the menu tree' section in the module docstring.
-
-    const_syms:
-      A dictionary like 'syms' for constant (quoted) symbols
-
-    named_choices:
-      A dictionary like 'syms' for named choices (choice FOO)
-
-    defined_syms:
-      A list with all defined symbols, in the same order as they appear in the
-      Kconfig files. Symbols defined in multiple locations appear multiple
-      times.
-
-      Note: You probably want to use 'unique_defined_syms' instead. This
-      attribute is mostly maintained for backwards compatibility.
-
-    unique_defined_syms:
-      A list like 'defined_syms', but with duplicates removed. Just the first
-      instance is kept for symbols defined in multiple locations. Kconfig order
-      is preserved otherwise.
-
-      Using this attribute instead of 'defined_syms' can save work, and
-      automatically gives reasonable behavior when writing configuration output
-      (symbols defined in multiple locations only generate output once, while
-      still preserving Kconfig order for readability).
-
-    choices:
-      A list with all choices, in the same order as they appear in the Kconfig
-      files.
-
-      Note: You probably want to use 'unique_choices' instead. This attribute
-      is mostly maintained for backwards compatibility.
-
-    unique_choices:
-      Analogous to 'unique_defined_syms', for choices. Named choices can have
-      multiple definition locations.
-
-    menus:
-      A list with all menus, in the same order as they appear in the Kconfig
-      files
-
-    comments:
-      A list with all comments, in the same order as they appear in the Kconfig
-      files
-
-    kconfig_filenames:
-      A list with the filenames of all Kconfig files included in the
-      configuration, relative to $srctree (or relative to the current directory
-      if $srctree isn't set), except absolute paths (e.g.
-      'source "/foo/Kconfig"') are kept as-is.
-
-      The files are listed in the order they are source'd, starting with the
-      top-level Kconfig file. If a file is source'd multiple times, it will
-      appear multiple times. Use set() to get unique filenames.
-
-      Note that Kconfig.sync_deps() already indirectly catches any file
-      modifications that change configuration output.
-
-    env_vars:
-      A set() with the names of all environment variables referenced in the
-      Kconfig files.
-
-      Only environment variables referenced with the preprocessor $(FOO) syntax
-      will be registered. The older $FOO syntax is only supported for backwards
-      compatibility.
-
-      Also note that $(FOO) won't be registered unless the environment variable
-      $FOO is actually set. If it isn't, $(FOO) is an expansion of an unset
-      preprocessor variable (which gives the empty string).
-
-      Another gotcha is that environment variables referenced in the values of
-      recursively expanded preprocessor variables (those defined with =) will
-      only be registered if the variable is actually used (expanded) somewhere.
-
-      The note from the 'kconfig_filenames' documentation applies here too.
-
-    n/m/y:
-      The predefined constant symbols n/m/y. Also available in const_syms.
-
-    modules:
-      The Symbol instance for the modules symbol. Currently hardcoded to
-      MODULES, which is backwards compatible. Kconfiglib will warn if
-      'option modules' is set on some other symbol. Tell me if you need proper
-      'option modules' support.
-
-      'modules' is never None. If the MODULES symbol is not explicitly defined,
-      its tri_value will be 0 (n), as expected.
-
-      A simple way to enable modules is to do 'kconf.modules.set_value(2)'
-      (provided the MODULES symbol is defined and visible). Modules are
-      disabled by default in the kernel Kconfig files as of writing, though
-      nearly all defconfig files enable them (with 'CONFIG_MODULES=y').
-
-    defconfig_list:
-      The Symbol instance for the 'option defconfig_list' symbol, or None if no
-      defconfig_list symbol exists. The defconfig filename derived from this
-      symbol can be found in Kconfig.defconfig_filename.
-
-    defconfig_filename:
-      The filename given by the defconfig_list symbol. This is taken from the
-      first 'default' with a satisfied condition where the specified file
-      exists (can be opened for reading). If a defconfig file foo/defconfig is
-      not found and $srctree was set when the Kconfig was created,
-      $srctree/foo/defconfig is looked up as well.
-
-      'defconfig_filename' is None if either no defconfig_list symbol exists,
-      or if the defconfig_list symbol has no 'default' with a satisfied
-      condition that specifies a file that exists.
-
-      Gotcha: scripts/kconfig/Makefile might pass --defconfig=<defconfig> to
-      scripts/kconfig/conf when running e.g. 'make defconfig'. This option
-      overrides the defconfig_list symbol, meaning defconfig_filename might not
-      always match what 'make defconfig' would use.
-
-    top_node:
-      The menu node (see the MenuNode class) of the implicit top-level menu.
-      Acts as the root of the menu tree.
-
-    mainmenu_text:
-      The prompt (title) of the top menu (top_node). Defaults to "Main menu".
-      Can be changed with the 'mainmenu' statement (see kconfig-language.txt).
-
-    variables:
-      A dictionary with all preprocessor variables, indexed by name. See the
-      Variable class.
-
-    warn:
-      Set this variable to True/False to enable/disable warnings. See
-      Kconfig.__init__().
-
-      When 'warn' is False, the values of the other warning-related variables
-      are ignored.
-
-      This variable as well as the other warn* variables can be read to check
-      the current warning settings.
-
-    warn_to_stderr:
-      Set this variable to True/False to enable/disable warnings on stderr. See
-      Kconfig.__init__().
-
-    warn_assign_undef:
-      Set this variable to True to generate warnings for assignments to
-      undefined symbols in configuration files.
-
-      This variable is False by default unless the KCONFIG_WARN_UNDEF_ASSIGN
-      environment variable was set to 'y' when the Kconfig instance was
-      created.
-
-    warn_assign_override:
-      Set this variable to True to generate warnings for multiple assignments
-      to the same symbol in configuration files, where the assignments set
-      different values (e.g. CONFIG_FOO=m followed by CONFIG_FOO=y, where the
-      last value would get used).
-
-      This variable is True by default. Disabling it might be useful when
-      merging configurations.
-
-    warn_assign_redun:
-      Like warn_assign_override, but for multiple assignments setting a symbol
-      to the same value.
-
-      This variable is True by default. Disabling it might be useful when
-      merging configurations.
-
-    warnings:
-      A list of strings containing all warnings that have been generated, for
-      cases where more flexibility is needed.
-
-      See the 'warn_to_stderr' parameter to Kconfig.__init__() and the
-      Kconfig.warn_to_stderr variable as well. Note that warnings still get
-      added to Kconfig.warnings when 'warn_to_stderr' is True.
-
-      Just as for warnings printed to stderr, only warnings that are enabled
-      will get added to Kconfig.warnings. See the various Kconfig.warn*
-      variables.
-
-    missing_syms:
-      A list with (name, value) tuples for all assignments to undefined symbols
-      within the most recently loaded .config file(s). 'name' is the symbol
-      name without the 'CONFIG_' prefix. 'value' is a string that gives the
-      right-hand side of the assignment verbatim.
-
-      See Kconfig.load_config() as well.
-
-    srctree:
-      The value the $srctree environment variable had when the Kconfig instance
-      was created, or the empty string if $srctree wasn't set. This gives nice
-      behavior with os.path.join(), which treats "" as the current directory,
-      without adding "./".
-
-      Kconfig files are looked up relative to $srctree (unless absolute paths
-      are used), and .config files are looked up relative to $srctree if they
-      are not found in the current directory. This is used to support
-      out-of-tree builds. The C tools use this environment variable in the same
-      way.
-
-      Changing $srctree after creating the Kconfig instance has no effect. Only
-      the value when the configuration is loaded matters. This avoids surprises
-      if multiple configurations are loaded with different values for $srctree.
-
-    config_prefix:
-      The value the CONFIG_ environment variable had when the Kconfig instance
-      was created, or "CONFIG_" if CONFIG_ wasn't set. This is the prefix used
-      (and expected) on symbol names in .config files and C headers. Used in
-      the same way in the C tools.
-
-    config_header:
-      The value the KCONFIG_CONFIG_HEADER environment variable had when the
-      Kconfig instance was created, or the empty string if
-      KCONFIG_CONFIG_HEADER wasn't set. This string is inserted verbatim at the
-      beginning of configuration files. See write_config().
-
-    header_header:
-      The value the KCONFIG_AUTOHEADER_HEADER environment variable had when the
-      Kconfig instance was created, or the empty string if
-      KCONFIG_AUTOHEADER_HEADER wasn't set. This string is inserted verbatim at
-      the beginning of header files. See write_autoconf().
-
-    filename/linenr:
-      The current parsing location, for use in Python preprocessor functions.
-      See the module docstring.
     """
 
     __slots__ = (
@@ -780,7 +547,6 @@ class Kconfig(object):
 
           If $srctree is set, 'filename' will be looked up relative to it.
           $srctree is also used to look up source'd files within Kconfig files.
-          See the class documentation.
 
           If you are using Kconfiglib via 'make scriptconfig', the filename of
           the base base Kconfig file will be in sys.argv[1]. It's currently
@@ -795,8 +561,7 @@ class Kconfig(object):
           See the other Kconfig.warn_* variables as well, which enable or
           suppress certain warnings when warnings are enabled.
 
-          All generated warnings are added to the Kconfig.warnings list. See
-          the class documentation.
+          All generated warnings are added to the Kconfig.warnings list.
 
         warn_to_stderr (default: True):
           True if warnings should be printed to stderr in addition to being
@@ -831,35 +596,195 @@ class Kconfig(object):
 
         self.parser_version = parser_version if parser_version else int(os.environ.get("KCONFIG_PARSER_VERSION", "1"))
 
+        """
+        srctree:
+            The value the $srctree environment variable had when the Kconfig instance
+            was created, or the empty string if $srctree wasn't set. This gives nice
+            behavior with os.path.join(), which treats "" as the current directory,
+            without adding "./".
+
+            Kconfig files are looked up relative to $srctree (unless absolute paths
+            are used), and .config files are looked up relative to $srctree if they
+            are not found in the current directory. This is used to support
+            out-of-tree builds. The C tools use this environment variable in the same
+            way.
+
+            Changing $srctree after creating the Kconfig instance has no effect. Only
+            the value when the configuration is loaded matters. This avoids surprises
+            if multiple configurations are loaded with different values for $srctree.
+        """
         self.srctree = os.getenv("srctree", "")
+
         # A prefix we can reliably strip from glob() results to get a filename
         # relative to $srctree. relpath() can cause issues for symlinks,
         # because it assumes symlink/../foo is the same as foo/.
         self._srctree_prefix = realpath(self.srctree) + os.sep
 
+        """
+        warn:
+            Set this variable to True/False to enable/disable warnings.
+
+            When 'warn' is False, the values of the other warning-related variables
+            are ignored.
+
+            This variable as well as the other warn* variables can be read to check
+            the current warning settings.
+        """
         self.warn = warn
+
+        """
+        warn_to_stderr:
+            Set this variable to True/False to enable/disable warnings on stderr.
+        """
         self.warn_to_stderr = warn_to_stderr
+
+        """
+        warn_assign_undef:
+            Set this variable to True to generate warnings for assignments to
+            undefined symbols in configuration files.
+
+            This variable is False by default unless the KCONFIG_WARN_UNDEF_ASSIGN
+            environment variable was set to 'y' when the Kconfig instance was
+            created.
+        """
         self.warn_assign_undef = os.getenv("KCONFIG_WARN_UNDEF_ASSIGN") == "y"
+
+        """
+        warn_assign_override:
+            Set this variable to True to generate warnings for multiple assignments
+            to the same symbol in configuration files, where the assignments set
+            different values (e.g. CONFIG_FOO=m followed by CONFIG_FOO=y, where the
+            last value would get used).
+
+            This variable is True by default. Disabling it might be useful when
+            merging configurations.
+        """
         self.warn_assign_override = True
+
+        """
+        warn_assign_redun:
+            Like warn_assign_override, but for multiple assignments setting a symbol
+            to the same value.
+
+            This variable is True by default. Disabling it might be useful when
+            merging configurations.
+        """
         self.warn_assign_redun = True
         self._warn_assign_no_prompt = True
+
+        """
+        warnings:
+            A list of strings containing all warnings that have been generated, for
+            cases where more flexibility is needed.
+
+            See the 'warn_to_stderr' parameter to Kconfig.__init__() and the
+            Kconfig.warn_to_stderr variable as well. Note that warnings still get
+            added to Kconfig.warnings when 'warn_to_stderr' is True.
+
+            Just as for warnings printed to stderr, only warnings that are enabled
+            will get added to Kconfig.warnings. See the various Kconfig.warn*
+            variables.
+        """
         self.warnings = []
 
+        """
+        config_prefix:
+            The value the CONFIG_ environment variable had when the Kconfig instance
+            was created, or "CONFIG_" if CONFIG_ wasn't set. This is the prefix used
+            (and expected) on symbol names in .config files and C headers. Used in
+            the same way in the C tools.
+        """
         self.config_prefix = os.getenv("CONFIG_", "CONFIG_")
 
         # Regular expressions for parsing .config files
         self._set_match = re.compile(self.config_prefix + r"([^=]+)=(.*)", re.ASCII).match
         self._unset_match = re.compile(rf"# {self.config_prefix}([^ ]+) is not set", re.ASCII).match
+
+        """
+        config_header:
+            The value the KCONFIG_CONFIG_HEADER environment variable had when the
+            Kconfig instance was created, or the empty string if
+            KCONFIG_CONFIG_HEADER wasn't set. This string is inserted verbatim at the
+            beginning of configuration files. See write_config().
+        """
         self.config_header = os.getenv("KCONFIG_CONFIG_HEADER", "")
+
+        """
+        header_header:
+            The value the KCONFIG_AUTOHEADER_HEADER environment variable had when the
+            Kconfig instance was created, or the empty string if
+            KCONFIG_AUTOHEADER_HEADER wasn't set. This string is inserted verbatim at
+            the beginning of header files. See write_autoconf().
+        """
         self.header_header = os.getenv("KCONFIG_AUTOHEADER_HEADER", "")
 
+        """
+        syms:
+            A dictionary with all symbols in the configuration, indexed by name. Also
+            includes all symbols that are referenced in expressions but never
+            defined, except for constant (quoted) symbols.
+
+            Undefined symbols can be recognized by Symbol.nodes being empty -- see
+            the 'Intro to the menu tree' section in the module docstring.
+        """
         self.syms = {}
+
+        """
+        const_syms:
+            A dictionary like 'syms' for constant (quoted) symbols
+        """
         self.const_syms = {}
+
+        """
+        defined_syms:
+            A list with all defined symbols, in the same order as they appear in the
+            Kconfig files. Symbols defined in multiple locations appear multiple
+            times.
+
+            Note: You probably want to use 'unique_defined_syms' instead. This
+            attribute is mostly maintained for backwards compatibility.
+        """
         self.defined_syms = []
+
+        """
+        missing_syms:
+            A list with (name, value) tuples for all assignments to undefined symbols
+            within the most recently loaded .config file(s). 'name' is the symbol
+            name without the 'CONFIG_' prefix. 'value' is a string that gives the
+            right-hand side of the assignment verbatim.
+
+            See Kconfig.load_config() as well.
+        """
         self.missing_syms = []
+
+        """
+        named_choices:
+            A dictionary like 'syms' for named choices (choice FOO).
+        """
         self.named_choices = {}
+
+        """
+        choices:
+            A list with all choices, in the same order as they appear in the Kconfig
+            files.
+
+            Note: You probably want to use 'unique_choices' instead. This attribute
+            is mostly maintained for backwards compatibility.
+        """
         self.choices = []
+
+        """
+        menus:
+            A list with all menus, in the same order as they appear in the Kconfig
+            files.
+        """
         self.menus = []
+
+        """
+        comments:
+            A list with all comments, in the same order as they appear in the Kconfig
+            files.
+        """
         self.comments = []
 
         for nmy in "n", "m", "y":
@@ -877,6 +802,11 @@ class Kconfig(object):
             sym._cached_tri_val = STR_TO_TRI[nmy]
 
         # Maps preprocessor variables names to Variable instances
+        """
+        variables:
+            A dictionary with all preprocessor variables, indexed by name. See the
+            Variable class.
+        """
         self.variables = {}
 
         # Predefined preprocessor functions, with min/max number of arguments
@@ -902,10 +832,37 @@ class Kconfig(object):
         # Kconfig.eval_string().
         self._parsing_kconfigs = True
 
+        """
+        modules:
+            The Symbol instance for the modules symbol. Currently hardcoded to
+            MODULES, which is backwards compatible. Kconfiglib will warn if
+            'option modules' is set on some other symbol. Tell me if you need proper
+            'option modules' support.
+
+            'modules' is never None. If the MODULES symbol is not explicitly defined,
+            its tri_value will be 0 (n), as expected.
+
+            A simple way to enable modules is to do 'kconf.modules.set_value(2)'
+            (provided the MODULES symbol is defined and visible). Modules are
+            disabled by default in the kernel Kconfig files as of writing, though
+            nearly all defconfig files enable them (with 'CONFIG_MODULES=y').
+        """
         self.modules = self._lookup_sym("MODULES")
+
+        """
+        defconfig_list:
+            The Symbol instance for the 'option defconfig_list' symbol, or None if no
+            defconfig_list symbol exists. The defconfig filename derived from this
+            symbol can be found in Kconfig.defconfig_filename.
+        """
         self.defconfig_list = None
         self._include_path = ()
 
+        """
+        top_node:
+            The menu node (see the MenuNode class) of the implicit top-level menu.
+            Acts as the root of the menu tree.
+        """
         self.top_node = MenuNode(
             kconfig=self, item=MENU, is_menuconfig=True, prompt=("Main menu", self.y), filename=filename, linenr=1
         )
@@ -914,13 +871,53 @@ class Kconfig(object):
 
         # Not used internally. Provided as a convenience.
         # TODO is the attribute below needed?
+        """
+        kconfig_filenames:
+            A list with the filenames of all Kconfig files included in the
+            configuration, relative to $srctree (or relative to the current directory
+            if $srctree isn't set), except absolute paths (e.g.
+            'source "/foo/Kconfig"') are kept as-is.
+
+            The files are listed in the order they are source'd, starting with the
+            top-level Kconfig file. If a file is source'd multiple times, it will
+            appear multiple times. Use set() to get unique filenames.
+
+            Note that Kconfig.sync_deps() already indirectly catches any file
+            modifications that change configuration output.
+        """
         self.kconfig_filenames = [filename]
+
+        """
+        env_vars:
+            A set() with the names of all environment variables referenced in the
+            Kconfig files.
+
+            Only environment variables referenced with the preprocessor $(FOO) syntax
+            will be registered. The older $FOO syntax is only supported for backwards
+            compatibility.
+
+            Also note that $(FOO) won't be registered unless the environment variable
+            $FOO is actually set. If it isn't, $(FOO) is an expansion of an unset
+            preprocessor variable (which gives the empty string).
+
+            Another gotcha is that environment variables referenced in the values of
+            recursively expanded preprocessor variables (those defined with =) will
+            only be registered if the variable is actually used (expanded) somewhere.
+
+            The note from the 'kconfig_filenames' documentation applies here too.
+        """
         self.env_vars = set()
 
         # Keeps track of the location in the parent Kconfig files. Kconfig
         # files usually source other Kconfig files. See _enter_file().
         self._filestack = []
 
+        """
+        filename/linenr:
+            The current parsing location, for use in Python preprocessor functions.
+            See the module docstring.
+        TODO: May be removed during removing preprocessor functions
+        """
         self.filename = filename
         self.linenr = 0
 
@@ -963,7 +960,24 @@ class Kconfig(object):
         # Do various menu tree post-processing
         self._finalize_node(self.top_node, self.y)
 
+        """
+        unique_defined_syms:
+            A list like 'defined_syms', but with duplicates removed. Just the first
+            instance is kept for symbols defined in multiple locations. Kconfig order
+            is preserved otherwise.
+
+            Using this attribute instead of 'defined_syms' can save work, and
+            automatically gives reasonable behavior when writing configuration output
+            (symbols defined in multiple locations only generate output once, while
+            still preserving Kconfig order for readability).
+        """
         self.unique_defined_syms = _ordered_unique(self.defined_syms)
+
+        """
+        unique_choices:
+            Analogous to 'unique_defined_syms', for choices. Named choices can have
+            multiple definition locations.
+        """
         self.unique_choices = _ordered_unique(self.choices)
 
         # Do sanity checks. Some of these depend on everything being finalized.
@@ -992,14 +1006,29 @@ class Kconfig(object):
     @property
     def mainmenu_text(self):
         """
-        See the class documentation.
+        mainmenu_text:
+            The prompt (title) of the top menu (top_node). Defaults to "Main menu".
+            Can be changed with the 'mainmenu' statement.
         """
         return self.top_node.prompt[0]
 
     @property
     def defconfig_filename(self):
         """
-        See the class documentation.
+        The filename given by the defconfig_list symbol. This is taken from the
+        first 'default' with a satisfied condition where the specified file
+        exists (can be opened for reading). If a defconfig file foo/defconfig is
+        not found and $srctree was set when the Kconfig was created,
+        $srctree/foo/defconfig is looked up as well.
+
+        'defconfig_filename' is None if either no defconfig_list symbol exists,
+        or if the defconfig_list symbol has no 'default' with a satisfied
+        condition that specifies a file that exists.
+
+        Gotcha: scripts/kconfig/Makefile might pass --defconfig=<defconfig> to
+        scripts/kconfig/conf when running e.g. 'make defconfig'. This option
+        overrides the defconfig_list symbol, meaning defconfig_filename might not
+        always match what 'make defconfig' would use.
         """
         if self.defconfig_list:
             for filename, cond in self.defconfig_list.defaults:
@@ -2510,7 +2539,7 @@ class Kconfig(object):
                     filename=self.filename,
                     linenr=self.linenr,
                 )
-                node.include_path = self._include_path  # TODO can we remove it safely?
+                node.include_path = self._include_path
 
                 sym.nodes.append(node)
 
@@ -3127,7 +3156,7 @@ class Kconfig(object):
         #
         #  - Propagates dependencies from parent to child nodes
         #
-        #  - Creates implicit menus (see kconfig-language.txt)
+        #  - Creates implicit menus
         #
         #  - Removes 'if' nodes
         #
@@ -3259,7 +3288,6 @@ class Kconfig(object):
 
         sym = node.item
 
-        # See the Symbol class docstring
         sym.direct_dep = self._make_or(sym.direct_dep, node.dep)
 
         sym.defaults += node.defaults
@@ -3483,222 +3511,9 @@ class Symbol:
       (menu)config FOO
           ...
 
-    The following attributes are available. They should be viewed as read-only,
-    and some are implemented through @property magic (but are still efficient
-    to access due to internal caching).
-
     Note: Prompts, help texts, and locations are stored in the Symbol's
     MenuNode(s) rather than in the Symbol itself. Check the MenuNode class and
     the Symbol.nodes attribute. This organization matches the C tools.
-
-    tri_value:
-      The tristate value of the symbol as an integer. One of 0, 1, 2,
-      representing n, m, y. Always 0 (n) for non-bool/tristate symbols.
-
-      This is the symbol value that's used outside of relation expressions
-      (A, !A, A && B, A || B).
-
-    str_value:
-      The value of the symbol as a string. Gives the value for string/int/hex
-      symbols. For bool/tristate symbols, gives "n", "m", or "y".
-
-      This is the symbol value that's used in relational expressions
-      (A = B, A != B, etc.)
-
-      Gotcha: For int/hex symbols, the exact format of the value is often
-      preserved (e.g. when writing a .config file), hence why you can't get it
-      directly as an int. Do int(int_sym.str_value) or
-      int(hex_sym.str_value, 16) to get the integer value.
-
-    user_value:
-      The user value of the symbol. None if no user value has been assigned
-      (via Kconfig.load_config() or Symbol.set_value()).
-
-      Holds 0, 1, or 2 for bool/tristate symbols, and a string for the other
-      symbol types.
-
-      WARNING: Do not assign directly to this. It will break things. Use
-      Symbol.set_value().
-
-    assignable:
-      A tuple containing the tristate user values that can currently be
-      assigned to the symbol (that would be respected), ordered from lowest (0,
-      representing n) to highest (2, representing y). This corresponds to the
-      selections available in the menuconfig interface. The set of assignable
-      values is calculated from the symbol's visibility and selects/implies.
-
-      Returns the empty set for non-bool/tristate symbols and for symbols with
-      visibility n. The other possible values are (0, 2), (0, 1, 2), (1, 2),
-      (1,), and (2,). A (1,) or (2,) result means the symbol is visible but
-      "locked" to m or y through a select, perhaps in combination with the
-      visibility. menuconfig represents this as -M- and -*-, respectively.
-
-      For string/hex/int symbols, check if Symbol.visibility is non-0 (non-n)
-      instead to determine if the value can be changed.
-
-      Some handy 'assignable' idioms:
-
-        # Is 'sym' an assignable (visible) bool/tristate symbol?
-        if sym.assignable:
-            # What's the highest value it can be assigned? [-1] in Python
-            # gives the last element.
-            sym_high = sym.assignable[-1]
-
-            # The lowest?
-            sym_low = sym.assignable[0]
-
-            # Can the symbol be set to at least m?
-            if sym.assignable[-1] >= 1:
-                ...
-
-        # Can the symbol be set to m?
-        if 1 in sym.assignable:
-            ...
-
-    config_string:
-      The .config assignment string that would get written out for the symbol
-      by Kconfig.write_config(). Returns the empty string if no .config
-      assignment would get written out.
-
-      In general, visible symbols, symbols with (active) defaults, and selected
-      symbols get written out. This includes all non-n-valued bool/tristate
-      symbols, and all visible string/int/hex symbols.
-
-      Symbols with the (no longer needed) 'option env=...' option generate no
-      configuration output, and neither does the special
-      'option defconfig_list' symbol.
-
-      Tip: This field is useful when generating custom configuration output,
-      even for non-.config-like formats. To write just the symbols that would
-      get written out to .config files, do this:
-
-        if sym.config_string:
-            *Write symbol, e.g. by looking sym.str_value*
-
-      This is a superset of the symbols written out by write_autoconf().
-      That function skips all n-valued symbols.
-
-      There usually won't be any great harm in just writing all symbols either,
-      though you might get some special symbols and possibly some "redundant"
-      n-valued symbol entries in there.
-
-    name_and_loc:
-      Holds a string like
-
-        "MY_SYMBOL (defined at foo/Kconfig:12, bar/Kconfig:14)"
-
-      , giving the name of the symbol and its definition location(s).
-
-      If the symbol is undefined, the location is given as "(undefined)".
-
-    nodes:
-      A list of MenuNodes for this symbol. Will contain a single MenuNode for
-      most symbols. Undefined and constant symbols have an empty nodes list.
-      Symbols defined in multiple locations get one node for each location.
-
-    choice:
-      Holds the parent Choice for choice symbols, and None for non-choice
-      symbols. Doubles as a flag for whether a symbol is a choice symbol.
-
-    defaults:
-      List of (default, cond) tuples for the symbol's 'default' properties. For
-      example, 'default A && B if C || D' is represented as
-      ((AND, A, B), (OR, C, D)). If no condition was given, 'cond' is
-      self.kconfig.y.
-
-      Note that 'depends on' and parent dependencies are propagated to
-      'default' conditions.
-
-    selects:
-      List of (symbol, cond) tuples for the symbol's 'select' properties. For
-      example, 'select A if B && C' is represented as (A, (AND, B, C)). If no
-      condition was given, 'cond' is self.kconfig.y.
-
-      Note that 'depends on' and parent dependencies are propagated to 'select'
-      conditions.
-
-    implies:
-      Like 'selects', for imply.
-
-    ranges:
-      List of (low, high, cond) tuples for the symbol's 'range' properties. For
-      example, 'range 1 2 if A' is represented as (1, 2, A). If there is no
-      condition, 'cond' is self.kconfig.y.
-
-      Note that 'depends on' and parent dependencies are propagated to 'range'
-      conditions.
-
-      Gotcha: 1 and 2 above will be represented as (undefined) Symbols rather
-      than plain integers. Undefined symbols get their name as their string
-      value, so this works out. The C tools work the same way.
-
-    orig_defaults:
-    orig_selects:
-    orig_implies:
-    orig_ranges:
-      See the corresponding attributes on the MenuNode class.
-
-    rev_dep:
-      Reverse dependency expression from other symbols selecting this symbol.
-      Multiple selections get ORed together. A condition on a select is ANDed
-      with the selecting symbol.
-
-      For example, if A has 'select FOO' and B has 'select FOO if C', then
-      FOO's rev_dep will be (OR, A, (AND, B, C)).
-
-    weak_rev_dep:
-      Like rev_dep, for imply.
-
-    direct_dep:
-      The direct ('depends on') dependencies for the symbol, or self.kconfig.y
-      if there are no direct dependencies.
-
-      This attribute includes any dependencies from surrounding menus and ifs.
-      Those get propagated to the direct dependencies, and the resulting direct
-      dependencies in turn get propagated to the conditions of all properties.
-
-      If the symbol is defined in multiple locations, the dependencies from the
-      different locations get ORed together.
-
-    referenced:
-      A set() with all symbols and choices referenced in the properties and
-      property conditions of the symbol.
-
-      Also includes dependencies from surrounding menus and ifs, because those
-      get propagated to the symbol (see the 'Intro to symbol values' section in
-      the module docstring).
-
-      Choices appear in the dependencies of choice symbols.
-
-      For the following definitions, only B and not C appears in A's
-      'referenced'. To get transitive references, you'll have to recursively
-      expand 'references' until no new items appear.
-
-        config A
-                bool
-                depends on B
-
-        config B
-                bool
-                depends on C
-
-        config C
-                bool
-
-      See the Symbol.direct_dep attribute if you're only interested in the
-      direct dependencies of the symbol (its 'depends on'). You can extract the
-      symbols in it with the global expr_items() function.
-
-    is_allnoconfig_y:
-      True if the symbol has 'option allnoconfig_y' set on it. This has no
-      effect internally (except when printing symbols), but can be checked by
-      scripts.
-
-    is_constant:
-      True if the symbol is a constant (quoted) symbol.
-
-    kconfig:
-      The Kconfig instance this symbol is from.
     """
 
     __slots__ = (
@@ -3749,8 +3564,14 @@ class Symbol:
         Symbol constructor -- not intended to be called directly by Kconfiglib
         clients.
         """
+
         self.kconfig = kconfig
         self.name = name
+
+        """
+        is_constant:
+            True if the symbol is a constant (quoted) symbol.
+        """
         self.is_constant = is_constant
 
         if init_rest:
@@ -3761,28 +3582,117 @@ class Symbol:
         Because kconfig.y and kconfig.n are symbols as well, we can't initialize many of the attributes in the constructor.
         This method is called after the constructor to initialize the rest of the attributes.
         """
+
+        """
+        direct_dep:
+            The direct ('depends on') dependencies for the symbol, or self.kconfig.y
+            if there are no direct dependencies.
+
+            This attribute includes any dependencies from surrounding menus and ifs.
+            Those get propagated to the direct dependencies, and the resulting direct
+            dependencies in turn get propagated to the conditions of all properties.
+
+            If the symbol is defined in multiple locations, the dependencies from the
+            different locations get ORed together.
+        """
         self.direct_dep = self.kconfig.n
+
+        """
+        rev_dep:
+            Reverse dependency expression from other symbols selecting this symbol.
+            Multiple selections get ORed together. A condition on a select is ANDed
+            with the selecting symbol.
+
+            For example, if A has 'select FOO' and B has 'select FOO if C', then
+            FOO's rev_dep will be (OR, A, (AND, B, C)).
+        """
         self.rev_dep = self.kconfig.n
+
+        """
+        weak_rev_dep:
+            Like rev_dep, but for imply.
+        """
         self.weak_rev_dep = self.kconfig.n
 
+        """
+        orig_type:
+            The type as given in the Kconfig file, without any changes applied. Used
+            when printing the symbol.
+        """
         self.orig_type = UNKNOWN
 
+        """
+        env_var:
+            If the Symbol has an 'option env="FOO"' option, this contains the name
+            ("FOO") of the environment variable. None for symbols without no
+            'option env'.
+
+            'option env="FOO"' acts like a 'default' property whose value is the
+            value of $FOO.
+
+            Symbols with 'option env' are never written out to .config files, even if
+            they are visible. env_var corresponds to a flag called SYMBOL_AUTO in the
+            C implementation.
+        """
         self.env_var = None
 
         """
-        The name of the symbol, e.g. "FOO" for 'config FOO'.
+        nodes:
+            A list of MenuNodes for this symbol. Will contain a single MenuNode for
+            most symbols. Undefined and constant symbols have an empty nodes list.
+            Symbols defined in multiple locations get one node for each location.
         """
-        self.name = None
+        self.nodes = []
 
         """
-        The name of the symbol, e.g. "FOO" for 'config FOO'.
+        defaults:
+            List of (default, cond) tuples for the symbol's 'default' properties. For
+            example, 'default A && B if C || D' is represented as
+            ((AND, A, B), (OR, C, D)). If no condition was given, 'cond' is
+            self.kconfig.y.
+
+            Note that 'depends on' and parent dependencies are propagated to
+            'default' conditions.
         """
-        self.name = None
-        self.nodes = []
         self.defaults = []
+
+        """
+        selects:
+            List of (symbol, cond) tuples for the symbol's 'select' properties. For
+            example, 'select A if B && C' is represented as (A, (AND, B, C)). If no
+            condition was given, 'cond' is self.kconfig.y.
+
+            Note that 'depends on' and parent dependencies are propagated to 'select'
+            conditions.
+        """
         self.selects = []
+
+        """
+        implies:
+            Same as 'selects', but for 'imply' properties.
+        """
         self.implies = []
+
+        """
+        ranges:
+            List of (low, high, cond) tuples for the symbol's 'range' properties. For
+            example, 'range 1 2 if A' is represented as (1, 2, A). If there is no
+            condition, 'cond' is self.kconfig.y.
+
+            Note that 'depends on' and parent dependencies are propagated to 'range'
+            conditions.
+
+            Gotcha: 1 and 2 above will be represented as (undefined) Symbols rather
+            than plain integers. Undefined symbols get their name as their string
+            value, so this works out. The C tools work the same way.
+        """
         self.ranges = []
+
+        """
+        choice:
+            Holds the parent Choice for choice symbols, and None for non-choice
+            symbols. Doubles as a flag for whether a symbol is a choice symbol.
+        """
         self.choice = None
 
         """
@@ -3810,6 +3720,13 @@ class Symbol:
         # Symbol gets a .config entry.
         self._write_to_conf = False
 
+        """
+        is_allnoconfig_y:
+        True if the symbol has 'option allnoconfig_y' set on it. This has no
+        effect internally (except when printing symbols), but can be checked by
+        scripts.
+        TODO: Do we use this?
+        """
         self.is_allnoconfig_y = False
         self._was_set = False
 
@@ -3838,7 +3755,16 @@ class Symbol:
     @property
     def str_value(self):
         """
-        See the class documentation.
+        The value of the symbol as a string. Gives the value for string/int/hex
+        symbols. For bool/tristate symbols, gives "n", "m", or "y".
+
+        This is the symbol value that's used in relational expressions
+        (A = B, A != B, etc.)
+
+        Gotcha: For int/hex symbols, the exact format of the value is often
+        preserved (e.g. when writing a .config file), hence why you can't get it
+        directly as an int. Do int(int_sym.str_value) or
+        int(hex_sym.str_value, 16) to get the integer value.
         """
         if self._cached_str_val is not None:
             return self._cached_str_val
@@ -4049,7 +3975,39 @@ class Symbol:
     @property
     def assignable(self):
         """
-        See the class documentation.
+        A tuple containing the tristate user values that can currently be
+        assigned to the symbol (that would be respected), ordered from lowest (0,
+        representing n) to highest (2, representing y). This corresponds to the
+        selections available in the menuconfig interface. The set of assignable
+        values is calculated from the symbol's visibility and selects/implies.
+
+        Returns the empty set for non-bool/tristate symbols and for symbols with
+        visibility n. The other possible values are (0, 2), (0, 1, 2), (1, 2),
+        (1,), and (2,). A (1,) or (2,) result means the symbol is visible but
+        "locked" to m or y through a select, perhaps in combination with the
+        visibility. menuconfig represents this as -M- and -*-, respectively.
+
+        For string/hex/int symbols, check if Symbol.visibility is non-0 (non-n)
+        instead to determine if the value can be changed.
+
+        Some handy 'assignable' idioms:
+
+            # Is 'sym' an assignable (visible) bool/tristate symbol?
+            if sym.assignable:
+                # What's the highest value it can be assigned? [-1] in Python
+                # gives the last element.
+                sym_high = sym.assignable[-1]
+
+                # The lowest?
+                sym_low = sym.assignable[0]
+
+                # Can the symbol be set to at least m?
+                if sym.assignable[-1] >= 1:
+                    ...
+
+            # Can the symbol be set to m?
+            if 1 in sym.assignable:
+                ...
         """
         if self._cached_assignable is None:
             self._cached_assignable = self._assignable()
@@ -4068,7 +4026,31 @@ class Symbol:
     @property
     def config_string(self):
         """
-        See the class documentation.
+        The .config assignment string that would get written out for the symbol
+        by Kconfig.write_config(). Returns the empty string if no .config
+        assignment would get written out.
+
+        In general, visible symbols, symbols with (active) defaults, and selected
+        symbols get written out. This includes all non-n-valued bool/tristate
+        symbols, and all visible string/int/hex symbols.
+
+        Symbols with the (no longer needed) 'option env=...' option generate no
+        configuration output, and neither does the special
+        'option defconfig_list' symbol.
+
+        Tip: This field is useful when generating custom configuration output,
+        even for non-.config-like formats. To write just the symbols that would
+        get written out to .config files, do this:
+
+            if sym.config_string:
+                *Write symbol, e.g. by looking sym.str_value*
+
+        This is a superset of the symbols written out by write_autoconf().
+        That function skips all n-valued symbols.
+
+        There usually won't be any great harm in just writing all symbols either,
+        though you might get some special symbols and possibly some "redundant"
+        n-valued symbol entries in there.
         """
         # _write_to_conf is determined when the value is calculated. This is a
         # hidden function call due to property magic.
@@ -4092,7 +4074,12 @@ class Symbol:
     @property
     def name_and_loc(self):
         """
-        See the class documentation.
+        Holds a string like
+
+        "MY_SYMBOL (defined at foo/Kconfig:12, bar/Kconfig:14)"
+
+        , giving the name of the symbol and its definition location(s).
+        If the symbol is undefined, the location is given as "(undefined)".
         """
         return self.name + " " + _locs(self)
 
@@ -4106,9 +4093,9 @@ class Symbol:
         'assignable' will cause Symbol._user_value to differ from
         Symbol.str/tri_value (be truncated down or up).
 
-        Setting a choice symbol to 2 (y) sets Choice.user_selection to the
+        Setting a choice symbol to 2 (y) sets Choice._user_selection to the
         choice symbol in addition to setting Symbol._user_value.
-        Choice.user_selection is considered when the choice is in y mode (the
+        Choice._user_selection is considered when the choice is in y mode (the
         "normal" mode).
 
         Other symbols that depend (possibly indirectly) on this symbol are
@@ -4205,35 +4192,65 @@ class Symbol:
     @property
     def referenced(self):
         """
-        See the class documentation.
+        A set() with all symbols and choices referenced in the properties and
+        property conditions of the symbol.
+
+        Also includes dependencies from surrounding menus and ifs, because those
+        get propagated to the symbol (see the 'Intro to symbol values' section in
+        the module docstring).
+
+        Choices appear in the dependencies of choice symbols.
+
+        For the following definitions, only B and not C appears in A's
+        'referenced'. To get transitive references, you'll have to recursively
+        expand 'references' until no new items appear.
+
+            config A
+                    bool
+                    depends on B
+
+            config B
+                    bool
+                    depends on C
+
+            config C
+                    bool
+
+        See the Symbol.direct_dep attribute if you're only interested in the
+        direct dependencies of the symbol (its 'depends on'). You can extract the
+        symbols in it with the global expr_items() function.
         """
         return {item for node in self.nodes for item in node.referenced}
 
     @property
     def orig_defaults(self):
         """
-        See the class documentation.
+        Returns a list of all orig_defaults from all menunodes this symbol is part of.
+        See Menunode orig_* for more information.
         """
         return [d for node in self.nodes for d in node.orig_defaults]
 
     @property
     def orig_selects(self):
         """
-        See the class documentation.
+        Returns a list of all orig_selects from all menunodes this symbol is part of.
+        See Menunode orig_* for more information.
         """
         return [s for node in self.nodes for s in node.orig_selects]
 
     @property
     def orig_implies(self):
         """
-        See the class documentation.
+        Returns a list of all orig_implies from all menunodes this symbol is part of.
+        See Menunode orig_* for more information.
         """
         return [i for node in self.nodes for i in node.orig_implies]
 
     @property
     def orig_ranges(self):
         """
-        See the class documentation.
+        Returns a list of all orig_ranges from all menunodes this symbol is part of.
+        See Menunode orig_* for more information.
         """
         return [r for node in self.nodes for r in node.orig_ranges]
 
@@ -4492,150 +4509,9 @@ class Choice:
           ...
       endchoice
 
-    The following attributes are available on Choice instances. They should be
-    treated as read-only, and some are implemented through @property magic (but
-    are still efficient to access due to internal caching).
-
     Note: Prompts, help texts, and locations are stored in the Choice's
     MenuNode(s) rather than in the Choice itself. Check the MenuNode class and
     the Choice.nodes attribute. This organization matches the C tools.
-
-    type:
-      The type of the choice. One of BOOL, TRISTATE, UNKNOWN. UNKNOWN is for
-      choices defined without a type where none of the contained symbols have a
-      type either (otherwise the choice inherits the type of the first symbol
-      defined with a type).
-
-      When running without modules (CONFIG_MODULES=n), TRISTATE choices
-      magically change type to BOOL. This matches the C tools, and makes sense
-      for menuconfig-like functionality.
-
-    orig_type:
-      The type as given in the Kconfig file, without any magic applied. Used
-      when printing the choice.
-
-    tri_value:
-      The tristate value (mode) of the choice. A choice can be in one of three
-      modes:
-
-        0 (n) - The choice is disabled and no symbols can be selected. For
-                visible choices, this mode is only possible for choices with
-                the 'optional' flag set (see kconfig-language.txt).
-
-        1 (m) - Any number of choice symbols can be set to m, the rest will
-                be n.
-
-        2 (y) - One symbol will be y, the rest n.
-
-      Only tristate choices can be in m mode. The visibility of the choice is
-      an upper bound on the mode, and the mode in turn is an upper bound on the
-      visibility of the choice symbols.
-
-      To change the mode, use Choice.set_value().
-
-      Implementation note:
-        The C tools internally represent choices as a type of symbol, with
-        special-casing in many code paths. This is why there is a lot of
-        similarity to Symbol. The value (mode) of a choice is really just a
-        normal symbol value, and an implicit reverse dependency forces its
-        lower bound to m for visible non-optional choices (the reverse
-        dependency is 'm && <visibility>').
-
-        Symbols within choices get the choice propagated as a dependency to
-        their properties. This turns the mode of the choice into an upper bound
-        on e.g. the visibility of choice symbols, and explains the gotcha
-        related to printing choice symbols mentioned in the module docstring.
-
-        Kconfiglib uses a separate Choice class only because it makes the code
-        and interface less confusing (especially in a user-facing interface).
-        Corresponding attributes have the same name in the Symbol and Choice
-        classes, for consistency and compatibility.
-
-    str_value:
-      Like choice.tri_value, but gives the value as one of the strings
-      "n", "m", or "y"
-
-    user_value:
-      The value (mode) selected by the user through Choice.set_value(). Either
-      0, 1, or 2, or None if the user hasn't selected a mode. See
-      Symbol.user_value.
-
-      WARNING: Do not assign directly to this. It will break things. Use
-      Choice.set_value() instead.
-
-    assignable:
-      See the symbol class documentation. Gives the assignable values (modes).
-
-    selection:
-      The Symbol instance of the currently selected symbol. None if the Choice
-      is not in y mode or has no selected symbol (due to unsatisfied
-      dependencies on choice symbols).
-
-      WARNING: Do not assign directly to this. It will break things. Call
-      sym.set_value(2) on the choice symbol you want to select instead.
-
-    user_selection:
-      The symbol selected by the user (by setting it to y). Ignored if the
-      choice is not in y mode, but still remembered so that the choice "snaps
-      back" to the user selection if the mode is changed back to y. This might
-      differ from 'selection' due to unsatisfied dependencies.
-
-      WARNING: Do not assign directly to this. It will break things. Call
-      sym.set_value(2) on the choice symbol to be selected instead.
-
-    visibility:
-      See the Symbol class documentation. Acts on the value (mode).
-
-    name_and_loc:
-      Holds a string like
-
-        "<choice MY_CHOICE> (defined at foo/Kconfig:12)"
-
-      , giving the name of the choice and its definition location(s). If the
-      choice has no name (isn't defined with 'choice MY_CHOICE'), then it will
-      be shown as "<choice>" before the list of locations (always a single one
-      in that case).
-
-    syms:
-      List of symbols contained in the choice.
-
-      Obscure gotcha: If a symbol depends on the previous symbol within a
-      choice so that an implicit menu is created, it won't be a choice symbol,
-      and won't be included in 'syms'.
-
-    nodes:
-      A list of MenuNodes for this choice. In practice, the list will probably
-      always contain a single MenuNode, but it is possible to give a choice a
-      name and define it in multiple locations.
-
-    defaults:
-      List of (symbol, cond) tuples for the choice's 'defaults' properties. For
-      example, 'default A if B && C' is represented as (A, (AND, B, C)). If
-      there is no condition, 'cond' is self.kconfig.y.
-
-      Note that 'depends on' and parent dependencies are propagated to
-      'default' conditions.
-
-    orig_defaults:
-      See the corresponding attribute on the MenuNode class.
-
-    direct_dep:
-      See Symbol.direct_dep.
-
-    referenced:
-      A set() with all symbols referenced in the properties and property
-      conditions of the choice.
-
-      Also includes dependencies from surrounding menus and ifs, because those
-      get propagated to the choice (see the 'Intro to symbol values' section in
-      the module docstring).
-
-    is_optional:
-      True if the choice has the 'optional' flag set on it and can be in
-      n mode.
-
-    kconfig:
-      The Kconfig instance this choice is from.
     """
 
     __slots__ = (
@@ -4667,12 +4543,45 @@ class Choice:
         self.kconfig = kconfig
         self.name = name
 
+        """
+        Same as Symbol.direct_dep, but for the choice itself.
+        """
         self.direct_dep = direct_dep
 
+        """
+        orig_type:
+            The type as given in the Kconfig file, without any changes applied. Used
+            when printing the choice.
+        """
         self.orig_type = UNKNOWN
 
+        """
+        nodes:
+            A list of MenuNodes for this choice. In practice, the list will probably
+            always contain a single MenuNode, but it is possible to give a choice a
+            name and define it in multiple locations.
+        """
         self.nodes = []
+
+        """
+        syms:
+            List of symbols contained in the choice.
+
+            Obscure gotcha: If a symbol depends on the previous symbol within a
+            choice so that an implicit menu is created, it won't be a choice symbol,
+            and won't be included in 'syms'.
+        """
         self.syms = []
+
+        """
+        defaults:
+            List of (symbol, cond) tuples for the choice's 'defaults' properties. For
+            example, 'default A if B && C' is represented as (A, (AND, B, C)). If
+            there is no condition, 'cond' is self.kconfig.y.
+
+            Note that 'depends on' and parent dependencies are propagated to
+            'default' conditions.
+        """
         self.defaults = []
 
         """
@@ -4707,6 +4616,12 @@ class Choice:
         # is_constant is checked by _depend_on(). Just set it to avoid having
         # to special-case choices.
         self.is_constant = False
+
+        """
+        is_optional:
+            True if the choice has the 'optional' flag set on it and can be in
+            n mode.
+        """
         self.is_optional = False
 
         # See Kconfig._build_dep()
@@ -4715,7 +4630,14 @@ class Choice:
     @property
     def type(self):
         """
-        Returns the type of the choice. See Symbol.type.
+        The type of the choice. One of BOOL, TRISTATE, UNKNOWN. UNKNOWN is for
+        choices defined without a type where none of the contained symbols have a
+        type either (otherwise the choice inherits the type of the first symbol
+        defined with a type).
+
+        When running without modules (CONFIG_MODULES=n), TRISTATE choices
+        magically change type to BOOL. This matches the C tools, and makes sense
+        for menuconfig-like functionality.
         """
         if self.orig_type is TRISTATE and not self.kconfig.modules.tri_value:
             return BOOL
@@ -4724,14 +4646,49 @@ class Choice:
     @property
     def str_value(self):
         """
-        See the class documentation.
+        Like choice.tri_value, but gives the value as one of the strings
+        "n", "m", or "y"
         """
         return TRI_TO_STR[self.tri_value]
 
     @property
     def tri_value(self):
         """
-        See the class documentation.
+        The tristate value (mode) of the choice. A choice can be in one of three
+        modes:
+
+            0 (n) - The choice is disabled and no symbols can be selected. For
+                    visible choices, this mode is only possible for choices with
+                    the 'optional' flag set (see kconfig-language.txt).
+
+            1 (m) - Any number of choice symbols can be set to m, the rest will
+                    be n.
+
+            2 (y) - One symbol will be y, the rest n.
+
+        Only tristate choices can be in m mode. The visibility of the choice is
+        an upper bound on the mode, and the mode in turn is an upper bound on the
+        visibility of the choice symbols.
+
+        To change the mode, use Choice.set_value().
+
+        Implementation note:
+            The C tools internally represent choices as a type of symbol, with
+            special-casing in many code paths. This is why there is a lot of
+            similarity to Symbol. The value (mode) of a choice is really just a
+            normal symbol value, and an implicit reverse dependency forces its
+            lower bound to m for visible non-optional choices (the reverse
+            dependency is 'm && <visibility>').
+
+            Symbols within choices get the choice propagated as a dependency to
+            their properties. This turns the mode of the choice into an upper bound
+            on e.g. the visibility of choice symbols, and explains the gotcha
+            related to printing choice symbols mentioned in the module docstring.
+
+            Kconfiglib uses a separate Choice class only because it makes the code
+            and interface less confusing (especially in a user-facing interface).
+            Corresponding attributes have the same name in the Symbol and Choice
+            classes, for consistency and compatibility.
         """
         # This emulates a reverse dependency of 'm && visibility' for
         # non-optional choices, which is how the C implementation does it
@@ -4751,7 +4708,17 @@ class Choice:
     @property
     def assignable(self):
         """
-        See the class documentation.
+        A tuple containing the tristate user values that can currently be
+        assigned to the choice (that would be respected), ordered from lowest (0,
+        representing n) to highest (2, representing y). This corresponds to the
+        selections available in the menuconfig interface. The set of assignable
+        values is calculated from the choice's visibility and selects/implies.
+
+        Returns the empty set for non-bool/tristate choice and for choice with
+        visibility n. The other possible values are (0, 2), (0, 1, 2), (1, 2),
+        (1,), and (2,). A (1,) or (2,) result means the choice is visible but
+        "locked" to m or y through a select, perhaps in combination with the
+        visibility. menuconfig represents this as -M- and -*-, respectively.
         """
         if self._cached_assignable is None:
             self._cached_assignable = self._assignable()
@@ -4760,7 +4727,8 @@ class Choice:
     @property
     def visibility(self):
         """
-        See the class documentation.
+        The visibility of the choice. One of 0, 1, 2, representing n, m, y. See
+        the module documentation for an overview of symbol values and visibility.
         """
         if self._cached_vis is None:
             self._cached_vis = _visibility(self)
@@ -4769,7 +4737,14 @@ class Choice:
     @property
     def name_and_loc(self):
         """
-        See the class documentation.
+        Holds a string like
+
+            "<choice MY_CHOICE> (defined at foo/Kconfig:12)"
+
+        , giving the name of the choice and its definition location(s). If the
+        choice has no name (isn't defined with 'choice MY_CHOICE'), then it will
+        be shown as "<choice>" before the list of locations (always a single one
+        in that case)..
         """
         # Reuse the expression format, which is '<choice (name, if any)>'.
         return standard_sc_expr_str(self) + " " + _locs(self)
@@ -4777,7 +4752,12 @@ class Choice:
     @property
     def selection(self):
         """
-        See the class documentation.
+        The Symbol instance of the currently selected symbol. None if the Choice
+        is not in y mode or has no selected symbol (due to unsatisfied
+        dependencies on choice symbols).
+
+        WARNING: Do not assign directly to this. It will break things. Call
+        sym.set_value(2) on the choice symbol you want to select instead.
         """
         if self._cached_selection is _NO_CACHED_SELECTION:
             self._cached_selection = self._selection()
@@ -4869,10 +4849,10 @@ class Choice:
         if self.selection:
             add(f"{self.selection.name} selected")
 
-        if self.user_selection:
-            user_sel_str = f"{self.user_selection.name} selected by user"
+        if self._user_selection:
+            user_sel_str = f"{self._user_selection.name} selected by user"
 
-            if self.selection is not self.user_selection:
+            if self.selection is not self._user_selection:
                 user_sel_str += " (overridden)"
 
             add(user_sel_str)
@@ -4988,130 +4968,6 @@ class MenuNode:
 
     The following attributes are available on MenuNode instances. They should
     be viewed as read-only.
-
-    item:
-      Either a Symbol, a Choice, or one of the constants MENU and COMMENT.
-      Menus and comments are represented as plain menu nodes. Ifs are collapsed
-      (matching the C implementation) and do not appear in the final menu tree.
-
-    next:
-      The following menu node. None if there is no following node.
-
-    list:
-      The first child menu node. None if there are no children.
-
-      Choices and menus naturally have children, but Symbols can also have
-      children because of menus created automatically from dependencies (see
-      kconfig-language.txt).
-
-    parent:
-      The parent menu node. None if there is no parent.
-
-    prompt:
-      A (string, cond) tuple with the prompt for the menu node and its
-      conditional expression (which is self.kconfig.y if there is no
-      condition). None if there is no prompt.
-
-      For symbols and choices, the prompt is stored in the MenuNode rather than
-      the Symbol or Choice instance. For menus and comments, the prompt holds
-      the text.
-
-    defaults:
-      The 'default' properties for this particular menu node. See
-      symbol.defaults.
-
-      When evaluating defaults, you should use Symbol/Choice.defaults instead,
-      as it include properties from all menu nodes (a symbol/choice can have
-      multiple definition locations/menu nodes). MenuNode.defaults is meant for
-      documentation generation.
-
-    selects:
-      Like MenuNode.defaults, for selects.
-
-    implies:
-      Like MenuNode.defaults, for implies.
-
-    ranges:
-      Like MenuNode.defaults, for ranges.
-
-    orig_prompt:
-    orig_defaults:
-    orig_selects:
-    orig_implies:
-    orig_ranges:
-      These work the like the corresponding attributes without orig_*, but omit
-      any dependencies propagated from 'depends on' and surrounding 'if's (the
-      direct dependencies, stored in MenuNode.dep).
-
-      One use for this is generating less cluttered documentation, by only
-      showing the direct dependencies in one place.
-
-    help:
-      The help text for the menu node for Symbols and Choices. None if there is
-      no help text. Always stored in the node rather than the Symbol or Choice.
-      It is possible to have a separate help text at each location if a symbol
-      is defined in multiple locations.
-
-      Trailing whitespace (including a final newline) is stripped from the help
-      text. This was not the case before Kconfiglib 10.21.0, where the format
-      was undocumented.
-
-    dep:
-      The direct ('depends on') dependencies for the menu node, or
-      self.kconfig.y if there are no direct dependencies.
-
-      This attribute includes any dependencies from surrounding menus and ifs.
-      Those get propagated to the direct dependencies, and the resulting direct
-      dependencies in turn get propagated to the conditions of all properties.
-
-      If a symbol or choice is defined in multiple locations, only the
-      properties defined at a particular location get the corresponding
-      MenuNode.dep dependencies propagated to them.
-
-    visibility:
-      The 'visible if' dependencies for the menu node (which must represent a
-      menu), or self.kconfig.y if there are no 'visible if' dependencies.
-      'visible if' dependencies are recursively propagated to the prompts of
-      symbols and choices within the menu.
-
-    referenced:
-      A set() with all symbols and choices referenced in the properties and
-      property conditions of the menu node.
-
-      Also includes dependencies inherited from surrounding menus and ifs.
-      Choices appear in the dependencies of choice symbols.
-
-    is_menuconfig:
-      Set to True if the children of the menu node should be displayed in a
-      separate menu. This is the case for the following items:
-
-        - Menus (node.item == MENU)
-
-        - Choices
-
-        - Symbols defined with the 'menuconfig' keyword. The children come from
-          implicitly created submenus, and should be displayed in a separate
-          menu rather than being indented.
-
-      'is_menuconfig' is just a hint on how to display the menu node. It's
-      ignored internally by Kconfiglib, except when printing symbols.
-
-    filename/linenr:
-      The location where the menu node appears. The filename is relative to
-      $srctree (or to the current directory if $srctree isn't set), except
-      absolute paths are used for paths outside $srctree.
-
-    include_path:
-      A tuple of (filename, linenr) tuples, giving the locations of the
-      'source' statements via which the Kconfig file containing this menu node
-      was included. The first element is the location of the 'source' statement
-      in the top-level Kconfig file passed to Kconfig.__init__(), etc.
-
-      Note that the Kconfig file of the menu node itself isn't included. Check
-      'filename' and 'linenr' for that.
-
-    kconfig:
-      The Kconfig instance the menu node is from.
     """
 
     __slots__ = (
@@ -5165,34 +5021,172 @@ class MenuNode:
         # only applies to these, in case a symbol is defined in multiple
         # locations.
         self.kconfig = kconfig
+
+        """
+        item:
+            Either a Symbol, a Choice, or one of the constants MENU and COMMENT.
+            Menus and comments are represented as plain menu nodes. Ifs are collapsed
+            (matching the C implementation) and do not appear in the final menu tree.
+        """
         self.item = item
+
+        """
+        is_menuconfig:
+            Set to True if the children of the menu node should be displayed in a
+            separate menu. This is the case for the following items:
+
+                - Menus (node.item == MENU)
+
+                - Choices
+
+                - Symbols defined with the 'menuconfig' keyword. The children come from
+                implicitly created submenus, and should be displayed in a separate
+                menu rather than being indented.
+
+            'is_menuconfig' is just a hint on how to display the menu node. It's
+            ignored internally by Kconfiglib, except when printing symbols.
+        """
         self.is_menuconfig = is_menuconfig
+
+        """
+        filename/linenr:
+            The location where the menu node appears. The filename is relative to
+            $srctree (or to the current directory if $srctree isn't set), except
+            absolute paths are used for paths outside $srctree.
+        """
         self.filename = filename
         self.linenr = linenr
+
+        """
+        dep:
+            The direct ('depends on') dependencies for the menu node, or
+            self.kconfig.y if there are no direct dependencies.
+
+            This attribute includes any dependencies from surrounding menus and ifs.
+            Those get propagated to the direct dependencies, and the resulting direct
+            dependencies in turn get propagated to the conditions of all properties.
+
+            If a symbol or choice is defined in multiple locations, only the
+            properties defined at a particular location get the corresponding
+            MenuNode.dep dependencies propagated to them.
+        """
         self.dep = dep or kconfig.y
+
+        """
+        visibility:
+            The 'visible if' dependencies for the menu node (which must represent a
+            menu), or self.kconfig.y if there are no 'visible if' dependencies.
+            'visible if' dependencies are recursively propagated to the prompts of
+            symbols and choices within the menu.
+        """
         self.visibility = visibility or kconfig.y
+
+        """
+        include_path:
+            A tuple of (filename, linenr) tuples, giving the locations of the
+            'source' statements via which the Kconfig file containing this menu node
+            was included. The first element is the location of the 'source' statement
+            in the top-level Kconfig file passed to Kconfig.__init__(), etc.
+
+            Note that the Kconfig file of the menu node itself isn't included. Check
+            'filename' and 'linenr' for that.
+            TODO: Is it used anywhere both in old and new code?
+        """
         self.include_path = kconfig._include_path
 
         # Menu tree related properties
+        """
+        list:
+            The first child menu node. None if there are no children.
+
+            Choices and menus naturally have children, but Symbols can also have
+            children because of menus created automatically from dependencies (see
+            kconfig-language.txt). The children of a symbol are the menu nodes
+        """
         self.list = None
+
+        """
+        next:
+            The following menu node. None if there is no following node.
+        """
         self.next = None
+
+        """
+        parent:
+            The parent menu node. None if there is no parent.
+        """
         self.parent = parent
 
         # Properties of the item that needs to be stored in MenuNode.
         # e.g. Symbol can be defined in two different locations with two different help texts
         # We want to have track of both help texts together with the location -> this is better obtained
         # from MenuNode than item/Symbol.
+
+        """
+        prompt:
+            A (string, cond) tuple with the prompt for the menu node and its
+            conditional expression (which is self.kconfig.y if there is no
+            condition). None if there is no prompt.
+
+            For symbols and choices, the prompt is stored in the MenuNode rather than
+            the Symbol or Choice instance. For menus and comments, the prompt holds
+            the text.
+        """
         self.prompt = prompt
+
+        """
+        help:
+            The help text for the menu node for Symbols and Choices. None if there is
+            no help text. Always stored in the node rather than the Symbol or Choice.
+            It is possible to have a separate help text at each location if a symbol
+            is defined in multiple locations.
+
+            Trailing whitespace (including a final newline) is stripped from the help
+            text. This was not the case before Kconfiglib 10.21.0, where the format
+            was undocumented.
+        """
         self.help = help
+
+        """
+        defaults:
+            The 'default' properties for this particular menu node. See
+            symbol.defaults.
+
+            When evaluating defaults, you should use Symbol/Choice.defaults instead,
+            as it include properties from all menu nodes (a symbol/choice can have
+            multiple definition locations/menu nodes). MenuNode.defaults is meant for
+            documentation generation.
+        """
         self.defaults = []
+
+        """
+        selects:
+            Like MenuNode.defaults, for selects.
+        """
         self.selects = []
+
+        """
+        implies:
+            Like MenuNode.defaults, for implies.
+        """
         self.implies = []
+
+        """
+        ranges:
+            Like MenuNode.defaults, for ranges.
+        """
         self.ranges = []
 
     @property
     def orig_prompt(self):
         """
-        See the class documentation.
+        orig_prompt:
+          It works the like the corresponding attribute without orig_*, but omits
+          any dependencies propagated from 'depends on' and surrounding 'if's (the
+          direct dependencies, stored in MenuNode.dep).
+
+          One use for this is generating less cluttered documentation, by only
+          showing the direct dependencies in one place.
         """
         if not self.prompt:
             return None
@@ -5201,35 +5195,63 @@ class MenuNode:
     @property
     def orig_defaults(self):
         """
-        See the class documentation.
+        orig_defaults:
+          It works the like the corresponding attribute without orig_*, but omits
+          any dependencies propagated from 'depends on' and surrounding 'if's (the
+          direct dependencies, stored in MenuNode.dep).
+
+          One use for this is generating less cluttered documentation, by only
+          showing the direct dependencies in one place.
         """
         return [(default, self._strip_dep(cond)) for default, cond in self.defaults]
 
     @property
     def orig_selects(self):
         """
-        See the class documentation.
+        orig_selects:
+          It works the like the corresponding attribute without orig_*, but omits
+          any dependencies propagated from 'depends on' and surrounding 'if's (the
+          direct dependencies, stored in MenuNode.dep).
+
+          One use for this is generating less cluttered documentation, by only
+          showing the direct dependencies in one place.
         """
         return [(select, self._strip_dep(cond)) for select, cond in self.selects]
 
     @property
     def orig_implies(self):
         """
-        See the class documentation.
+        orig_implies:
+          It works the like the corresponding attribute without orig_*, but omits
+          any dependencies propagated from 'depends on' and surrounding 'if's (the
+          direct dependencies, stored in MenuNode.dep).
+
+          One use for this is generating less cluttered documentation, by only
+          showing the direct dependencies in one place.
         """
         return [(imply, self._strip_dep(cond)) for imply, cond in self.implies]
 
     @property
     def orig_ranges(self):
         """
-        See the class documentation.
+        orig_ranges:
+          It works the like the corresponding attribute without orig_*, but omits
+          any dependencies propagated from 'depends on' and surrounding 'if's (the
+          direct dependencies, stored in MenuNode.dep).
+
+          One use for this is generating less cluttered documentation, by only
+          showing the direct dependencies in one place.
         """
         return [(low, high, self._strip_dep(cond)) for low, high, cond in self.ranges]
 
     @property
     def referenced(self):
         """
-        See the class documentation.
+        A set() with all symbols and choices referenced in the properties and
+        property conditions of the menu node.
+
+        Also includes dependencies inherited from surrounding menus and ifs.
+        Choices appear in the dependencies of choice symbols.
         """
         # self.dep is included to catch dependencies from a lone 'depends on'
         # when there are no properties to propagate it to
@@ -5766,7 +5788,7 @@ def standard_kconfig(description=None):
 
     parsed_args = parser.parse_args()
 
-    # Temporary parser version selection voia envvar. After the refactor,
+    # Temporary parser version selection via envvar. After the refactor,
     # there would be a dedicated option for this.
     try:
         parser_version = int(os.environ.get("KCONFIG_PARSER_VERSION", "1"))
