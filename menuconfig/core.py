@@ -804,15 +804,15 @@ def _needs_save():
         return True
 
     for sym in _kconf.unique_defined_syms:
-        if sym.user_value is None:
+        if sym._user_value is None:
             if sym.config_string:
                 # Unwritten symbol
                 return True
         elif sym.orig_type in (BOOL, TRISTATE):
-            if sym.tri_value != sym.user_value:
+            if sym.tri_value != sym._user_value:
                 # Written bool/tristate symbol, new value
                 return True
-        elif sym.str_value != sym.user_value:
+        elif sym.str_value != sym._user_value:
             # Written string/int/hex symbol, new value
             return True
 
@@ -3012,7 +3012,7 @@ def _node_str(node):
             # Print "(NEW)" next to symbols without a user value (from e.g. a
             # .config), but skip it for choice symbols in choices in y mode,
             # and for symbols of UNKNOWN type (which generate a warning though)
-            if sym.user_value is None and sym.orig_type and not (sym.choice and sym.choice.tri_value == 2):
+            if sym._user_value is None and sym.orig_type and not (sym.choice and sym.choice.tri_value == 2):
                 s += " (NEW)"
 
     if isinstance(node.item, Choice) and node.item.tri_value == 2:
