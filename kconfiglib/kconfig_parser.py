@@ -84,12 +84,12 @@ class Parser:
     def get_children(self, parent: MenuNode, location: Tuple[str, int]) -> None:
         if not self.orphans:
             return
-        orphans_for_adoption = []
+        orphans_for_adoption: List[MenuNode] = []
         while self.orphans:
             adopted = False
             for file, start in self.orphans[-1].locations:
                 if file == location[0] and location[1] < start:
-                    orphan = self.orphans.pop().node
+                    orphan: MenuNode = self.orphans.pop().node
                     orphan.parent = parent
                     orphans_for_adoption.append(orphan)
                     adopted = True
@@ -121,16 +121,13 @@ class Parser:
         sym = self.kconfig._lookup_sym(parsed_config[1])
         self.kconfig.defined_syms.append(sym)
 
-        node = MenuNode()
-        node.kconfig = self.kconfig
-        node.item = sym
-        node.is_menuconfig = parsed_config[0] == "menuconfig"
-        node.filename = self.file_stack[-1]
-        node.linenr = lineno(loc, s)
-        node.include_path = self.kconfig._include_path
-        node.prompt = None
-        node.help = ""
-        node.visibility = self.kconfig.y
+        node = MenuNode(
+            kconfig=self.kconfig,
+            item=sym,
+            is_menuconfig=parsed_config[0] == "menuconfig",
+            filename=self.file_stack[-1],
+            linenr=lineno(loc, s),
+        )
 
         sym.nodes.append(node)
         self.parse_options(node, parsed_config)
@@ -143,19 +140,12 @@ class Parser:
         self.orphans.append(orphan)
 
     def parse_menu(self, s: str, loc: int, parsed_menu: ParseResults) -> None:
-        menunode = MenuNode()
-        menunode.kconfig = self.kconfig
-        menunode.item = MENU
-        # NOTE: it means its children should be presented in a separate window/menu (true for menu(config) and choice)
-        menunode.is_menuconfig = True
+        menunode = MenuNode(
+            kconfig=self.kconfig, item=MENU, is_menuconfig=True, filename=self.file_stack[-1], linenr=lineno(loc, s)
+        )
 
         #                    menu name     condition = always true for menu
         menunode.prompt = (parsed_menu[1], self.kconfig.y)
-        menunode.visibility = self.kconfig.y
-        menunode.filename = self.file_stack[-1]
-        menunode.linenr = lineno(loc, s)
-        menunode.include_path = self.kconfig._include_path
-        menunode.dep = self.kconfig.y
 
         if parsed_menu.menu_opts:
             menu_options = parsed_menu.menu_opts
@@ -164,11 +154,6 @@ class Parser:
                     expr = self.parse_expression(depend.as_list() if isinstance(depend, ParseResults) else depend)
                     menunode.dep = self.kconfig._make_and(menunode.dep, expr)
             if menu_options.visible_if:  # visible if
-                # visible_expr: Union[str, List] = (
-                # )
-                #                visible_expr = self.infix_to_prefix(visible_expr)  # mypy: ignore
-                # visible_expr = self.kconfigize_expr(visible_expr)  # mypy: ignore
-
                 menunode.visibility = self.kconfig._make_and(
                     menunode.visibility,
                     self.parse_expression(
@@ -212,6 +197,8 @@ class Parser:
 
         for filename in filenames:
             self.location_stack.append((self.file_stack[-1], lineno(loc, s)))
+            if filename in self.file_stack:
+                raise KconfigError(f"{self.file_stack[-1]}:{lineno(loc, s)}: Recursive source of '{filename}' detected")
             self.file_stack.append(filename)
             KconfigGrammar(self)(filename, sourced=True)
             self.file_stack.pop()
@@ -222,26 +209,17 @@ class Parser:
         if parsed_choice.name:
             choice = self.kconfig.named_choices.get(parsed_choice.name)
             if not choice:
-                choice = Choice()
-                choice.name = parsed_choice.name
-                choice.direct_dep = self.kconfig.n
+                choice = Choice(kconfig=self.kconfig, name=parsed_choice.name, direct_dep=self.kconfig.n)
                 self.kconfig.named_choices[parsed_choice.name] = choice
-        else:
-            choice = Choice()
-            choice.direct_dep = self.kconfig.n
+        else:  # nameless choice
+            choice = Choice(kconfig=self.kconfig, name=None, direct_dep=self.kconfig.n)
         self.kconfig.choices.append(choice)
         self.kconfig._set_type(choice, BOOL)  # NOTE: tristate will be removed, so there is no need to support it
+        choice.kconfig = self.kconfig
 
-        node = MenuNode()
-        node.kconfig = choice.kconfig = self.kconfig
-        node.item = choice
-        node.is_menuconfig = True
-        node.prompt = node.help = None
-        node.filename = self.file_stack[-1]
-        node.linenr = line_number
-        node.include_path = self.kconfig._include_path
-        node.visibility = self.kconfig.y
-        node.dep = self.kconfig.y
+        node = MenuNode(
+            kconfig=self.kconfig, item=choice, is_menuconfig=True, filename=self.file_stack[-1], linenr=line_number
+        )
         choice.nodes.append(node)
 
         self.parse_options(node, parsed_choice)
@@ -254,7 +232,7 @@ class Parser:
         child = node.list
         children_with_default = []
         while child:
-            if not isinstance(child.item, int) and child.item.defaults:
+            if not isinstance(child.item, int) and child.item and child.item.defaults:
                 children_with_default.append(child)
                 break
             else:
@@ -262,7 +240,7 @@ class Parser:
 
         for child in children_with_default:
             self.kconfig._warn(
-                f"default on the choice symbol {child.item.name} (defined at {self.file_stack[-1]}:{child.linenr}) will have no effect, as defaults do not affect choice symbols"
+                f"default on the choice symbol {child.item.name if isinstance(child.item, (Symbol, Choice)) else child.item} (defined at {self.file_stack[-1]}:{child.linenr}) will have no effect, as defaults do not affect choice symbols"
             )
 
         orphan = Orphan(
@@ -273,17 +251,9 @@ class Parser:
         self.orphans.append(orphan)
 
     def parse_comment(self, s: str, loc: int, parsed_comment: ParseResults) -> None:
-        node = MenuNode()
-        node.kconfig = self.kconfig
-        node.item = COMMENT
-        node.is_menuconfig = False
-        node.list = None
-        node.filename = self.file_stack[-1]
-        node.linenr = lineno(loc, s)
-        node.include_path = self.kconfig._include_path
-        node.visibility = self.kconfig.y
-        node.dep = self.kconfig.y
-
+        node = MenuNode(
+            kconfig=self.kconfig, item=COMMENT, is_menuconfig=False, filename=self.file_stack[-1], linenr=lineno(loc, s)
+        )
         self.kconfig.comments.append(node)
         self.parse_prompt(node, [parsed_comment[1]])
         orphan = Orphan(
@@ -315,9 +285,7 @@ class Parser:
         parsed_if_entry = located_if_entry
         expression = self.parse_expression(parsed_if_entry[0])
 
-        node = MenuNode()
-        node.item = None
-        node.prompt = None
+        node = MenuNode(kconfig=self.kconfig, item=None)
         node.dep = expression  # type: ignore
 
         self.get_children(node, (self.file_stack[-1], lineno(loc, s)))
@@ -390,8 +358,6 @@ class Parser:
                 sym = self.kconfigize_expr(select[0])
                 if len(select) > 1:
                     expr = self.parse_expression(select[1].as_list())
-                    # expr = self.infix_to_prefix(select[1].as_list())
-                    # expr = self.kconfigize_expr(expr)
                     node.selects.append((sym, expr))
                 else:
                     node.selects.append((sym, self.kconfig.y))

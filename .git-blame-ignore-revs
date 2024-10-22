@@ -6,3 +6,9 @@ b0086a6ff55f13f8a06e39a0bf1d436b0b184571
 
 # Reformatting strings, removing Py2 support
 320a188c811a559c23a928a403846d6455a84fca
+
+# Refactor class initializers
+aaf88c71d761a8e7652de1226a74ac596cd8e589
+
+# Moving docstring to the corresponding attributes
+a063b13da3231e91d1a1bb5c917efda1cf62e4ed
