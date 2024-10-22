@@ -241,7 +241,7 @@ class DeprecatedOptions(object):
 
     def append_header(self, config: kconfiglib.Kconfig, path_output: str) -> None:
         def _opt_defined(opt):
-            if opt.orig_type in (kconfiglib.BOOL, kconfiglib.TRISTATE) and opt.str_value != "n":
+            if opt.orig_type == kconfiglib.BOOL and opt.str_value != "n":
                 opt_defined = True
             elif opt.orig_type in (kconfiglib.INT, kconfiglib.STRING, kconfiglib.HEX) and opt.str_value != "":
                 opt_defined = True
@@ -405,7 +405,7 @@ def write_cmake(deprecated_options: DeprecatedOptions, config: kconfiglib.Kconfi
 
             if sym.config_string:
                 val = sym.str_value
-                if sym.orig_type in (kconfiglib.BOOL, kconfiglib.TRISTATE) and val == "n":
+                if sym.orig_type == kconfiglib.BOOL and val == "n":
                     val = ""  # write unset values as empty variables
                 elif sym.orig_type == kconfiglib.STRING:
                     val = kconfiglib.escape(val)
@@ -416,10 +416,7 @@ def write_cmake(deprecated_options: DeprecatedOptions, config: kconfiglib.Kconfi
                 configs_list.append(prefix + sym.name)
                 dep_opts = deprecated_options.get_deprecated_option(sym.name)
                 for opt in dep_opts:
-                    if deprecated_options.is_inversion(opt) and sym.orig_type in (
-                        kconfiglib.BOOL,
-                        kconfiglib.TRISTATE,
-                    ):
+                    if deprecated_options.is_inversion(opt) and sym.orig_type == kconfiglib.BOOL:
                         val = "y" if not val else ""
                     tmp_dep_list.append('set({}{} "{}")\n'.format(prefix, opt, val))
                     configs_list.append(prefix + opt)
@@ -452,7 +449,7 @@ def get_json_values(config: kconfiglib.Kconfig) -> dict:
                     " This can be caused e.g. by missing default value for the current chip version."
                 )
                 val = None
-            elif sym.type in [kconfiglib.BOOL, kconfiglib.TRISTATE]:
+            elif sym.type == kconfiglib.BOOL:
                 val = val != "n"
             elif sym.type == kconfiglib.HEX:
                 val = int(val, 16)

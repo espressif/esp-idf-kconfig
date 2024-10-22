@@ -34,7 +34,6 @@ from .core import NOT
 from .core import OR
 from .core import STRING
 from .core import Symbol
-from .core import TRISTATE
 from .core import UNEQUAL
 from kconfiglib.kconfig_grammar import KconfigGrammar
 
@@ -214,7 +213,7 @@ class Parser:
         else:  # nameless choice
             choice = Choice(kconfig=self.kconfig, name=None, direct_dep=self.kconfig.n)
         self.kconfig.choices.append(choice)
-        self.kconfig._set_type(choice, BOOL)  # NOTE: tristate will be removed, so there is no need to support it
+        self.kconfig._set_type(choice, BOOL)
         choice.kconfig = self.kconfig
 
         node = MenuNode(
@@ -276,6 +275,11 @@ class Parser:
         if node.prompt:
             self.kconfig._warn(node.item.name_and_loc + " defined with multiple prompts in single location")  # type: ignore
         prompt_str = prompt[0]
+
+        if prompt_str != prompt_str.strip():
+            self.kconfig._warn(node.item.name_and_loc + " has leading or trailing whitespace in its prompt")  # type: ignore
+            prompt_str = prompt_str.strip()
+
         condition: Union["Symbol", str, Tuple] = self.kconfig.y
         if len(prompt) > 1:
             condition = self.parse_expression(prompt[1].as_list())
@@ -494,7 +498,6 @@ class Parser:
     # NOTE: in the future, make e.g. "constants.py" file and move the constants form core and parser there
     str_to_kconfig_type = {
         "bool": BOOL,
-        "tristate": TRISTATE,
         "string": STRING,
         "int": INT,
         "hex": HEX,
