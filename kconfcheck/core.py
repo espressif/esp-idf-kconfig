@@ -39,9 +39,7 @@ class InputError(RuntimeError):
     """
 
     def __init__(self, path, line_number, error_msg, suggested_line):
-        super(InputError, self).__init__(
-            "{}:{}: {}".format(path, line_number, error_msg)
-        )
+        super(InputError, self).__init__("{}:{}: {}".format(path, line_number, error_msg))
         self.suggested_line = suggested_line
 
 
@@ -86,9 +84,7 @@ class SourceChecker(BaseChecker):
                     self.path_in_idf,
                     line_number,
                     "only filenames starting with Kconfig.* can be sourced",
-                    line.replace(
-                        path, os.path.join(os.path.dirname(path), "Kconfig." + filename)
-                    ),
+                    line.replace(path, os.path.join(os.path.dirname(path), "Kconfig." + filename)),
                 )
 
 
@@ -205,12 +201,8 @@ class IndentAndNameChecker(BaseChecker):
         # Quoted symbols are "y"/"n", env_vars or string literals; the last two categories can contain anyhting between the quotes, thus it is broader.
         symbol = r"\w+|\".+?\"|'.+?'"
         reg_prompt = re.compile(r"^\".*?\"\s+(?:if)\s+(?P<expression0>.*)$")
-        reg_default = re.compile(
-            r"^(?P<expression0>.*)\s+(?:if)\s+(?P<expression1>.*)$"
-        )
-        reg_select_imply = re.compile(
-            rf"^(?P<expression0>{symbol})\s+(?:if)\s+(?P<expression1>.*)$"
-        )
+        reg_default = re.compile(r"^(?P<expression0>.*)\s+(?:if)\s+(?P<expression1>.*)$")
+        reg_select_imply = re.compile(rf"^(?P<expression0>{symbol})\s+(?:if)\s+(?P<expression1>.*)$")
         reg_range = re.compile(
             rf"^(?P<expression0>{symbol})\s+(?P<expression1>{symbol})\s+(?:if)\s+(?P<expression2>.*)$"
         )
@@ -241,9 +233,7 @@ class IndentAndNameChecker(BaseChecker):
         if len(self.prefix_stack) != 0:
             if self.debug:
                 print(self.prefix_stack)
-            raise RuntimeError(
-                "Prefix stack should be empty. Perhaps a menu/choice hasn't been closed"
-            )
+            raise RuntimeError("Prefix stack should be empty. Perhaps a menu/choice hasn't been closed")
 
     def del_from_level_stack(self, count):
         """delete count items from the end of the level_stack"""
@@ -309,9 +299,7 @@ class IndentAndNameChecker(BaseChecker):
         line_with_symbols = self.reg_switch.match(line)
 
         if line_with_symbols:
-            expressions = self.kw_to_regex[line_with_symbols.group("keyword")].match(
-                line_with_symbols.group("body")
-            )
+            expressions = self.kw_to_regex[line_with_symbols.group("keyword")].match(line_with_symbols.group("body"))
             if expressions:
                 for k in expressions.groupdict().keys():
                     symbols = self.reg_symbol.findall(expressions.groupdict()[k])
@@ -349,9 +337,7 @@ class IndentAndNameChecker(BaseChecker):
                 self.prefix_stack[-1] = name
             else:
                 # this has nothing common with paths but the algorithm can be used for this also
-                self.prefix_stack[-1] = os.path.commonprefix(
-                    [self.prefix_stack[-1], name]
-                )
+                self.prefix_stack[-1] = os.path.commonprefix([self.prefix_stack[-1], name])
             if self.debug:
                 print("prefix+", self.prefix_stack)
         m = self.re_new_stack.search(line)
@@ -423,9 +409,7 @@ class IndentAndNameChecker(BaseChecker):
                 raise InputError(
                     self.path_in_idf,
                     line_number,
-                    "Indentation consists of {} spaces instead of {}".format(
-                        current_indent, self.force_next_indent
-                    ),
+                    "Indentation consists of {} spaces instead of {}".format(current_indent, self.force_next_indent),
                     (" " * self.force_next_indent) + line.lstrip(),
                 )
             else:
@@ -433,9 +417,7 @@ class IndentAndNameChecker(BaseChecker):
                     self.force_next_indent = 0
                 return
 
-        elif stripped_line.endswith("\\") and stripped_line.startswith(
-            ("config", "menuconfig", "choice")
-        ):
+        elif stripped_line.endswith("\\") and stripped_line.startswith(("config", "menuconfig", "choice")):
             raise InputError(
                 self.path_in_idf,
                 line_number,
@@ -472,9 +454,7 @@ class IndentAndNameChecker(BaseChecker):
             raise InputError(
                 self.path_in_idf,
                 line_number,
-                "Indentation consists of {} spaces instead of {}".format(
-                    current_indent, expected_indent
-                ),
+                "Indentation consists of {} spaces instead of {}".format(current_indent, expected_indent),
                 (" " * expected_indent) + line.lstrip(),
             )
 
@@ -493,9 +473,7 @@ def validate_kconfig_file(kconfig_full_path, verbose=False):  # type: (str, bool
         suggestions_full_path, "w", encoding="utf-8", newline="\n"
     ) as f_o, LineRuleChecker(kconfig_full_path) as line_checker, SourceChecker(
         kconfig_full_path
-    ) as source_checker, IndentAndNameChecker(
-        kconfig_full_path, debug=verbose
-    ) as indent_and_name_checker:
+    ) as source_checker, IndentAndNameChecker(kconfig_full_path, debug=verbose) as indent_and_name_checker:
         try:
             for line_number, line in enumerate(f, start=1):
                 try:
@@ -513,9 +491,7 @@ def validate_kconfig_file(kconfig_full_path, verbose=False):  # type: (str, bool
                     fail = True
                     f_o.write(e.suggested_line)
         except UnicodeDecodeError:
-            raise ValueError(
-                "The encoding of {} is not Unicode.".format(kconfig_full_path)
-            )
+            raise ValueError("The encoding of {} is not Unicode.".format(kconfig_full_path))
 
     if fail:
         print(
@@ -525,8 +501,9 @@ def validate_kconfig_file(kconfig_full_path, verbose=False):  # type: (str, bool
             "for solving all issues".format(suggestions_full_path)
         )
         print(
-            "\tPlease fix the errors and run {} for checking the correctness of "
-            "Kconfig files.".format(os.path.abspath(__file__))
+            "\tPlease fix the errors and run {} for checking the correctness of " "Kconfig files.".format(
+                os.path.abspath(__file__)
+            )
         )
         return False
     else:
@@ -534,10 +511,9 @@ def validate_kconfig_file(kconfig_full_path, verbose=False):  # type: (str, bool
         try:
             os.remove(suggestions_full_path)
         except Exception:
-            # not a serious error is when the file cannot be deleted
+            # It is not a serious error if the file cannot be deleted
             print("{} cannot be deleted!".format(suggestions_full_path))
-        finally:
-            return True
+        return True
 
 
 def main():
@@ -570,11 +546,7 @@ def main():
     if success_counter > 0:
         print("{} files have been successfully checked.".format(success_counter))
     if failure_counter > 0:
-        print(
-            "{} files have errors. Please take a look at the log.".format(
-                failure_counter
-            )
-        )
+        print("{} files have errors. Please take a look at the log.".format(failure_counter))
         return 1
 
     if not files:

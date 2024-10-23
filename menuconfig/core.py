@@ -776,7 +776,7 @@ def _wrapper(func):
                 stdscr.keypad(False)
             curses.echo()
             curses.nocbreak()
-            return curses.endwin()
+            curses.endwin()
     else:
         return curses.wrapper(func)
 
