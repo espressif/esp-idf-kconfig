@@ -10,6 +10,7 @@ import json
 import os
 import sys
 import tempfile
+from json import JSONDecodeError
 
 import kconfgen.core as kconfgen
 import kconfiglib.core as kconfiglib
@@ -26,13 +27,9 @@ def main():
         prog=os.path.basename(sys.argv[0]),
     )
 
-    parser.add_argument(
-        "--config", help="Project configuration settings", required=True
-    )
+    parser.add_argument("--config", help="Project configuration settings", required=True)
 
-    parser.add_argument(
-        "--kconfig", help="KConfig file with config item definitions", required=True
-    )
+    parser.add_argument("--kconfig", help="KConfig file with config item definitions", required=True)
 
     parser.add_argument(
         "--sdkconfig-rename",
@@ -77,13 +74,9 @@ def main():
         )
 
     try:
-        args.env = [
-            (name, value) for (name, value) in (e.split("=", 1) for e in args.env)
-        ]
+        args.env = [(name, value) for (name, value) in (e.split("=", 1) for e in args.env)]
     except ValueError:
-        print(
-            "--env arguments must each contain =. To unset an environment variable, use 'ENV='"
-        )
+        print("--env arguments must each contain =. To unset an environment variable, use 'ENV='")
         sys.exit(1)
 
     for name, value in args.env:
@@ -96,17 +89,13 @@ def main():
     run_server(args.kconfig, args.config, args.sdkconfig_rename)
 
 
-def run_server(
-    kconfig, sdkconfig, sdkconfig_rename, default_version=MAX_PROTOCOL_VERSION
-):
+def run_server(kconfig, sdkconfig, sdkconfig_rename, default_version=MAX_PROTOCOL_VERSION):
     config = kconfiglib.Kconfig(kconfig)
     sdkconfig_renames = [sdkconfig_rename] if sdkconfig_rename else []
     sdkconfig_renames_from_env = os.environ.get("COMPONENT_SDKCONFIG_RENAMES")
     if sdkconfig_renames_from_env:
         sdkconfig_renames += sdkconfig_renames_from_env.split(";")
-    deprecated_options = kconfgen.DeprecatedOptions(
-        config.config_prefix, path_rename_files=sdkconfig_renames
-    )
+    deprecated_options = kconfgen.DeprecatedOptions(config.config_prefix, path_rename_files=sdkconfig_renames)
     f_o = tempfile.NamedTemporaryFile(mode="w+b", delete=False)
     try:
         with open(sdkconfig, mode="rb") as f_i:
@@ -125,12 +114,8 @@ def run_server(
 
     if default_version == 1:
         # V1: no 'visibility' key, send value None for any invisible item
-        values_dict = dict(
-            (k, v if visible_dict[k] else False) for (k, v) in config_dict.items()
-        )
-        json.dump(
-            {"version": 1, "values": values_dict, "ranges": ranges_dict}, sys.stdout
-        )
+        values_dict = dict((k, v if visible_dict[k] else False) for (k, v) in config_dict.items())
+        json.dump({"version": 1, "values": values_dict, "ranges": ranges_dict}, sys.stdout)
     else:
         # V2 onwards: separate visibility from version
         json.dump(
@@ -151,10 +136,10 @@ def run_server(
             break
         try:
             req = json.loads(line)
-        except ValueError as e:  # json module throws JSONDecodeError (sublcass of ValueError) on Py3 but ValueError on Py2
+        except JSONDecodeError as e:
             response = {
                 "version": default_version,
-                "error": ["JSON formatting error: %s" % e],
+                "error": [f"JSON formatting error: {e}"],
             }
             json.dump(response, sys.stdout)
             print("\n")
@@ -250,9 +235,7 @@ def handle_request(deprecated_options, config, req):
 def handle_set(config, error, to_set):
     missing = [k for k in to_set if k not in config.syms]
     if missing:
-        error.append(
-            "The following config symbol(s) were not found: %s" % (", ".join(missing))
-        )
+        error.append("The following config symbol(s) were not found: %s" % (", ".join(missing)))
     # replace name keys with the full config symbol for each key:
     to_set = dict((config.syms[k], v) for (k, v) in to_set.items() if k not in missing)
 
@@ -266,26 +249,20 @@ def handle_set(config, error, to_set):
         if not set_pass:
             break  # no visible keys left
         for sym, val in set_pass:
-            if sym.type in (kconfiglib.BOOL, kconfiglib.TRISTATE):
+            if sym.type == kconfiglib.BOOL:
                 if val is True:
                     sym.set_value(2)
                 elif val is False:
                     sym.set_value(0)
                 else:
-                    error.append(
-                        "Boolean symbol %s only accepts true/false values" % sym.name
-                    )
+                    error.append("Boolean symbol %s only accepts true/false values" % sym.name)
             elif sym.type == kconfiglib.HEX:
                 try:
                     if not isinstance(val, int):
-                        val = int(
-                            val, 16
-                        )  # input can be a decimal JSON value or a string of hex digits
+                        val = int(val, 16)  # input can be a decimal JSON value or a string of hex digits
                     sym.set_value(hex(val))
                 except ValueError:
-                    error.append(
-                        "Hex symbol %s can accept a decimal integer or a string of hex digits, only"
-                    )
+                    error.append("Hex symbol %s can accept a decimal integer or a string of hex digits, only")
             else:
                 sym.set_value(str(val))
             print("Set %s" % sym.name)
@@ -323,25 +300,13 @@ def get_ranges(config):
         limit is active for this symbol, or (None, None) if no range
         limit exists.
         """
-        base = (
-            kconfiglib._TYPE_TO_BASE[sym.orig_type]
-            if sym.orig_type in kconfiglib._TYPE_TO_BASE
-            else 0
-        )
+        base = kconfiglib._TYPE_TO_BASE[sym.orig_type] if sym.orig_type in kconfiglib._TYPE_TO_BASE else 0
 
         try:
             for low_expr, high_expr, cond in sym.ranges:
                 if kconfiglib.expr_value(cond):
-                    low = (
-                        int(low_expr.str_value, base)
-                        if is_base_n(low_expr.str_value, base)
-                        else 0
-                    )
-                    high = (
-                        int(high_expr.str_value, base)
-                        if is_base_n(high_expr.str_value, base)
-                        else 0
-                    )
+                    low = int(low_expr.str_value, base) if is_base_n(low_expr.str_value, base) else 0
+                    high = int(high_expr.str_value, base) if is_base_n(high_expr.str_value, base) else 0
                     return (low, high)
         except ValueError:
             pass

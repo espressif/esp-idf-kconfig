@@ -190,9 +190,11 @@ import os
 import re
 import sys
 import textwrap
+from typing import Union
 
 from kconfiglib.core import AND
 from kconfiglib.core import BOOL
+from kconfiglib.core import BOOL_TO_STR
 from kconfiglib.core import Choice
 from kconfiglib.core import COMMENT
 from kconfiglib.core import expr_str
@@ -208,8 +210,6 @@ from kconfiglib.core import standard_kconfig
 from kconfiglib.core import standard_sc_expr_str
 from kconfiglib.core import STRING
 from kconfiglib.core import Symbol
-from kconfiglib.core import TRI_TO_STR
-from kconfiglib.core import TRISTATE
 from kconfiglib.core import TYPE_TO_STR
 
 _IS_WINDOWS = os.name == "nt"  # Are we running on Windows?
@@ -808,9 +808,9 @@ def _needs_save():
             if sym.config_string:
                 # Unwritten symbol
                 return True
-        elif sym.orig_type in (BOOL, TRISTATE):
-            if sym.tri_value != sym._user_value:
-                # Written bool/tristate symbol, new value
+        elif sym.orig_type == BOOL:
+            if sym.bool_value != sym._user_value:
+                # Written bool symbol, new value
                 return True
         elif sym.str_value != sym._user_value:
             # Written string/int/hex symbol, new value
@@ -920,13 +920,13 @@ def _menuconfig(stdscr):
                 _change_node(sel_node)
 
         elif c in ("n", "N"):
-            _set_sel_node_tri_val(0)
+            _set_sel_node_bool_val(0)
 
         elif c in ("m", "M"):
-            _set_sel_node_tri_val(1)
+            _set_sel_node_bool_val(1)
 
         elif c in ("y", "Y"):
-            _set_sel_node_tri_val(2)
+            _set_sel_node_bool_val(2)
 
         elif c in (
             curses.KEY_LEFT,
@@ -1611,17 +1611,15 @@ def _visible(node):
 
 
 def _change_node(node):
-    # Changes the value of the menu node 'node' if it is a symbol. Bools and
-    # tristates are toggled, while other symbol types pop up a text entry
-    # dialog.
+    # Changes the value of the menu node 'node' if it is a symbol. Bools are toggled,
+    # while other symbol types pop up a text entry dialog.
     #
     # Returns False if the value of 'node' can't be changed.
 
     if not _changeable(node):
         return False
 
-    # sc = symbol/choice
-    sc = node.item
+    sc: Union[Symbol, Choice] = node.item
 
     if sc.orig_type in (INT, HEX, STRING):
         s = sc.str_value
@@ -1650,13 +1648,13 @@ def _change_node(node):
 
     elif len(sc.assignable) == 1:
         # Handles choice symbols for choices in y mode, which are a special
-        # case: .assignable can be (2,) while .tri_value is 0.
+        # case: .assignable can be (2,) while .bool_value is 0.
         _set_val(sc, sc.assignable[0])
 
     else:
         # Set the symbol to the value after the current value in
         # sc.assignable, with wrapping
-        val_index = sc.assignable.index(sc.tri_value)
+        val_index = sc.assignable.index(sc.bool_value)
         _set_val(sc, sc.assignable[(val_index + 1) % len(sc.assignable)])
 
     if _is_y_mode_choice_sym(sc) and not node.list:
@@ -1686,13 +1684,13 @@ def _changeable(node):
     return sc.orig_type in (STRING, INT, HEX) or len(sc.assignable) > 1 or _is_y_mode_choice_sym(sc)
 
 
-def _set_sel_node_tri_val(tri_val):
-    # Sets the value of the currently selected menu entry to 'tri_val', if that
+def _set_sel_node_bool_val(bool_val):
+    # Sets the value of the currently selected menu entry to 'bool_val', if that
     # value can be assigned
 
     sc = _shown[_sel_node_i].item
-    if isinstance(sc, (Symbol, Choice)) and tri_val in sc.assignable:
-        _set_val(sc, tri_val)
+    if isinstance(sc, (Symbol, Choice)) and bool_val in sc.assignable:
+        _set_val(sc, bool_val)
 
 
 def _set_val(sc, val):
@@ -1701,10 +1699,10 @@ def _set_val(sc, val):
 
     global _conf_changed
 
-    # Use the string representation of tristate values. This makes the format
+    # Use the string representation of bool values. This makes the format
     # consistent for all symbol types.
-    if val in TRI_TO_STR:
-        val = TRI_TO_STR[val]
+    if val in BOOL_TO_STR:
+        val = BOOL_TO_STR[val]
 
     if val != sc.str_value:
         sc.set_value(val)
@@ -2687,7 +2685,7 @@ def _direct_dep_info(sc):
     return (
         ""
         if sc.direct_dep is _kconf.y
-        else f"Direct dependencies (={TRI_TO_STR[expr_value(sc.direct_dep)]}):\n{_split_expr_info(sc.direct_dep, 2)}\n"
+        else f"Direct dependencies (={BOOL_TO_STR[expr_value(sc.direct_dep)]}):\n{_split_expr_info(sc.direct_dep, 2)}\n"
     )
 
 
@@ -2707,13 +2705,13 @@ def _defaults_info(sc):
         if isinstance(sc, Symbol):
             s += _expr_str(val)
 
-            # Skip the tristate value hint if the expression is just a single
+            # Skip the bool value hint if the expression is just a single
             # symbol. _expr_str() already shows its value as a string.
             #
-            # This also avoids showing the tristate value for string/int/hex
+            # This also avoids showing the bool value for string/int/hex
             # defaults, which wouldn't make any sense.
             if isinstance(val, tuple):
-                s += f"  (={TRI_TO_STR[expr_value(val)]})"
+                s += f"  (={BOOL_TO_STR[expr_value(val)]})"
         else:
             # Don't print the value next to the symbol name for choice
             # defaults, as it looks a bit confusing
@@ -2721,7 +2719,7 @@ def _defaults_info(sc):
         s += "\n"
 
         if cond is not _kconf.y:
-            s += f"    Condition (={TRI_TO_STR[expr_value(cond)]}):\n{_split_expr_info(cond, 4)}"
+            s += f"    Condition (={BOOL_TO_STR[expr_value(cond)]}):\n{_split_expr_info(cond, 4)}"
 
     return s + "\n"
 
@@ -2749,7 +2747,7 @@ def _split_expr_info(expr, indent):
         # Don't bother showing the value hint if the expression is just a
         # single symbol. _expr_str() already shows its value.
         if isinstance(term, tuple):
-            s += f"  (={TRI_TO_STR[expr_value(term)]})"
+            s += f"  (={BOOL_TO_STR[expr_value(term)]})"
 
         s += "\n"
 
@@ -3012,10 +3010,10 @@ def _node_str(node):
             # Print "(NEW)" next to symbols without a user value (from e.g. a
             # .config), but skip it for choice symbols in choices in y mode,
             # and for symbols of UNKNOWN type (which generate a warning though)
-            if sym._user_value is None and sym.orig_type and not (sym.choice and sym.choice.tri_value == 2):
+            if sym._user_value is None and sym.orig_type and not (sym.choice and sym.choice.bool_value == 2):
                 s += " (NEW)"
 
-    if isinstance(node.item, Choice) and node.item.tri_value == 2:
+    if isinstance(node.item, Choice) and node.item.bool_value == 2:
         # Print the prompt of the selected symbol after the choice for
         # choices in y mode
         sym = node.item.selection
@@ -3067,24 +3065,23 @@ def _value_str(node):
     if item.orig_type in (STRING, INT, HEX):
         return f"({item.str_value})"
 
-    # BOOL or TRISTATE
+    # BOOL
 
     if _is_y_mode_choice_sym(item):
         return "(X)" if item.choice.selection is item else "( )"
 
-    tri_val_str = (" ", "M", "*")[item.tri_value]
+    # NOTE: tristate/module mode is removed, but for compatibility reasons,
+    # y is defined as 2,and n as 0, so we must skip the no longer existing m
+    bool_val_str = (" ", None, "*")[item.bool_value]
 
     if len(item.assignable) <= 1:
         # Pinned to a single value
-        return "" if isinstance(item, Choice) else f"-{tri_val_str}-"
+        return "" if isinstance(item, Choice) else f"-{bool_val_str}-"
 
     if item.type == BOOL:
-        return f"[{tri_val_str}]"
+        return f"[{bool_val_str}]"
 
-    # item.type == TRISTATE
-    if item.assignable == (1, 2):
-        return f"{{{tri_val_str}}}"  # {M}/{*}
-    return f"<{tri_val_str}>"
+    return f"<{bool_val_str}>"
 
 
 def _is_y_mode_choice_sym(item):
