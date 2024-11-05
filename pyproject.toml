@@ -44,6 +44,9 @@ dev = [
     "pyparsing",
     "pytest",
 ]
+docs = [
+    "esp-docs~=1.5"
+]
 
 [tool.setuptools.packages]
 find = {exclude = ["test", "test.*"]}
@@ -121,3 +124,8 @@ dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
 quote-style = "double"
 indent-style = "space"
 docstring-code-format = true
+
+
+[tool.codespell]
+ignore-words-list ="rsource,osource,orsource"
+write-changes = true
