@@ -8,7 +8,7 @@ import argparse
 import os
 import re
 
-# ouput file with suggestions will get this suffix
+# output file with suggestions will get this suffix
 OUTPUT_SUFFIX = ".new"
 
 SPACES_PER_INDENT = 4
@@ -198,7 +198,7 @@ class IndentAndNameChecker(BaseChecker):
 
         # regexes to get lines containing expressions
         # Unquoted symbols are either config names, y/n or (hex)num literals. Catching also no-uppercase config names (TyPO_NAME) to throw an error later on.
-        # Quoted symbols are "y"/"n", env_vars or string literals; the last two categories can contain anyhting between the quotes, thus it is broader.
+        # Quoted symbols are "y"/"n", env_vars or string literals; the last two categories can contain anything between the quotes, thus it is broader.
         symbol = r"\w+|\".+?\"|'.+?'"
         reg_prompt = re.compile(r"^\".*?\"\s+(?:if)\s+(?P<expression0>.*)$")
         reg_default = re.compile(r"^(?P<expression0>.*)\s+(?:if)\s+(?P<expression1>.*)$")
@@ -439,7 +439,7 @@ class IndentAndNameChecker(BaseChecker):
                     self.check_common_prefix(line, line_number)
 
         # name has to be checked after increase/decrease indentation level
-        # otherwise false-positive indentation error for lines bellow name is raised
+        # otherwise false-positive indentation error for lines below name is raised
         self.check_name_sanity(line, line_number)
         self.check_name_and_update_prefix(stripped_line, line_number)
 
@@ -465,7 +465,8 @@ def valid_directory(path):
     return path
 
 
-def validate_kconfig_file(kconfig_full_path, verbose=False):  # type: (str, bool) -> bool
+def validate_kconfig_file(kconfig_full_path: str, verbose: bool = False, replace: bool = False) -> bool:
+    # Even in case of in_place modification, create a new file with suggestions (original will be replaced later).
     suggestions_full_path = kconfig_full_path + OUTPUT_SUFFIX
     fail = False
 
@@ -493,17 +494,15 @@ def validate_kconfig_file(kconfig_full_path, verbose=False):  # type: (str, bool
         except UnicodeDecodeError:
             raise ValueError("The encoding of {} is not Unicode.".format(kconfig_full_path))
 
+    if replace:
+        os.replace(suggestions_full_path, kconfig_full_path)
+
     if fail:
         print(
             "\t{} has been saved with suggestions for resolving the issues.\n"
             "\tPlease note that the suggestions can be wrong and "
             "you might need to re-run the checker several times "
-            "for solving all issues".format(suggestions_full_path)
-        )
-        print(
-            "\tPlease fix the errors and run {} for checking the correctness of " "Kconfig files.".format(
-                os.path.abspath(__file__)
-            )
+            "for solving all issues".format(suggestions_full_path if not replace else kconfig_full_path)
         )
         return False
     else:
@@ -529,6 +528,11 @@ def main():
         action="store_true",
         help="Print more information (useful for debugging)",
     )
+    parser.add_argument(
+        "--replace",
+        action="store_true",
+        help="Apply the changes to the original files instead of creating .new files",
+    )
     args = parser.parse_args()
 
     success_counter = 0
@@ -537,7 +541,7 @@ def main():
     files = [os.path.abspath(file_path) for file_path in args.files]
 
     for full_path in files:
-        is_valid = validate_kconfig_file(full_path, args.verbose)
+        is_valid = validate_kconfig_file(full_path, args.verbose, args.replace)
         if is_valid:
             success_counter += 1
         else:

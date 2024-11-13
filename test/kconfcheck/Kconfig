@@ -1,0 +1,4 @@
+mainmenu "Kconfig for kconfcheck"
+
+    # Should trigger "only files named Kconfig.* can be sourced".
+    source "some/nonexistent/file"

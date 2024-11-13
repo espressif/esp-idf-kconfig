@@ -1,6 +1,6 @@
 - id: check-kconfig-files
-  name: Check ESP-IDF KConfig Files
-  description: This hook checks syntax of ESP-IDF KConfig files
-  entry: python -m kconfcheck
+  name: Check ESP-IDF Kconfig Files
+  description: This hook checks syntax of ESP-IDF Kconfig files
+  entry: python -m kconfcheck --replace
   language: python
   files: 'Kconfig.*$'

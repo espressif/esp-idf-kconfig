@@ -2,6 +2,9 @@
 #
 # SPDX-FileCopyrightText: 2018-2024 Espressif Systems (Shanghai) CO LTD
 # SPDX-License-Identifier: Apache-2.0
+import filecmp
+import os
+import shutil
 import unittest
 
 from kconfcheck.core import CONFIG_NAME_MAX_LENGTH
@@ -9,6 +12,7 @@ from kconfcheck.core import IndentAndNameChecker
 from kconfcheck.core import InputError
 from kconfcheck.core import LineRuleChecker
 from kconfcheck.core import SourceChecker
+from kconfcheck.core import validate_kconfig_file
 
 
 class ApplyLine(object):
@@ -66,9 +70,7 @@ class TestSourceChecker(unittest.TestCase, ApplyLine):
         pass
 
     def test_source_file_name(self):
-        self.expect_error(
-            'source "notKconfig.test"', expect='source "Kconfig.notKconfig.test"'
-        )
+        self.expect_error('source "notKconfig.test"', expect='source "Kconfig.notKconfig.test"')
         self.expect_error('source "Kconfig"', expect='source "Kconfig.Kconfig"')
         self.expt_success('source "Kconfig.in"')
         self.expt_success('source "/tmp/Kconfig.test"')
@@ -106,9 +108,7 @@ class TestIndent(TestIndentAndNameChecker):
         self.expt_success("            help text")
         self.expt_success("    menu")
         self.expt_success("    endmenu")
-        self.expect_error(
-            "         choice", expect="    choice", cleanup="    endchoice"
-        )
+        self.expect_error("         choice", expect="    choice", cleanup="    endchoice")
         self.expect_error("       choice", expect="    choice", cleanup="    endchoice")
         self.expt_success("    choice")
         self.expt_success("    endchoice")
@@ -201,14 +201,10 @@ class TestName(TestIndentAndNameChecker):
         self.expt_success("endmenu")
 
     def test_name_sanity(self):
-        self.expt_success(
-            'prompt "test" if OK_VAL || "$(OK_ENVVAR)" || 0x00 || 1 && y && "y"'
-        )
+        self.expt_success('prompt "test" if OK_VAL || "$(OK_ENVVAR)" || 0x00 || 1 && y && "y"')
         self.expt_success("range C_MIN MAX_123 if OK_VAL || SOMETHING_EXTREMELY_LONG")
         self.expt_success("depends on OK_VAL")
-        self.expt_success(
-            'default TEST_A if TEST_B=0x01 && TEST_C>42 || TEST_D="working" && TEST_E="y"'
-        )
+        self.expt_success('default TEST_A if TEST_B=0x01 && TEST_C>42 || TEST_D="working" && TEST_E="y"')
         self.expt_success("imply TEST_VAL if TEST_VAL=42")
         self.expt_success("select TEST_VAL if TEST_VAL>=42")
         self.expt_success("visible if TEST_VAL!=42")
@@ -268,6 +264,49 @@ class TestPrefix(TestIndentAndNameChecker):
         self.expt_success("        config MENUOP_2")
         self.expt_success("    endif")
         self.expt_success("endmenu")
+
+
+class TestReplace(unittest.TestCase):
+    """
+    Test the (not only) pre-commit hook in place change by running validate_kconfig_file() with replace=True.
+    Original Kconfig should be modified instead of creating new file.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        test_files_path = os.path.join(os.path.dirname(__file__))
+        cls.ORIGINAL = os.path.join(test_files_path, "Kconfig")
+        assert os.path.isfile(cls.ORIGINAL)
+        cls.TEST_FILE = cls.ORIGINAL + ".test"
+
+    @classmethod
+    def tearDownClass(cls):
+        try:
+            os.remove(cls.TEST_FILE)
+        except FileNotFoundError:
+            pass
+
+    def setUp(self):
+        shutil.copy(self.ORIGINAL, self.TEST_FILE)
+
+    def tearDown(self):
+        try:
+            os.remove(self.TEST_FILE + ".new")
+        except FileNotFoundError:
+            pass
+
+    def test_no_replace(self):
+        validate_kconfig_file(self.TEST_FILE, replace=False)
+        self.assertTrue(os.path.isfile(self.TEST_FILE + ".new"))
+        self.assertTrue(os.path.isfile(self.TEST_FILE))
+        self.assertFalse(filecmp.cmp(self.TEST_FILE + ".new", self.ORIGINAL))
+        self.assertTrue(filecmp.cmp(self.TEST_FILE, self.ORIGINAL))
+
+    def test_replace(self):
+        validate_kconfig_file(os.path.abspath(self.TEST_FILE), replace=True)
+        self.assertTrue(os.path.isfile(self.TEST_FILE))
+        self.assertFalse(os.path.isfile(self.TEST_FILE + ".new"))
+        self.assertFalse(filecmp.cmp(self.TEST_FILE, self.ORIGINAL))
 
 
 if __name__ == "__main__":
