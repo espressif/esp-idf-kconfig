@@ -5,7 +5,7 @@ This is the documentation for the ``esp-idf-kconfig`` project. The ``esp-idf-kco
 
 The ``esp-idf-kconfig`` package is used for compile-time project configuration. For the detailed description of the Kconfig language, see the :ref:`Kconfig <kconfiglib-index>` section. Contributions are welcome. Before contributing please make sure that you have read the :ref:`Developer and Contributor Guide <developer-guide>`.
 
-ESP-IDF specific user guide can be found in the `ESP-IDF documentation <https://docs.espressif.com/projects/esp-idf/en/latest/api-guide/kconfig/index.html>`_.
+ESP-IDF specific user guide can be found in the `ESP-IDF documentation <https://docs.espressif.com/projects/esp-idf/en/latest/api-guides/kconfig/index.html>`_.
 
 For those who want to visit the original Kconfig language documentation from the Linux kernel, see the `Kconfig language documentation <https://www.kernel.org/doc/Documentation/kbuild/kconfig-language.txt>`_.
 
