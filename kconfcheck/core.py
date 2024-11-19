@@ -7,6 +7,7 @@
 import argparse
 import os
 import re
+from typing import Tuple
 
 # output file with suggestions will get this suffix
 OUTPUT_SUFFIX = ".new"
@@ -51,11 +52,17 @@ class BaseChecker(object):
     def __init__(self, path_in_idf):
         self.path_in_idf = path_in_idf
 
-    def __enter__(self):
-        return self
-
-    def __exit__(self, type, value, traceback):
+    def finalize(self):
+        """
+        Abstract method for finalizing the checker
+        """
         pass
+
+    def process_line(self, line, line_number):
+        """
+        Abstract method for processing a line
+        """
+        raise NotImplementedError("process_line method is not implemented in BaseChecker")
 
 
 class SourceChecker(BaseChecker):
@@ -226,8 +233,7 @@ class IndentAndNameChecker(BaseChecker):
             "choice": reg_config_menuconfig_choice,
         }
 
-    def __exit__(self, type, value, traceback):
-        super(IndentAndNameChecker, self).__exit__(type, value, traceback)
+    def finalize(self):
         if len(self.prefix_stack) > 0:
             self.check_common_prefix("", "EOF")
         if len(self.prefix_stack) != 0:
@@ -459,32 +465,87 @@ class IndentAndNameChecker(BaseChecker):
             )
 
 
+class SDKRenameChecker(BaseChecker):
+    """
+    Checks sdkconfig.rename[.target] files:
+    * if the line contains at least two tokens (old and new config name pairs)
+    * if the inversion syntax is used correctly
+    """
+
+    def __init__(self, path_in_idf):
+        super().__init__(path_in_idf)
+
+    def process_line(self, line: str, line_number: int) -> None:
+        # The line should look like CONFIG_OLD_NAME CONFIG_NEW_NAME # optional comment,
+        # just # comment or blank line.
+        if line.startswith("#") or line.isspace():
+            return
+
+        tokens = line.split()
+        if len(tokens) < 2:
+            raise InputError(
+                self.path_in_idf,
+                line_number,
+                "Line should contain at least old and new config names.",
+                line,  # no suggestions for this
+            )
+        else:
+            old_name, new_name = tokens[:2]  # [:2] removes optional comment from tokens
+
+        if new_name.startswith("!"):  # inversion
+            new_name = new_name[1:]
+
+        ############################################
+        # sdkconfig.rename specific checks
+        ############################################
+        # Check inversion syntax
+        if old_name.startswith("!"):
+            raise InputError(
+                self.path_in_idf,
+                line_number,
+                "For inversion, use CONFIG_OLD !CONFIG_NEW syntax.",
+                line[: line.index(old_name)]
+                + old_name[1:]
+                + line[line.index(old_name) + len(old_name) : line.index(new_name)]
+                + "!"
+                + line[line.index(new_name) :],
+            )
+
+
 def valid_directory(path):
     if not os.path.isdir(path):
         raise argparse.ArgumentTypeError("{} is not a valid directory!".format(path))
     return path
 
 
-def validate_kconfig_file(kconfig_full_path: str, verbose: bool = False, replace: bool = False) -> bool:
+def validate_file(file_full_path: str, verbose: bool = False, replace: bool = False) -> bool:
     # Even in case of in_place modification, create a new file with suggestions (original will be replaced later).
-    suggestions_full_path = kconfig_full_path + OUTPUT_SUFFIX
+    suggestions_full_path = file_full_path + OUTPUT_SUFFIX
     fail = False
+    checkers: Tuple[BaseChecker, ...] = tuple()
+    if "Kconfig" in os.path.basename(file_full_path):
+        checkers = (
+            IndentAndNameChecker(file_full_path),  # indent checker has to be before line checker, otherwise
+            # false-positive indent error if error in line_checker
+            LineRuleChecker(file_full_path),
+            SourceChecker(file_full_path),
+        )
+    elif "sdkconfig.rename" in os.path.basename(file_full_path):
+        checkers = (SDKRenameChecker(file_full_path),)
 
-    with open(kconfig_full_path, "r", encoding="utf-8") as f, open(
+    if not checkers:
+        raise NotImplementedError(
+            f"The {os.path.basename(file_full_path)} files are not currently supported by kconfcheck."
+        )
+
+    with open(file_full_path, "r", encoding="utf-8") as f, open(
         suggestions_full_path, "w", encoding="utf-8", newline="\n"
-    ) as f_o, LineRuleChecker(kconfig_full_path) as line_checker, SourceChecker(
-        kconfig_full_path
-    ) as source_checker, IndentAndNameChecker(kconfig_full_path, debug=verbose) as indent_and_name_checker:
+    ) as f_o:
         try:
-            for line_number, line in enumerate(f, start=1):
+            for line_number, line in enumerate(f):
                 try:
-                    for checker in [
-                        indent_and_name_checker,  # indent checker has to be before line checker, otherwise
-                        # false-positive indent error if error in line_checker
-                        line_checker,
-                        source_checker,
-                    ]:
-                        checker.process_line(line, line_number)
+                    for checker in checkers:
+                        checker.process_line(line=line, line_number=line_number)
                     # The line is correct therefore we echo it to the output file
                     f_o.write(line)
                 except InputError as e:
@@ -492,21 +553,24 @@ def validate_kconfig_file(kconfig_full_path: str, verbose: bool = False, replace
                     fail = True
                     f_o.write(e.suggested_line)
         except UnicodeDecodeError:
-            raise ValueError("The encoding of {} is not Unicode.".format(kconfig_full_path))
+            raise ValueError("The encoding of {} is not Unicode.".format(file_full_path))
+        finally:
+            for checker in checkers:
+                checker.finalize()
 
     if replace:
-        os.replace(suggestions_full_path, kconfig_full_path)
+        os.replace(suggestions_full_path, file_full_path)
 
     if fail:
         print(
             "\t{} has been saved with suggestions for resolving the issues.\n"
             "\tPlease note that the suggestions can be wrong and "
             "you might need to re-run the checker several times "
-            "for solving all issues".format(suggestions_full_path if not replace else kconfig_full_path)
+            "for solving all issues".format(suggestions_full_path if not replace else file_full_path)
         )
         return False
     else:
-        print("{}: OK".format(kconfig_full_path))
+        print("{}: OK".format(file_full_path))
         try:
             os.remove(suggestions_full_path)
         except Exception:
@@ -541,7 +605,7 @@ def main():
     files = [os.path.abspath(file_path) for file_path in args.files]
 
     for full_path in files:
-        is_valid = validate_kconfig_file(full_path, args.verbose, args.replace)
+        is_valid = validate_file(full_path, args.verbose, args.replace)
         if is_valid:
             success_counter += 1
         else:
