@@ -12,7 +12,7 @@ from kconfcheck.core import IndentAndNameChecker
 from kconfcheck.core import InputError
 from kconfcheck.core import LineRuleChecker
 from kconfcheck.core import SourceChecker
-from kconfcheck.core import validate_kconfig_file
+from kconfcheck.core import validate_file
 
 
 class ApplyLine(object):
@@ -85,7 +85,7 @@ class TestIndentAndNameChecker(unittest.TestCase, ApplyLine):
         self.checker.min_prefix_length = 4
 
     def tearDown(self):
-        self.checker.__exit__("Kconfig", None, None)
+        self.checker.finalize()
 
 
 class TestIndent(TestIndentAndNameChecker):
@@ -181,6 +181,18 @@ class TestIndent(TestIndentAndNameChecker):
         self.expt_success("        text")
         self.expt_success('        # second not realcomment"')
 
+    def test_missing_endmenu(self):
+        """
+        IndentAndNameChecker raises RuntimeError if there is missing endmenu of inner menu
+        """
+        self.expt_success('menu "test"')
+        self.expt_success("    config FOO")
+        self.expt_success("        bool")
+        self.expt_success('    menu "inner menu"')
+        self.expt_success("        config FOO_BAR")
+        self.expt_success("            bool")
+        self.assertRaises(RuntimeError, self.checker.finalize)
+
 
 class TestName(TestIndentAndNameChecker):
     def setUp(self):
@@ -268,7 +280,7 @@ class TestPrefix(TestIndentAndNameChecker):
 
 class TestReplace(unittest.TestCase):
     """
-    Test the (not only) pre-commit hook in place change by running validate_kconfig_file() with replace=True.
+    Test the (not only) pre-commit hook in place change by running validate_file() with replace=True.
     Original Kconfig should be modified instead of creating new file.
     """
 
@@ -296,17 +308,48 @@ class TestReplace(unittest.TestCase):
             pass
 
     def test_no_replace(self):
-        validate_kconfig_file(self.TEST_FILE, replace=False)
+        validate_file(self.TEST_FILE, replace=False)
         self.assertTrue(os.path.isfile(self.TEST_FILE + ".new"))
         self.assertTrue(os.path.isfile(self.TEST_FILE))
         self.assertFalse(filecmp.cmp(self.TEST_FILE + ".new", self.ORIGINAL))
         self.assertTrue(filecmp.cmp(self.TEST_FILE, self.ORIGINAL))
 
     def test_replace(self):
-        validate_kconfig_file(os.path.abspath(self.TEST_FILE), replace=True)
+        validate_file(os.path.abspath(self.TEST_FILE), replace=True)
         self.assertTrue(os.path.isfile(self.TEST_FILE))
         self.assertFalse(os.path.isfile(self.TEST_FILE + ".new"))
         self.assertFalse(filecmp.cmp(self.TEST_FILE, self.ORIGINAL))
+
+
+class TestSDKConfigRename(unittest.TestCase):
+    def __init__(self, *args, **kwargs):
+        super(TestSDKConfigRename, self).__init__(*args, **kwargs)
+        current_path = os.path.abspath(os.path.dirname(__file__))
+        self.correct_sdkconfigs = os.path.join(current_path, "sdkconfigs", "correct")
+        self.incorrect_sdkconfigs = os.path.join(current_path, "sdkconfigs", "incorrect")
+        self.suggestions = os.path.join(current_path, "sdkconfigs", "suggestions")
+
+    def test_correct_sdkconfigs(self):
+        correct_files = os.listdir(self.correct_sdkconfigs)
+        for correct_file in correct_files:
+            is_valid = validate_file(os.path.join(self.correct_sdkconfigs, correct_file))
+            self.assertTrue(is_valid)
+
+    def test_incorrect_sdkconfigs(self):
+        incorrect_files = os.listdir(self.incorrect_sdkconfigs)
+        for incorrect_file in incorrect_files:
+            is_valid = validate_file(os.path.join(self.incorrect_sdkconfigs, incorrect_file))
+            self.assertFalse(is_valid)
+            with open(
+                os.path.join(self.suggestions, incorrect_file + ".suggestions"), "r"
+            ) as file_expected_suggestions, open(
+                os.path.join(self.incorrect_sdkconfigs, incorrect_file + ".new"), "r"
+            ) as file_real_suggestion:
+                self.assertEqual(file_expected_suggestions.read(), file_real_suggestion.read())
+            try:
+                os.remove(os.path.join(self.incorrect_sdkconfigs, incorrect_file + ".new"))
+            except FileNotFoundError:
+                pass
 
 
 if __name__ == "__main__":
