@@ -116,10 +116,12 @@ class Parser:
     # Parse Actions
     ############################
     def parse_mainmenu(self, s: str, loc: int, parsed_mainmenu: ParseResults) -> None:
+        self.kconfig.linenr = lineno(loc, s)
         self.kconfig.top_node.prompt = (parsed_mainmenu[1], self.kconfig.y)
         self.get_children(self.kconfig.top_node, (self.file_stack[0], 0))
 
     def parse_config(self, s: str, loc: int, parsed_config: ParseResults) -> None:
+        self.kconfig.linenr = lineno(loc, s)
         sym = self.kconfig._lookup_sym(parsed_config[1])
         self.kconfig.defined_syms.append(sym)
 
@@ -142,6 +144,7 @@ class Parser:
         self.orphans.append(orphan)
 
     def parse_menu(self, s: str, loc: int, parsed_menu: ParseResults) -> None:
+        self.kconfig.linenr = lineno(loc, s)
         menunode = MenuNode(
             kconfig=self.kconfig, item=MENU, is_menuconfig=True, filename=self.file_stack[-1], linenr=lineno(loc, s)
         )
@@ -171,6 +174,7 @@ class Parser:
         self.orphans.append(orphan)
 
     def parse_sourced(self, s: str, loc: int, parsed_source) -> None:
+        self.kconfig.linenr = lineno(loc, s)
         path = expandvars(parsed_source.path)
         if parsed_source[0] in ["rsource", "orsource"]:
             path = join(dirname(self.file_stack[-1]), path)
@@ -202,6 +206,7 @@ class Parser:
             self.location_stack.pop()
 
     def parse_choice(self, s: str, loc: int, parsed_choice: ParseResults) -> None:
+        self.kconfig.linenr = lineno(loc, s)
         line_number = lineno(loc, s)
         if parsed_choice.name:
             choice = self.kconfig.named_choices.get(parsed_choice.name)
@@ -248,6 +253,7 @@ class Parser:
         self.orphans.append(orphan)
 
     def parse_comment(self, s: str, loc: int, parsed_comment: ParseResults) -> None:
+        self.kconfig.linenr = lineno(loc, s)
         node = MenuNode(
             kconfig=self.kconfig, item=COMMENT, is_menuconfig=False, filename=self.file_stack[-1], linenr=lineno(loc, s)
         )
@@ -283,6 +289,7 @@ class Parser:
             node.prompt = (prompt_str, condition)
 
     def parse_if_entry(self, s: str, loc: int, located_if_entry: ParseResults) -> None:
+        self.kconfig.linenr = lineno(loc, s)
         parsed_if_entry = located_if_entry
         expression = self.parse_expression(parsed_if_entry[0])
 

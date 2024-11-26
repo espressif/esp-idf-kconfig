@@ -1,0 +1,9 @@
+mainmenu "Symbol name defined multiple times"
+
+    config FEATURE
+        bool "Feature"
+        default y
+
+    config FEATURE
+        bool "Feature"
+        default y
