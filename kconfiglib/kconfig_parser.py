@@ -7,6 +7,8 @@ from os.path import dirname
 from os.path import expandvars
 from os.path import join
 from typing import List
+from typing import no_type_check
+from typing import Optional
 from typing import Tuple
 from typing import Union
 
@@ -37,7 +39,7 @@ from .core import Symbol
 from .core import UNEQUAL
 from kconfiglib.kconfig_grammar import KconfigGrammar
 
-ParserElement.enablePackrat()  # Speeds up parsing by caching intermediate results
+ParserElement.enablePackrat(cache_size_limit=None)  # Speeds up parsing by caching intermediate results
 
 
 @dataclass
@@ -61,11 +63,11 @@ class Parser:
     Parsing logic: pyparsing is used to parse the input Kconfig file(s) and provide tokens. It is supposed that new formats (beside Kconfig) will be supported in the future, so the grammar describing Kconfig
     is in its separate class KconfigGrammar.
 
-    In contrast to the previous (C-like) parsing char-by-char, the new approach utlizes pyparsing
+    In contrast to the previous (C-like) parsing char-by-char, the new approach utilizes pyparsing
     library and semantic actions (called parse actions in this context and behaving like callbacks).
     """
 
-    def __init__(self, kconfig: "Kconfig", filename: str = None) -> None:
+    def __init__(self, kconfig: "Kconfig", filename: Optional[str] = None) -> None:
         self.kconfig = kconfig
 
         self.grammar = KconfigGrammar(self)
@@ -76,6 +78,8 @@ class Parser:
         else:
             self.file_stack = [filename]
         self.location_stack: List[Tuple[str, int]] = []
+
+        self.grammar_for_sourced_files = KconfigGrammar(self)
 
     def parse_all(self) -> None:
         self.grammar(self.kconfig.filename)
@@ -101,7 +105,6 @@ class Parser:
         # MenuNode.list = first child element
         for orphan in orphans_for_adoption:
             if parent.list:  # there are already children
-                # TODO change list and next to normal Python list of children during refactor
                 orphans_sibling = parent.list
                 while orphans_sibling.next:
                     orphans_sibling = orphans_sibling.next
@@ -146,21 +149,16 @@ class Parser:
         #                    menu name     condition = always true for menu
         menunode.prompt = (parsed_menu[1], self.kconfig.y)
 
-        if parsed_menu.menu_opts:
-            menu_options = parsed_menu.menu_opts
-            if menu_options.depends_on:  # depends on
-                for depend in menu_options.depends_on:
-                    expr = self.parse_expression(depend.as_list() if isinstance(depend, ParseResults) else depend)
-                    menunode.dep = self.kconfig._make_and(menunode.dep, expr)
-            if menu_options.visible_if:  # visible if
-                menunode.visibility = self.kconfig._make_and(
-                    menunode.visibility,
-                    self.parse_expression(
-                        menu_options.visible_if[0].as_list()
-                        if isinstance(menu_options.visible_if[0], ParseResults)
-                        else menu_options.visible_if[0]
-                    ),
-                )
+        menu_options = parsed_menu[2]
+        if menu_options["depends_on"]:  # depends on
+            for depend in menu_options["depends_on"]:
+                expr = self.parse_expression(depend)
+                menunode.dep = self.kconfig._make_and(menunode.dep, expr)
+        if menu_options["visible_if"]:  # visible if
+            menunode.visibility = self.kconfig._make_and(
+                menunode.visibility,
+                self.parse_expression(menu_options["visible_if"][0]),
+            )
 
         self.kconfig.menus.append(menunode)
         self.get_children(menunode, (self.file_stack[-1], lineno(loc, s)))
@@ -199,7 +197,7 @@ class Parser:
             if filename in self.file_stack:
                 raise KconfigError(f"{self.file_stack[-1]}:{lineno(loc, s)}: Recursive source of '{filename}' detected")
             self.file_stack.append(filename)
-            KconfigGrammar(self)(filename, sourced=True)
+            self.grammar_for_sourced_files(filename, sourced=True)
             self.file_stack.pop()
             self.location_stack.pop()
 
@@ -254,7 +252,7 @@ class Parser:
             kconfig=self.kconfig, item=COMMENT, is_menuconfig=False, filename=self.file_stack[-1], linenr=lineno(loc, s)
         )
         self.kconfig.comments.append(node)
-        self.parse_prompt(node, [parsed_comment[1]])
+        self.parse_prompt(node, [(parsed_comment[1], None)])
         orphan = Orphan(
             node=node,
             locations=[location for location in self.location_stack if self.location_stack]
@@ -262,28 +260,27 @@ class Parser:
         )
         self.orphans.append(orphan)
 
-        if parsed_comment.comment_opts and parsed_comment.comment_opts[0].depends_on:
-            for depend in parsed_comment.comment_opts[0].depends_on:
-                expr = depend
-                expr = self.infix_to_prefix(expr)
-                expr = self.kconfigize_expr(expr)
+        if parsed_comment.comment_opts and parsed_comment.comment_opts["depends_on"]:
+            for depend in parsed_comment.comment_opts["depends_on"]:
+                expr = self.parse_expression(depend)
                 node.dep = self.kconfig._make_and(node.dep, expr)
         else:
             node.dep = self.kconfig.y
 
-    def parse_prompt(self, node: MenuNode, prompt: ParseResults) -> None:
-        if node.prompt:
-            self.kconfig._warn(node.item.name_and_loc + " defined with multiple prompts in single location")  # type: ignore
-        prompt_str = prompt[0]
+    def parse_prompt(self, node: MenuNode, prompts: List[Tuple]) -> None:
+        for prompt in prompts:
+            if node.prompt:
+                self.kconfig._warn(node.item.name_and_loc + " defined with multiple prompts in single location")  # type: ignore
+            prompt_str = prompt[0]
 
-        if prompt_str != prompt_str.strip():
-            self.kconfig._warn(node.item.name_and_loc + " has leading or trailing whitespace in its prompt")  # type: ignore
-            prompt_str = prompt_str.strip()
+            if prompt_str != prompt_str.strip():
+                self.kconfig._warn(node.item.name_and_loc + " has leading or trailing whitespace in its prompt")  # type: ignore
+                prompt_str = prompt_str.strip()
 
-        condition: Union["Symbol", str, Tuple] = self.kconfig.y
-        if len(prompt) > 1:
-            condition = self.parse_expression(prompt[1].as_list())
-        node.prompt = (prompt_str, condition)
+            condition: Union["Symbol", str, Tuple] = self.kconfig.y
+            if prompt[1]:
+                condition = self.parse_expression(prompt[1])
+            node.prompt = (prompt_str, condition)
 
     def parse_if_entry(self, s: str, loc: int, located_if_entry: ParseResults) -> None:
         parsed_if_entry = located_if_entry
@@ -301,10 +298,6 @@ class Parser:
         self.orphans.append(orphan)
 
     def parse_expression(self, expr: list) -> Union[str, tuple, Symbol]:
-        for i, element in enumerate(expr):
-            if isinstance(element, str):
-                if element.startswith(("'", '"')):
-                    expr[i] = element[1:-1]
         expr = expr[0] if len(expr) == 1 else expr
         prefix_expr = self.infix_to_prefix(expr)
         kconfigized_expr: Union[str, tuple, Symbol] = self.kconfigize_expr(prefix_expr)  # type: ignore
@@ -319,82 +312,76 @@ class Parser:
             return
 
         # set type (and optional prompt)
-        if config_options.type:
-            self.kconfig._set_type(node.item, self.str_to_kconfig_type[config_options.type[0]])
+        if config_options["type"]:
+            self.kconfig._set_type(node.item, self.str_to_kconfig_type[config_options["type"]])
         else:
-            if not isinstance(node.item, Choice):  # Choices can have implicit type by their first child
+            if node.item.__class__ != Choice:  # Choices can have implicit type by their first child
                 raise ValueError(
                     f"Config {parsed_config[1]}, defined in {self.file_stack[-1]}:{node.linenr} has no type."
                 )
 
-        if len(config_options.type) > 1:  # there is and inline prompt
-            self.parse_prompt(node, config_options.type[1:])
-
-            # parse default
-        if config_options.default:
-            for default in config_options.default:
+        # parse default
+        if config_options["default"]:
+            for default in config_options["default"]:
                 # cannot use list() as an argument, because list("abc") is ["a", "b", "c"], not ["abc"]
-                value = self.parse_expression([default[0]])
-                if len(default) > 1:
-                    # Unfortunately, pyparsing groups the expression only if it is ParseResults, string is not grouped
-                    expr = self.parse_expression(
-                        default[1].as_list() if isinstance(default[1], ParseResults) else default[1][0].as_list()
-                    )
+                value = self.parse_expression(default[0])
+                if len(default) > 1 and default[1]:
+                    expr = self.parse_expression(default[1])
                     node.defaults.append((value, expr))
                 else:
                     node.defaults.append((value, self.kconfig.y))
 
         # set help
         # NOTE: some special characters may not be supported.
-        if config_options.help_text:
-            node.help = config_options.help_text
+        if config_options["help"]:
+            node.help = config_options["help"]
 
         # set depends_on
         node.dep = self.kconfig.y  # basic dependency is always true
-        if config_options.depends_on:
-            for depend in config_options.depends_on:
-                expr = self.parse_expression(depend.as_list() if isinstance(depend, ParseResults) else depend)
+        if config_options["depends_on"]:
+            for depend in config_options["depends_on"]:
+                expr = self.parse_expression(depend)
                 node.dep = self.kconfig._make_and(node.dep, expr)
 
         # parse select
-        if config_options.select:
-            for select in config_options.select:
+        if config_options["select"]:
+            for select in config_options["select"]:
                 sym = self.kconfigize_expr(select[0])
-                if len(select) > 1:
-                    expr = self.parse_expression(select[1].as_list())
+                if len(select) > 1 and select[1]:
+                    expr = self.parse_expression(select[1])
                     node.selects.append((sym, expr))
                 else:
                     node.selects.append((sym, self.kconfig.y))
 
         # parse imply
-        if config_options.imply:
-            for imply in config_options.imply:
+        if config_options["imply"]:
+            for imply in config_options["imply"]:
                 sym = self.kconfigize_expr(imply[0])
-                if len(imply) > 1:
-                    expr = self.infix_to_prefix(imply[1])  # type: ignore
+                if len(imply) > 1 and imply[1]:
+                    expr = self.infix_to_prefix(imply[1])
                     node.implies.append((sym, expr))
                 else:
                     node.implies.append((sym, self.kconfig.y))
 
         # parse prompt
-        if config_options.prompt:
-            self.parse_prompt(node, config_options.prompt)
+        if config_options["prompt"]:
+            self.parse_prompt(node, config_options["prompt"])
 
         # parse range
-        if config_options.range:
-            for range_entry in config_options.range:
+        if config_options["range"]:
+            for range_entry in config_options["range"]:
                 if len(range_entry) not in (2, 3):
                     raise ValueError("Range must have two values and optional condition")
                 condition: Union["Symbol", Tuple, str] = self.kconfig.y
-                if len(range_entry) == 3:
+                if len(range_entry) == 3 and range_entry[2]:
                     condition = self.parse_expression(range_entry[2])
                 sym0 = self.kconfigize_expr(range_entry[0])
                 sym1 = self.kconfigize_expr(range_entry[1])
                 node.ranges.append((sym0, sym1, condition))
 
         # parse option
-        if config_options.option:
-            env_var = config_options.option[0]
+        if config_options["option"]:
+            env_var = config_options["option"][0]
             node.item.env_var = env_var  # type: ignore
             if env_var in os.environ:
                 sym_name = os.environ.get(env_var) or ""
@@ -407,11 +394,13 @@ class Parser:
                     node.linenr,
                 )
 
-    def infix_to_prefix(self, parsed_expr: Union[str, list, "Symbol"]) -> Union[str, tuple, Symbol]:
+    # mypy cannot recognize "if parsed_expr.__class__" as handling certatin types and then complains in the rest of the function
+    @no_type_check
+    def infix_to_prefix(self, parsed_expr: Union[str, list, Symbol]) -> Union[str, tuple, Symbol]:
         """
         Converts a nested list of operands and operators from infix to prefix notation, because Kconfig uses it.
         """
-        if isinstance(parsed_expr, (str, Symbol)):  # operand
+        if parsed_expr.__class__ in (str, Symbol):
             return parsed_expr
         else:
             if parsed_expr[0] == "!":  # negation; !EXPRESSION
@@ -439,31 +428,52 @@ class Parser:
             env_var_sym = self.kconfig._lookup_const_sym("")
         return env_var_sym
 
-    def kconfigize_expr(self, expr: Union[str, tuple, list, Symbol]) -> Union[str, tuple, "Symbol", int]:
+    def kconfigize_expr(self, expr: Union[str, tuple, list]) -> Union[str, tuple, "Symbol", int]:
         """
         Converts a string or a list of operands and operators to the corresponding Kconfig symbols and operators.
         """
+
+        def is_dec_hex(s: str) -> bool:
+            if not s:
+                return False
+            if s.isnumeric():
+                return True
+            if s[0] == "-":
+                s = s[1:]
+                for c in s:
+                    if not c.isdigit():
+                        return False
+                return True
+            elif s[0:2] in ["0x", "0X"]:
+                s = s[2:]
+                for c in s:
+                    if c not in "0123456789abcdefABCDEF":
+                        return False
+                return True
+            else:
+                return False
+
         operators = ("&&", "||", "!", "=", "!=", "<", "<=", ">", ">=")
         if isinstance(expr, str):
             if expr in operators:
                 return self.kconfigize_operator[expr]
-            elif expr.startswith(("$(", "$")):  # environment variable
-                if expr.startswith("$("):
-                    return self.create_envvar(expr[2:-1])  # remove $( and )
+            elif expr.startswith(('"$(', "'$(", '"$', "'$")):  # environment variable
+                if expr.startswith(('"$(', "'$(")):
+                    return self.create_envvar(expr[3:-2])  # remove "$( and )"
                 else:
-                    return self.create_envvar(expr[1:])  # remove $
+                    return self.create_envvar(expr[2:-1])  # remove "$ and trailing "
             else:  # symbol
-                if expr == "n":
+                if expr in ("n", "'n'", '"n"'):
                     return self.kconfig.n
-                elif expr == "y":
+                elif expr in ("y", "'y'", '"y"'):
                     return self.kconfig.y
                 else:
-                    if expr.startswith(("'", '"')) or not expr.isupper():
+                    if (expr.startswith(("'", '"')) or not expr.isupper()) and not is_dec_hex(expr):
                         sym = self.kconfig._lookup_const_sym(expr[1:-1] if expr.startswith(("'", '"')) else expr)
                     else:
                         sym = self.kconfig._lookup_sym(expr)
                     return sym
-        elif isinstance(expr, (tuple, list)):
+        elif expr.__class__ in (tuple, list):
             if expr[0] in operators:
                 if len(expr) == 3:  # expr operator expr
                     return (

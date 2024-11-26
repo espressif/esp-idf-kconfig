@@ -903,9 +903,7 @@ class Kconfig(object):
         self.root_file = join(self.srctree, self.filename)
 
         try:
-            # Parse the Kconfig files. Returns the last node, which we
-            # terminate with '.next = None'.
-            # NOTE: is prev.next = None needed?
+            # Parse the Kconfig files. Returns the last node, which we terminate with '.next = None'.
             if self.parser_version == 1:
                 prev = self._parse_block(None, self.top_node, self.top_node)
                 self.top_node.list = self.top_node.next
@@ -1091,8 +1089,7 @@ class Kconfig(object):
         # is normal and expected within a .config file.
         self._warn_assign_no_prompt = False
 
-        # This stub only exists to make sure _warn_assign_no_prompt gets
-        # reenabled
+        # This stub only exists to make sure _warn_assign_no_prompt gets re-enabled
         try:
             self._load_config(filename, replace)
         except UnicodeDecodeError as e:
@@ -3309,6 +3306,9 @@ class Kconfig(object):
             self._warn(msg)
 
         for choice in self.unique_choices:
+            if choice.orig_type != BOOL:
+                self._warn(f"{choice.name_and_loc} defined with type {TYPE_TO_STR[choice.orig_type]}")
+
             for node in choice.nodes:
                 if node.prompt:
                     break
@@ -3724,7 +3724,7 @@ class Symbol:
                     )
                 else:
                     # If the user value is well-formed and satisfies range
-                    # contraints, it is stored in exactly the same form as
+                    # constraints, it is stored in exactly the same form as
                     # specified in the assignment (with or without "0x", etc.)
                     val = self._user_value
                     use_defaults = False
@@ -4407,7 +4407,7 @@ class Choice:
     syms: List[Symbol]
     defaults: List[Tuple[Any, Any]]  # Tuple[condition, expression], both can be pretty complicated
 
-    def __init__(self, kconfig: Kconfig, name: Optional[str] = None, direct_dep: Symbol = None):
+    def __init__(self, kconfig: Kconfig, name: Optional[str] = None, direct_dep: Optional[Symbol] = None):
         self.kconfig = kconfig
         self.name = name
 
