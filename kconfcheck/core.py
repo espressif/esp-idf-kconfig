@@ -658,11 +658,13 @@ def validate_file(file_full_path: str, verbose: bool = False, replace: bool = Fa
         return False
     else:
         print("{}: OK".format(file_full_path))
-        try:
-            os.remove(suggestions_full_path)
-        except Exception:
-            # It is not a serious error if the file cannot be deleted
-            print("{} cannot be deleted!".format(suggestions_full_path))
+        # If replace, file already removed
+        if not replace:
+            try:
+                os.remove(suggestions_full_path)
+            except Exception:
+                # It is not a serious error if the file cannot be deleted
+                print(f"{suggestions_full_path} cannot be deleted!")
         return True
 
 
