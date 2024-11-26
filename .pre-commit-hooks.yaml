@@ -3,4 +3,4 @@
   description: This hook checks syntax of ESP-IDF Kconfig files
   entry: python -m kconfcheck --replace
   language: python
-  files: 'Kconfig.*$'
+  files: 'Kconfig.*$|sdkconfig.rename.*$'

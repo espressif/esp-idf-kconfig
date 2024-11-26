@@ -12,6 +12,8 @@ from typing import Tuple
 # output file with suggestions will get this suffix
 OUTPUT_SUFFIX = ".new"
 
+CONFIG_PREFIX = "CONFIG_"
+
 SPACES_PER_INDENT = 4
 
 CONFIG_NAME_MAX_LENGTH = 50
@@ -116,6 +118,54 @@ class LineRuleChecker(BaseChecker):
                     line = rule[0].sub(rule[2], line)
         if len(errors) > 0:
             raise InputError(self.path_in_idf, line_number, "; ".join(errors), line)
+
+
+class ConfigNameChecker(BaseChecker):
+    """
+    Checks if the global syntax of config/symbol names is correct.
+    Every rule is in separate method to allow easy extension.
+    """
+
+    def __init__(self, path_in_idf):
+        super().__init__(path_in_idf)
+
+    def rule_prefix(self, config_name: str, line: str, line_number: int) -> None:
+        if not config_name.startswith(CONFIG_PREFIX):
+            config_name_start = line.find(config_name)
+            raise InputError(
+                self.path_in_idf,
+                line_number,
+                f"{config_name} should start with {CONFIG_PREFIX}",
+                f"{line[:config_name_start]}{CONFIG_PREFIX}{line[config_name_start:]}",
+            )
+
+    def rule_uppercase(self, config_name: str, line: str, line_number: int) -> None:
+        if not config_name.isupper():
+            raise InputError(
+                self.path_in_idf,
+                line_number,
+                f"{config_name} should be all uppercase",
+                line.replace(config_name, config_name.upper()),
+            )
+
+    def rule_name_len(self, config_name: str, line: str, line_number: int) -> None:
+        name_length = len(config_name)
+        # When checking Kconfig files, there is not yet a prefix and thus, 50-char length is checked without it.
+        # To be consistent, prefix is not counted in the length.
+        if name_length - len(CONFIG_PREFIX) > CONFIG_NAME_MAX_LENGTH:
+            raise InputError(
+                self.path_in_idf,
+                line_number,
+                f"{config_name} is {name_length} characters long and it should be {CONFIG_NAME_MAX_LENGTH} at most",
+                line,
+            )  # no suggested correction for this
+
+    def process_line(self, line: str, line_number: int) -> None:
+        raise NotImplementedError("ConfigNameChecker checks config names, not lines.")
+
+    def process_config_name(self, config_name: str, line: str, line_number: int) -> None:
+        for rule in (self.rule_prefix, self.rule_uppercase, self.rule_name_len):
+            rule(config_name, line, line_number)
 
 
 class IndentAndNameChecker(BaseChecker):
@@ -474,6 +524,8 @@ class SDKRenameChecker(BaseChecker):
 
     def __init__(self, path_in_idf):
         super().__init__(path_in_idf)
+        self.renames = dict()  # key = old name, value = new name
+        self.config_name_checker = ConfigNameChecker(path_in_idf)
 
     def process_line(self, line: str, line_number: int) -> None:
         # The line should look like CONFIG_OLD_NAME CONFIG_NEW_NAME # optional comment,
@@ -492,8 +544,10 @@ class SDKRenameChecker(BaseChecker):
         else:
             old_name, new_name = tokens[:2]  # [:2] removes optional comment from tokens
 
+        inversion = False
         if new_name.startswith("!"):  # inversion
             new_name = new_name[1:]
+            inversion = True
 
         ############################################
         # sdkconfig.rename specific checks
@@ -503,13 +557,42 @@ class SDKRenameChecker(BaseChecker):
             raise InputError(
                 self.path_in_idf,
                 line_number,
-                "For inversion, use CONFIG_OLD !CONFIG_NEW syntax.",
+                "For inversion, use CONFIG_OLD !CONFIG_NEW syntax",
                 line[: line.index(old_name)]
                 + old_name[1:]
                 + line[line.index(old_name) + len(old_name) : line.index(new_name)]
                 + "!"
                 + line[line.index(new_name) :],
             )
+
+        # Check for duplicit lines
+        if old_name in self.renames.keys() and self.renames[old_name] == new_name:
+            raise InputError(
+                self.path_in_idf,
+                line_number,
+                f"There is a duplicit line: {old_name} {new_name if not inversion else '!'+new_name}",
+                "",  # omit the duplicate
+            )
+
+        # Check if the there is repeated rename from the old name
+        # This is not allowed because if the two different new names would have different values, the result would be ambiguous
+        # NOTE: Multiple renames to the same new name are allowed. In that case, the value of the new name is just propagated to all the old names.
+        if old_name in self.renames.keys():
+            raise InputError(
+                self.path_in_idf,
+                line_number,
+                f"There already is a renaming from an old config name {old_name}",
+                line,  # no suggestions for this
+            )
+
+        ############################################
+        # Checking correctness of the config names
+        ############################################
+        self.config_name_checker.process_config_name(old_name, line, line_number)
+        self.config_name_checker.process_config_name(new_name, line, line_number)
+
+        # Add the new renaming to the dictionary
+        self.renames[old_name] = new_name
 
 
 def valid_directory(path):
@@ -556,7 +639,11 @@ def validate_file(file_full_path: str, verbose: bool = False, replace: bool = Fa
             raise ValueError("The encoding of {} is not Unicode.".format(file_full_path))
         finally:
             for checker in checkers:
-                checker.finalize()
+                try:
+                    checker.finalize()
+                except InputError as e:
+                    print(e)
+                    fail = True
 
     if replace:
         os.replace(suggestions_full_path, file_full_path)
