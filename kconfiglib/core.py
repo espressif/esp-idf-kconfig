@@ -948,6 +948,7 @@ class Kconfig(object):
         self._check_sym_sanity()
         self._check_choice_sanity()
 
+        self._check_multiple_definitions()
         # KCONFIG_STRICT is an older alias for KCONFIG_WARN_UNDEF, supported
         # for backwards compatibility
         if os.getenv("KCONFIG_WARN_UNDEF") == "y" or os.getenv("KCONFIG_STRICT") == "y":
@@ -3218,6 +3219,21 @@ class Kconfig(object):
     #
     # Misc.
     #
+
+    def _check_multiple_definitions(self):
+        """
+        Checks for multiple definitions of symbols and choices. If such a symbol or choice is found,
+        warning is generated.
+        """
+        for sym in self.unique_defined_syms:
+            if len(sym.nodes) > 1:
+                occurrences = "\n".join(f"    {node.filename}:{node.linenr}" for node in sym.nodes)
+                self._warn(f"Symbol {sym.name} defined in multiple locations:\n{occurrences}")
+
+        for choice in self.unique_choices:
+            if len(choice.nodes) > 1:
+                occurrences = "\n".join(f"    {node.filename}:{node.linenr}" for node in choice.nodes)
+                self._warn(f"Choice {choice.name} defined in multiple locations:\n{occurrences}")
 
     def _check_sym_sanity(self):
         # Checks various symbol properties that are handiest to check after

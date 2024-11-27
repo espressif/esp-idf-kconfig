@@ -1,0 +1,3 @@
+warning: Symbol FEATURE defined in multiple locations:
+MultipleDefinitions.in:3
+MultipleDefinitions.in:7
