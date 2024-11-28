@@ -1,0 +1,12 @@
+# Test several different whitespace placings
+
+CONFIG_OLD   CONFIG_NEW
+
+CONFIG_INDENTED_OLD         CONFIG_INDENTED_NEW
+
+
+#comment here
+CONFIG_COMMENT_OLD    CONFIG_COMMENT_NEW # with comment
+
+
+# comment there
