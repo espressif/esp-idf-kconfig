@@ -431,14 +431,14 @@ def validate_kconfig_file(
     suggestions_full_path = kconfig_full_path + OUTPUT_SUFFIX
     fail = False
 
-    with open(kconfig_full_path, "r", encoding="utf-8") as f, open(
-        suggestions_full_path, "w", encoding="utf-8", newline="\n"
-    ) as f_o, LineRuleChecker(kconfig_full_path) as line_checker, SourceChecker(
-        kconfig_full_path
-    ) as source_checker, IndentAndNameChecker(
-        kconfig_full_path, debug=verbose
-    ) as indent_and_name_checker:
-        try:
+    try:
+        with open(kconfig_full_path, "r", encoding="utf-8") as f, open(
+            suggestions_full_path, "w", encoding="utf-8", newline="\n"
+        ) as f_o, LineRuleChecker(kconfig_full_path) as line_checker, SourceChecker(
+            kconfig_full_path
+        ) as source_checker, IndentAndNameChecker(
+            kconfig_full_path, debug=verbose
+        ) as indent_and_name_checker:
             for line_number, line in enumerate(f, start=1):
                 try:
                     for checker in [
@@ -454,10 +454,11 @@ def validate_kconfig_file(
                     print(e)
                     fail = True
                     f_o.write(e.suggested_line)
-        except UnicodeDecodeError:
-            raise ValueError(
-                "The encoding of {} is not Unicode.".format(kconfig_full_path)
-            )
+    except UnicodeDecodeError:
+        raise ValueError("The encoding of {} is not Unicode.".format(kconfig_full_path))
+    except InputError as e:
+        print(e)
+        fail = True
 
     if replace:
         os.replace(suggestions_full_path, kconfig_full_path)
