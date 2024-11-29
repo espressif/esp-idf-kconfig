@@ -9,7 +9,7 @@ import argparse
 import os
 import re
 
-# ouput file with suggestions will get this suffix
+# output file with suggestions will get this suffix
 OUTPUT_SUFFIX = ".new"
 
 SPACES_PER_INDENT = 4
@@ -425,8 +425,9 @@ def valid_directory(path):
 
 
 def validate_kconfig_file(
-    kconfig_full_path, verbose=False
-):  # type: (str, bool) -> bool
+    kconfig_full_path: str, verbose: bool = False, replace: bool = False
+) -> bool:
+    # Even in case of in_place modification, create a new file with suggestions (original will be replaced later).
     suggestions_full_path = kconfig_full_path + OUTPUT_SUFFIX
     fail = False
 
@@ -458,16 +459,17 @@ def validate_kconfig_file(
                 "The encoding of {} is not Unicode.".format(kconfig_full_path)
             )
 
+    if replace:
+        os.replace(suggestions_full_path, kconfig_full_path)
+
     if fail:
         print(
             "\t{} has been saved with suggestions for resolving the issues.\n"
             "\tPlease note that the suggestions can be wrong and "
             "you might need to re-run the checker several times "
-            "for solving all issues".format(suggestions_full_path)
-        )
-        print(
-            "\tPlease fix the errors and run {} for checking the correctness of "
-            "Kconfig files.".format(os.path.abspath(__file__))
+            "for solving all issues".format(
+                suggestions_full_path if not replace else kconfig_full_path
+            )
         )
         return False
     else:
@@ -494,6 +496,11 @@ def main():
         action="store_true",
         help="Print more information (useful for debugging)",
     )
+    parser.add_argument(
+        "--replace",
+        action="store_true",
+        help="Apply the changes to the original files instead of creating .new files",
+    )
     args = parser.parse_args()
 
     success_counter = 0
@@ -502,7 +509,7 @@ def main():
     files = [os.path.abspath(file_path) for file_path in args.files]
 
     for full_path in files:
-        is_valid = validate_kconfig_file(full_path, args.verbose)
+        is_valid = validate_kconfig_file(full_path, args.verbose, args.replace)
         if is_valid:
             success_counter += 1
         else:

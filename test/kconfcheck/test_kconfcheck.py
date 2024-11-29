@@ -2,7 +2,9 @@
 #
 # SPDX-FileCopyrightText: 2018-2023 Espressif Systems (Shanghai) CO LTD
 # SPDX-License-Identifier: Apache-2.0
-
+import filecmp
+import os
+import shutil
 import unittest
 
 from kconfcheck.core import (
@@ -11,6 +13,7 @@ from kconfcheck.core import (
     InputError,
     LineRuleChecker,
     SourceChecker,
+    validate_kconfig_file,
 )
 
 
@@ -247,6 +250,49 @@ class TestPrefix(TestIndentAndNameChecker):
         self.expt_success("        config MENUOP_2")
         self.expt_success("    endif")
         self.expt_success("endmenu")
+
+
+class TestReplace(unittest.TestCase):
+    """
+    Test the (not only) pre-commit hook in place change by running validate_kconfig_file() with replace=True.
+    Original Kconfig should be modified instead of creating new file.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        test_files_path = os.path.join(os.path.dirname(__file__))
+        cls.ORIGINAL = os.path.join(test_files_path, "Kconfig")
+        assert os.path.isfile(cls.ORIGINAL)
+        cls.TEST_FILE = cls.ORIGINAL + ".test"
+
+    @classmethod
+    def tearDownClass(cls):
+        try:
+            os.remove(cls.TEST_FILE)
+        except FileNotFoundError:
+            pass
+
+    def setUp(self):
+        shutil.copy(self.ORIGINAL, self.TEST_FILE)
+
+    def tearDown(self):
+        try:
+            os.remove(self.TEST_FILE + ".new")
+        except FileNotFoundError:
+            pass
+
+    def test_no_replace(self):
+        validate_kconfig_file(self.TEST_FILE, replace=False)
+        self.assertTrue(os.path.isfile(self.TEST_FILE + ".new"))
+        self.assertTrue(os.path.isfile(self.TEST_FILE))
+        self.assertFalse(filecmp.cmp(self.TEST_FILE + ".new", self.ORIGINAL))
+        self.assertTrue(filecmp.cmp(self.TEST_FILE, self.ORIGINAL))
+
+    def test_replace(self):
+        validate_kconfig_file(os.path.abspath(self.TEST_FILE), replace=True)
+        self.assertTrue(os.path.isfile(self.TEST_FILE))
+        self.assertFalse(os.path.isfile(self.TEST_FILE + ".new"))
+        self.assertFalse(filecmp.cmp(self.TEST_FILE, self.ORIGINAL))
 
 
 if __name__ == "__main__":
