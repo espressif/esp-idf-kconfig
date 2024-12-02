@@ -1,3 +1,13 @@
+## v1.5.0 (2024-12-02)
+
+### New Features
+
+- **kconfcheck**: Add in-place suggestions when running as precommit hook
+
+### Bug Fixes
+
+- **kconfcheck**: Handle InputError from __exit__() method
+
 ## v1.4.3 (2024-07-23)
 
 ### Bug Fixes
