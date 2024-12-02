@@ -251,6 +251,13 @@ class TestPrefix(TestIndentAndNameChecker):
         self.expt_success("    endif")
         self.expt_success("endmenu")
 
+    def test_no_prefix(self):
+        self.expt_success('menu "test"')
+        self.expt_success("    config NOPREFIX")
+        self.expt_success("    config IDF_PREFIXA")
+        self.expt_success("    config IDF_PREFIXB")
+        self.expect_error("endmenu", expect=None)
+
 
 class TestReplace(unittest.TestCase):
     """
