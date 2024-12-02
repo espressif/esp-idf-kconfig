@@ -1,3 +1,30 @@
+## v2.4.0 (2024-11-29)
+
+### New Features
+
+- **kconfiglib**: Check duplicate symbol definitions
+- add sdkconfig.rename checker
+- **kconfcheck**: Add in-place suggestions when running as precommit hook
+- **kconfiglib**: Add new parser based on pyparsing
+
+### Bug Fixes
+
+- Do not try to remove file.new in replace mode
+- do not return from finally blocks
+- **kconfiglib**: Fix order of env_var and config name in warning
+
+### Code Refactoring
+
+- remove TRISTATE type, m value and module logic
+- Move docstring to the attributes they are documenting
+- Set class attributes during initialization
+- Change string formatting, remove Py2 support
+- Increase line len to 120
+
+### Performance Improvements
+
+- **kconfiglib**: Enhance performance by manually parsing option blocks
+
 ## v2.3.0 (2024-07-30)
 
 ### New Features
