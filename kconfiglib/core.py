@@ -461,6 +461,7 @@ class Kconfig(object):
         "unique_choices",
         "unique_defined_syms",
         "variables",
+        "info",
         "warn",
         "warn_assign_override",
         "warn_assign_redun",
@@ -504,6 +505,7 @@ class Kconfig(object):
         self,
         filename="Kconfig",
         warn=True,
+        info=True,
         warn_to_stderr=True,
         encoding="utf-8",
         suppress_traceback: bool = False,  # NOTE: deprecated (unused), preserved for compatibility
@@ -615,6 +617,12 @@ class Kconfig(object):
             the current warning settings.
         """
         self.warn = warn
+
+        """
+        info:
+            Same as 'warn', but for informational messages.
+        """
+        self.info = info
 
         """
         warn_to_stderr:
@@ -3224,16 +3232,26 @@ class Kconfig(object):
         """
         Checks for multiple definitions of symbols and choices. If such a symbol or choice is found,
         warning is generated.
+        NOTE: One Kconfig file can be sourced in multiple files, this case will manifest as several
+        nodes, but with the same filename and line number. This situation is not ideal, but allowable.
         """
         for sym in self.unique_defined_syms:
             if len(sym.nodes) > 1:
-                occurrences = "\n".join(f"    {node.filename}:{node.linenr}" for node in sym.nodes)
-                self._warn(f"Symbol {sym.name} defined in multiple locations:\n{occurrences}")
+                occurrences = set(f"    {node.filename}:{node.linenr}" for node in sym.nodes)
+                if len(occurrences) > 1:
+                    occurrences = "\n".join(occurrences)
+                    self._info(
+                        f"INFO: Symbol {sym.name} defined in multiple locations (see below). Please check if this is a correct behavior or a random name match:\n{occurrences}"
+                    )
 
         for choice in self.unique_choices:
             if len(choice.nodes) > 1:
-                occurrences = "\n".join(f"    {node.filename}:{node.linenr}" for node in choice.nodes)
-                self._warn(f"Choice {choice.name} defined in multiple locations:\n{occurrences}")
+                occurrences = set(f"    {node.filename}:{node.linenr}" for node in choice.nodes)
+                if len(occurrences) > 1:
+                    occurrences = "\n".join(occurrences)
+                    self._info(
+                        f"INFO: Choice {choice.name} defined in multiple locations (see below). Please check if this is a correct behavior or a random name match:\n{occurrences}"
+                    )
 
     def _check_sym_sanity(self):
         # Checks various symbol properties that are handiest to check after
@@ -3427,6 +3445,12 @@ class Kconfig(object):
         self.warnings.append(msg)
         if self.warn_to_stderr:
             sys.stderr.write(msg + "\n")
+
+    def _info(self, msg):
+        if not self.info:
+            return
+
+        sys.stderr.write(f"info: {msg}\n")
 
 
 class Symbol:
