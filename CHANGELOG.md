@@ -1,3 +1,9 @@
+## v2.4.1 (2024-12-10)
+
+### Bug Fixes
+
+- Prevent multidefinition warning when Kconfig sourced multiple times
+
 ## v2.4.0 (2024-11-29)
 
 ### New Features
