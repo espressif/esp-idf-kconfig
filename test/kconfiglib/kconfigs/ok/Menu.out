@@ -6,13 +6,16 @@
 #
 # menu with one config
 #
+# default:
 CONFIG_ONE=y
 # end of menu with one config
 
+# default:
 CONFIG_A=y
 
 #
 # menu with visible if
 #
+# default:
 CONFIG_B=y
 # end of menu with visible if

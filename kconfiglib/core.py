@@ -446,6 +446,7 @@ class Kconfig(object):
         "allowed_multi_def_syms",
         "choices",
         "comments",
+        "comment_default_value",
         "config_header",
         "config_prefix",
         "const_syms",
@@ -705,6 +706,14 @@ class Kconfig(object):
             the same way in the C tools.
         """
         self.config_prefix = os.getenv("CONFIG_", "CONFIG_")
+
+        """
+        comment_default_value:
+            To distinguish if a config option has a default value in the sdkconfig file,
+            lines with config option set to default value are preceded by the comment
+            specified by self.comment_default_value.
+        """
+        self.comment_default_value = "# default:"
 
         # Regular expressions for parsing .config files
         self._set_match = re.compile(self.config_prefix + r"([^=]+)=(.*)", re.ASCII).match
@@ -1127,6 +1136,23 @@ class Kconfig(object):
         return ("Loaded" if replace else "Merged") + msg
 
     def _load_config(self, filename, replace):
+        def _inject_default_value(sym: Symbol, val: Any) -> None:
+            for node in sym.nodes:
+                # String literal is a constant symbol
+                if sym.orig_type == STRING:
+                    sym_for_val = self._lookup_const_sym(val)
+                else:
+                    sym_for_val = self._lookup_const_sym(val) if val in ("y", "n") else self._lookup_sym(val)
+                node.defaults = [(sym_for_val, self.y)] + node.defaults
+            # Invalidate recursively to propagate the change to dependent symbols
+            sym._rec_invalidate()
+
+            # sym.defaults need to be recalculated during finalize_node()
+            sym.defaults = []
+
+        def _quote_value(val: str) -> str:
+            return val if val in ("y", "n") else f'"{val}"'
+
         with self._open_config(filename) as f:
             if replace:
                 self.missing_syms = []
@@ -1148,6 +1174,8 @@ class Kconfig(object):
             unset_match = self._unset_match
             get_sym = self.syms.get
 
+            value_is_default = False
+            sym: Symbol
             for linenr, line in enumerate(f, 1):
                 # The C tools ignore trailing whitespace
                 line = line.rstrip()
@@ -1215,6 +1243,8 @@ class Kconfig(object):
                                 linenr,
                             )
 
+                        if line and line.strip() == self.comment_default_value:
+                            value_is_default = True
                         continue
 
                     name = match.group(1)
@@ -1233,7 +1263,19 @@ class Kconfig(object):
                 if sym._was_set:
                     self._assigned_twice(sym, val, filename, linenr)
 
-                sym.set_value(val)
+                if not value_is_default:  # If the value is not set to default
+                    sym.set_value(val)
+                else:  # Symbol has only a default value and it is different between sdkconfig and Kconfig
+                    if sym._user_value is None and sym.str_value != str(val):
+                        self._info(
+                            f"Default value for {sym.name} in sdkconfig is {_quote_value(val)} but according to Kconfig, it is {_quote_value(sym.str_value)}. "
+                            f"Using default value from sdkconfig ({val})."
+                        )
+                        _inject_default_value(sym, val)
+                    value_is_default = False
+
+            # Refresh config tree after all values are set
+            self._finalize_node(self.top_node, self.top_node.visibility)
 
         if replace:
             # If we're replacing the configuration, unset the symbols that
@@ -3241,6 +3283,9 @@ class Kconfig(object):
 
         sym.direct_dep = self._make_or(sym.direct_dep, node.dep)
 
+        # TODO: Because finalize_node is called twice, we should compare if head of sym.defaults is the same as node defaults.
+        #       If yes, do not add again.
+        #       Currently, cannot easily compare Symbols, so just add all. Symbol comparison will be probably added in IDF-2971.
         sym.defaults += node.defaults
         sym.ranges += node.ranges
         sym.selects += node.selects
@@ -4023,21 +4068,22 @@ class Symbol:
         # _write_to_conf is determined when the value is calculated. This is a
         # hidden function call due to property magic.
         val = self.str_value
+        pragma_default_comment = "" if self._user_value else f"{self.kconfig.comment_default_value}\n"
         if not self._write_to_conf:
             return ""
 
         if self.orig_type == BOOL:
             return (
-                f"{self.kconfig.config_prefix}{self.name}={val}\n"
+                f"{pragma_default_comment}{self.kconfig.config_prefix}{self.name}={val}\n"
                 if val != "n"
-                else f"# {self.kconfig.config_prefix}{self.name} is not set\n"
+                else f"{pragma_default_comment}# {self.kconfig.config_prefix}{self.name} is not set\n"
             )
 
         if self.orig_type in _INT_HEX:
-            return f"{self.kconfig.config_prefix}{self.name}={val}\n"
+            return f"{pragma_default_comment}{self.kconfig.config_prefix}{self.name}={val}\n"
 
         # sym.orig_type == STRING
-        return f'{self.kconfig.config_prefix}{self.name}="{escape(val)}"\n'
+        return f'{pragma_default_comment}{self.kconfig.config_prefix}{self.name}="{escape(val)}"\n'
 
     @property
     def name_and_loc(self):

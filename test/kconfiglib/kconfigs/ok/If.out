@@ -6,6 +6,8 @@
 #
 # menumenu
 #
+# default:
 CONFIG_A=y
+# default:
 CONFIG_IFA=y
 # end of menumenu

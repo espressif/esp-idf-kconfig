@@ -2,7 +2,9 @@
 # Automatically generated file. DO NOT EDIT.
 # Espressif IoT Development Framework (ESP-IDF)  Project Configuration
 #
+# default:
 CONFIG_HELP=y
+# default:
 CONFIG_JUST_CHECKING=y
 
 #
