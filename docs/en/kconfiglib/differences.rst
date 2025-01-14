@@ -12,3 +12,6 @@ Although we tried to keep the ``esp-idf-kconfig`` package as close to the origin
 - Explicit prompts for ``menu`` entries are not supported.
 - ``choice`` entries are now forced to be a ``bool`` type.
 - ``---help---`` keyword is not supported.
+- ``config`` or ``choice`` names must contain only numbers, uppercase letters from the English alphabet and underscores.
+- Multiple definitions of ``config``/``choice`` entries are now reported to the user.
+- The inference of default values has been reworked (see :ref:`defaults`).

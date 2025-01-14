@@ -4,9 +4,6 @@
 #
 # default:
 CONFIG_EXPERIMENTAL=y
-# default:
 CONFIG_WARP_DRIVE=y
-# default:
 # CONFIG_SUBLIGHT_DRIVE is not set
-# default:
 # CONFIG_WORMHOLE_DRIVE is not set

@@ -1,4 +1,4 @@
-mainmenu "Test if statement inside Choice"
+mainmenu "Test if statement inside Choice with condition depending on choice"
 
     choice
         prompt "Test if statement inside Choice"
@@ -9,7 +9,7 @@ mainmenu "Test if statement inside Choice"
 
         if FOO
 
-            config BAR
+            config BAR # B will NOT be part of the choice
                  bool "bar"
 
         endif
