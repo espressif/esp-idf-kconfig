@@ -1,0 +1,21 @@
+mainmenu "Invalid Entry in Choice"
+
+    choice
+        prompt "Test if statement inside Choice"
+	    default FOO
+
+        config FOO
+            bool "foo"
+
+        if FOO
+
+            menu "Menu not allowed here"
+
+                config BAR
+                     bool "bar"
+
+            endmenu
+
+        endif
+
+    endchoice

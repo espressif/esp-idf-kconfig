@@ -161,18 +161,22 @@ Examples:
 The ``choice`` Entry
 ^^^^^^^^^^^^^^^^^^^^
 
-The ``choice`` entry is used to define an exclusive choice between several configs. These configs need to be defined in the body of the choice. It has the same options as the ``config`` entry, except for the ``<type>`` option, which is always ``bool`` and it is not necessary to define it (although possible, for compatibility reasons).
+The ``choice`` entry is used to define an exclusive choice between several configs. These configs need to be defined in the body of the choice and can be included conditionally with the ``if`` block. The ``choice`` entry has the same options as the ``config`` entry, except for the ``<type>`` option, which is always ``bool`` and it is not necessary to define it (although possible, for compatibility reasons).
 
 .. note::
 
     In contrast to the upstream Kconfig language, the ``optional`` keyword is not supported in the ``choice`` entry, as well as other types.
 
 
-The syntax is as follows. The ``choice_name`` is a non-quoted capitalized string consisting of letters, numbers, and underscores, and ``config_options`` are described in the `Options`_ section. The ``config_options`` and ``config`` entries are indented by one level, ``endchoice`` token is at the same indentation level as the ``choice`` token.
+The syntax is as follows. The ``choice_name`` is a non-quoted capitalized string consisting of letters, numbers, and underscores, and ``config_options`` are described in the `Options`_ section. The ``config_options``, ``config`` and ``config_if_entry`` entries are indented by one level, ``endchoice`` token is at the same indentation level as the ``choice`` token.
 
 .. code-block:: bnf
 
-    choice ::= "choice" + choice_name + config_options + config* + "endchoice"
+    choice ::= "choice" + choice_name + config_options + (config | choice_if_entry)* + "endchoice"
+
+.. note::
+
+    The ``choice_if_entry`` entry is syntactically very similar to the ``if`` entry. The only difference is that the ``choice_if_entry`` accepts only ``config`` or another ``choice_if_entry`` entries.
 
 Example usage:
 
