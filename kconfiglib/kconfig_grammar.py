@@ -1,23 +1,19 @@
-# SPDX-FileCopyrightText: 2024 Espressif Systems (Shanghai) CO LTD
+# SPDX-FileCopyrightText: 2024-2025 Espressif Systems (Shanghai) CO LTD
 # SPDX-License-Identifier: Apache-2.0
 import re
+from typing import TYPE_CHECKING
 from typing import Dict
 from typing import List
 from typing import Optional
 from typing import Tuple
-from typing import TYPE_CHECKING
 
-from pyparsing import alphanums
 from pyparsing import Forward
 from pyparsing import Group
 from pyparsing import IndentedBlock
-from pyparsing import infix_notation
 from pyparsing import Keyword
 from pyparsing import LineEnd
 from pyparsing import Literal
-from pyparsing import one_of
 from pyparsing import OneOrMore
-from pyparsing import opAssoc
 from pyparsing import Opt
 from pyparsing import ParseException
 from pyparsing import PrecededBy
@@ -27,6 +23,10 @@ from pyparsing import Suppress
 from pyparsing import Token
 from pyparsing import Word
 from pyparsing import ZeroOrMore
+from pyparsing import alphanums
+from pyparsing import infix_notation
+from pyparsing import one_of
+from pyparsing import opAssoc
 
 if TYPE_CHECKING:
     from kconfiglib.kconfig_parser import Parser
@@ -480,13 +480,18 @@ class KconfigGrammar:
         ########################
         # Choice
         ########################
+        choice_if_entry = Forward()
+        choice_if_entry << Keyword("if") + (expression + IndentedBlock(choice_if_entry | config)).set_parse_action(
+            parser.parse_if_entry
+        ) + Keyword("endif")
+
         # Choice is a group of configs that can have only one active at a time.
         choice = (
             Keyword("choice")
             + (
                 Opt(symbol).set_results_name("name")
                 + Opt(KconfigOptionBlock().set_results_name("config_opts"))
-                + IndentedBlock(config).set_results_name("configs")
+                + IndentedBlock(config | choice_if_entry).set_results_name("configs")
             ).set_parse_action(parser.parse_choice)
             + Keyword("endchoice")
         )

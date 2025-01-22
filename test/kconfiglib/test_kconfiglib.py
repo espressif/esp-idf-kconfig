@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2024 Espressif Systems (Shanghai) CO LTD
+# SPDX-FileCopyrightText: 2024-2025 Espressif Systems (Shanghai) CO LTD
 # SPDX-License-Identifier: Apache-2.0
 import os
 import subprocess
@@ -106,8 +106,12 @@ class TestErrorCases(BaseKconfigTest):
     )
     @pytest.mark.parametrize("version", ["1", "2"])
     def test_error_cases(self, filename, version):
-        if int(version) == 1 and filename == "NoMainmenu":
-            pytest.skip("Original kconfiglib supports Kconfigs without root mainmenu")
+        v1_skipped_tests = {
+            "NoMainmenu": "Original kconfiglib supports Kconfigs without root mainmenu.",
+            "InvalidEntryInChoice": "Original kconfiglib supports all entries in if statement inside choice.",
+        }
+        if int(version) == 1 and filename in v1_skipped_tests.keys():
+            pytest.skip(v1_skipped_tests[filename])
         os.environ["KCONFIG_PARSER_VERSION"] = version
         assert os.environ.get("KCONFIG_PARSER_VERSION", "") == version
 

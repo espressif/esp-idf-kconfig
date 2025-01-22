@@ -126,6 +126,8 @@ quote-style = "double"
 indent-style = "space"
 docstring-code-format = true
 
+[tool.ruff.isort]
+force-single-line = true
 
 [tool.codespell]
 ignore-words-list ="rsource,osource,orsource"

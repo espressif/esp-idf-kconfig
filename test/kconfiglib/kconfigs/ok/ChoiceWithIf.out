@@ -1,0 +1,6 @@
+#
+# Automatically generated file. DO NOT EDIT.
+# Espressif IoT Development Framework (ESP-IDF)  Project Configuration
+#
+CONFIG_FOO=y
+# CONFIG_BAR is not set

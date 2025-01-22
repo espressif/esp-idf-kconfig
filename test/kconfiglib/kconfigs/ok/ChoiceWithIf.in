@@ -1,0 +1,17 @@
+mainmenu "Test if statement inside Choice"
+
+    choice
+        prompt "Test if statement inside Choice"
+	    default FOO
+
+        config FOO
+            bool "foo"
+
+        if FOO
+
+            config BAR
+                 bool "bar"
+
+        endif
+
+    endchoice
