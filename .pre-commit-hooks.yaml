@@ -1,6 +1,13 @@
 - id: check-kconfig-files
   name: Check ESP-IDF Kconfig Files
   description: This hook checks syntax of ESP-IDF Kconfig files
-  entry: python -m kconfcheck --replace
+  entry: python -m kconfcheck --replace --check syntax
   language: python
-  files: 'Kconfig.*$|sdkconfig.rename.*$'
+  files: 'Kconfig.*$|sdkconfig\.rename.*$'
+
+- id: check-deprecated-kconfig-options
+  name: Check if any Config Options are Deprecated
+  description: This hook checks for deprecated ESP-IDF config options
+  entry: python -m kconfcheck --check deprecated
+  files: 'sdkconfig\.ci.*$|sdkconfig\.rename.*$|sdkconfig\.defaults.*$'
+  language: python

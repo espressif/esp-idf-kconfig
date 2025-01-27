@@ -1,0 +1,2 @@
+CONFIG_UNRELATED="this option is unrelated and should not have any effect to the test"
+CONFIG_OLD_NAME=y
