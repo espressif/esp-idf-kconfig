@@ -24,15 +24,17 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Operating System :: POSIX",
     "Operating System :: Microsoft :: Windows",
     "Operating System :: MacOS :: MacOS X",
 ]
 dynamic = ['version']
 dependencies = [
-    "windows-curses; platform_system=='Windows'"
+    "windows-curses; sys_platform == 'win32' and python_version < '3.13'",
+    # older versions does not support Python 3.13: https://github.com/zephyrproject-rtos/windows-curses/issues/69
+    "windows-curses>=2.4.1; sys_platform == 'win32' and python_version >= '3.13'",
 ]
-
 [project.urls]
 Homepage = "https://github.com/espressif/esp-idf-kconfig"
 
