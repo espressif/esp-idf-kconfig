@@ -1,0 +1,10 @@
+mainmenu "Symbol defined multiple times"
+
+    config FOO # ignore: multiple-definition
+        int "Foo"
+        default 1 if NOT_DEFINED
+        default 0
+
+    config FOO
+        int "Second Foo"
+        default -1

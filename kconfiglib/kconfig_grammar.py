@@ -419,6 +419,8 @@ class KconfigGrammar:
 
         More info is directly in the code below.
         """
+        self.parser = parser
+
         condition = Suppress(Keyword("if")) + Group(expression)
         # By default, pyparsing removes all the leading and trailing whitespaces and thus these two constructs appear the same:
         #    ...
@@ -560,6 +562,7 @@ class KconfigGrammar:
             """
             Removes inline comments from the string, preserving # inside quotes.
             """
+            self.parser.kconfig.check_pragmas(line)
 
             quote = None  # Tracks if we're inside a quote
             result = []
