@@ -7,7 +7,7 @@
 # Used internally by the ESP-IDF build system. But designed to be
 # non-IDF-specific.
 #
-# SPDX-FileCopyrightText: 2018-2024 Espressif Systems (Shanghai) CO LTD
+# SPDX-FileCopyrightText: 2018-2025 Espressif Systems (Shanghai) CO LTD
 # SPDX-License-Identifier: Apache-2.0
 import argparse
 import json
@@ -16,8 +16,10 @@ import re
 import sys
 import tempfile
 import textwrap
-from collections import defaultdict
 from collections import OrderedDict
+from collections import defaultdict
+from typing import Any
+from typing import DefaultDict
 from typing import Dict
 from typing import List
 from typing import Optional
@@ -42,7 +44,7 @@ class DeprecatedOptions(object):
         # The first option is the deprecated one, the second one is the new one.
         # The new option can be prefixed with '!' to indicate inversion (n/not set -> y, y -> n).
         self.rename_line_regex = re.compile(
-            rf"#.*|\s*\n|(?P<old>{self.config_prefix}[A-Z_0-9]+)\s+(?P<new>!?{self.config_prefix}[A-Z_0-9]+)"
+            rf"#.*|\s*\n|(?P<old>{self.config_prefix}[a-zA-Z_0-9]+)\s+(?P<new>!?{self.config_prefix}[A-Z_0-9]+)"
         )
 
         # r_dic maps deprecated options to new options; rev_r_dic maps in the opposite direction
@@ -51,7 +53,7 @@ class DeprecatedOptions(object):
 
         # note the '=' at the end of regex for not getting partial match of configs.
         # Also match if the config option is followed by a whitespace, this is the case
-        # in sdkconfig.defaults files contaning "# CONFIG_MMM_NNN is not set".
+        # in sdkconfig.defaults files containing "# CONFIG_MMM_NNN is not set".
         self._RE_CONFIG = re.compile(rf"{self.config_prefix}(\w+)(=|\s+)")
 
     def parse_line(self, line: str) -> Optional[re.Match]:
@@ -65,9 +67,11 @@ class DeprecatedOptions(object):
         else:
             return ""
 
-    def _parse_replacements(self, rename_paths: List[str]) -> Tuple[dict, defaultdict, list]:
+    def _parse_replacements(
+        self, rename_paths: List[str]
+    ) -> Tuple[Dict[str, str], DefaultDict[str, List[str]], List[str]]:
         rep_dic: Dict[str, str] = {}
-        rev_rep_dic = defaultdict(list)
+        rev_rep_dic: DefaultDict[str, List[str]] = defaultdict(list)
         inversions: List[str] = []
 
         for rename_path in rename_paths:
@@ -341,7 +345,7 @@ def min_config_with_labels(config: kconfiglib.Kconfig, header: str) -> str:
 def write_min_config(_, config: kconfiglib.Kconfig, filename: str) -> None:
     idf_version = os.environ.get("IDF_VERSION", "")
     target_symbol = config.syms["IDF_TARGET"]
-    # 'esp32` is harcoded here because the default value of IDF_TARGET is set on the first run from the environment
+    # 'esp32` is hardcoded here because the default value of IDF_TARGET is set on the first run from the environment
     # variable. I.E. `esp32  is not defined as default value.
     write_target = target_symbol.str_value != "esp32"
 
@@ -517,7 +521,7 @@ def write_json_menus(_, config: kconfiglib.Kconfig, filename: str) -> None:
         except AttributeError:
             is_menuconfig = False
 
-        new_json = None
+        new_json: Dict[str, Any] = {}
         if node.item == kconfiglib.MENU or is_menuconfig:
             new_json = {
                 "type": "menu",

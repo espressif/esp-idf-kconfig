@@ -129,7 +129,7 @@ This entry can have the following options:
 - ``imply``: optional, multiple times
 - ``option``: deprecated
 
-The formal syntax is as follows, where ``config_name`` is a non-quoted capitalized string consisting of letters, numbers and underscores, ``config_options`` are listed above and described in the `Options`_ section. those options indented by one level.
+The formal syntax is as follows, where ``config_name`` is a non-quoted capitalized string consisting of letters from the English alphabet, numbers, and underscores, ``config_options`` are listed above and described in the `Options`_ section. Those options are indented by one level.
 
 .. code-block:: bnf
 
@@ -168,7 +168,7 @@ The ``choice`` entry is used to define an exclusive choice between several confi
     In contrast to the upstream Kconfig language, the ``optional`` keyword is not supported in the ``choice`` entry, as well as other types.
 
 
-The syntax is as follows. The ``choice_name`` is a non-quoted capitalized string consisting of letters, numbers, and underscores, and ``config_options`` are described in the `Options`_ section. The ``config_options``, ``config`` and ``config_if_entry`` entries are indented by one level, ``endchoice`` token is at the same indentation level as the ``choice`` token.
+The syntax is as follows. The ``choice_name`` is a non-quoted capitalized string consisting of letters from the English alphabet, numbers, and underscores, and ``config_options`` are described in the `Options`_ section. The ``config_options``, ``config`` and ``config_if_entry`` entries are indented by one level, ``endchoice`` token is at the same indentation level as the ``choice`` token.
 
 .. code-block:: bnf
 
@@ -199,7 +199,7 @@ The ``menuconfig`` is a combination of ``menu`` and ``config`` entries. It is us
 This entry can have the same options as ``config`` (``<type>``, ``prompt``, ``depends on``, ``default``, ``help``, ``range``, ``select``, ``imply``, ``option``, ``visible if``, from which only ``<type>`` is mandatory).
 
 
-Syntax is as follows. The sub-configs are not marked by the indentation, but by the ``depends on`` option, which is set to the ``menuconfig``'s name, or, alternatively, with the ``if`` block. The ``config_name`` is a non-quoted capitalized string consisting of letters, numbers and underscores, ``config_options`` are described in the `Options`_ section and are indented by one level.
+Syntax is as follows. The sub-configs are not marked by the indentation, but by the ``depends on`` option, which is set to the ``menuconfig``'s name, or, alternatively, with the ``if`` block. The ``config_name`` is a non-quoted capitalized string consisting of letters from the English alphabet, numbers, and underscores, ``config_options`` are described in the `Options`_ section and are indented by one level.
 
 .. code-block:: bnf
 

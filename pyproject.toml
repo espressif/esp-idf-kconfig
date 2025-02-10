@@ -132,5 +132,5 @@ docstring-code-format = true
 force-single-line = true
 
 [tool.codespell]
-ignore-words-list ="rsource,osource,orsource"
+ignore-words-list ="rsource,osource,orsource,assertIn"
 write-changes = true

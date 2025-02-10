@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# SPDX-FileCopyrightText: 2024 Espressif Systems (Shanghai) CO LTD
+# SPDX-FileCopyrightText: 2024-2025 Espressif Systems (Shanghai) CO LTD
 # SPDX-License-Identifier: Apache-2.0
 import os
 import re
@@ -26,9 +26,7 @@ class KconfgenBaseTestCase(unittest.TestCase):
             # Python 2 fallback
             regex_func = self.assertRegexpMatches
         finally:
-            self.functions["regex"] = lambda instance, s, expr: regex_func(
-                instance, expr, s
-            )  # reverse args order
+            self.functions["regex"] = lambda instance, s, expr: regex_func(instance, expr, s)  # reverse args order
 
     def setUp(self):
         with tempfile.NamedTemporaryFile(prefix="test_kconfgen_", delete=False) as f:
@@ -64,9 +62,7 @@ class KconfgenBaseTestCase(unittest.TestCase):
           out_text is a substring of the full kconfgen output.
         """
 
-        with tempfile.NamedTemporaryFile(
-            mode="w+", prefix="test_kconfgen_", delete=False
-        ) as f:
+        with tempfile.NamedTemporaryFile(mode="w+", prefix="test_kconfgen_", delete=False) as f:
             self.addCleanup(os.remove, f.name)
             f.write(textwrap.dedent(in_text))
 
@@ -184,13 +180,9 @@ class ConfigTestCase(KconfgenBaseTestCase):
 
     def setUp(self):
         super(ConfigTestCase, self).setUp()
-        with tempfile.NamedTemporaryFile(
-            mode="w+", prefix="test_kconfgen_", delete=False
-        ) as f:
+        with tempfile.NamedTemporaryFile(mode="w+", prefix="test_kconfgen_", delete=False) as f:
             self.addCleanup(os.remove, f.name)
-            self.args.update(
-                {"config": f.name}
-            )  # this is input in contrast with {'output': 'config'}
+            self.args.update({"config": f.name})  # this is input in contrast with {'output': 'config'}
             f.write(
                 textwrap.dedent(
                     """
@@ -227,9 +219,7 @@ class RenameConfigTestCase(KconfgenBaseTestCase):
     def prepare_rename_file(self, text):
         # The configuration file is ready, we need to prepare a `rename` configuration file which will
         # provide the new name for `CONFIG_NAMED_OPTION` we defined above
-        with tempfile.NamedTemporaryFile(
-            mode="w+", prefix="test_kconfgen_", delete=False
-        ) as f:
+        with tempfile.NamedTemporaryFile(mode="w+", prefix="test_kconfgen_", delete=False) as f:
             self.addCleanup(os.remove, f.name)
             # Same as above, the following entry will result in the generation of `--sdkconfig-rename`
             # parameter followed by the current temporary file name.
@@ -239,13 +229,11 @@ class RenameConfigTestCase(KconfgenBaseTestCase):
             return f.name
 
     def prepare_sdkconifg_file(self, text):
-        with tempfile.NamedTemporaryFile(
-            mode="w+", prefix="test_kconfgen_", delete=False
-        ) as f:
+        with tempfile.NamedTemporaryFile(mode="w+", prefix="test_kconfgen_", delete=False) as f:
             self.addCleanup(os.remove, f.name)
             # The current file name will be given to `kconfgen.py` after `--config` argument.
             self.args.update({"config": f.name})
-            # Specify the content of that configuration file, in our case, we want to explicitely
+            # Specify the content of that configuration file, in our case, we want to explicitly
             # have an option, which needs to be renamed, disabled/not set.
             f.write(text)
 
@@ -312,6 +300,20 @@ class RenameConfigTestCase(KconfgenBaseTestCase):
             "",
             expected_error=f"RuntimeError: Error in {input_file} (line 2): Replacement name is the same as original name (NAMED_OPTION).",
         )
+
+    def testLowercaseInOldName(self):
+        self.input = """
+        config named_OPTION
+            bool "Lowercase option"
+            default y
+        """
+        rename_file = textwrap.dedent(
+            """
+            CONFIG_named_OPTION             CONFIG_NAMED_OPTION
+            """
+        )
+        self.prepare_rename_file(rename_file)
+        self.invoke_and_test(self.input, "CONFIG_named_OPTION=y")
 
 
 class HeaderTestCase(KconfgenBaseTestCase):
@@ -440,13 +442,9 @@ class DefaultsTestCase(KconfgenBaseTestCase):
 
     def setUp(self):
         super(DefaultsTestCase, self).setUp()
-        with tempfile.NamedTemporaryFile(
-            mode="w+", prefix="test_kconfgen_", delete=False
-        ) as f:
+        with tempfile.NamedTemporaryFile(mode="w+", prefix="test_kconfgen_", delete=False) as f:
             self.addCleanup(os.remove, f.name)
-            self.args.update(
-                {"config": f.name}
-            )  # this is input in contrast with {'output': 'config'}
+            self.args.update({"config": f.name})  # this is input in contrast with {'output': 'config'}
             f.write(
                 textwrap.dedent(
                     """
@@ -517,13 +515,9 @@ class NonSetValuesTestCase(KconfgenBaseTestCase):
 
     def setUp(self):
         super(NonSetValuesTestCase, self).setUp()
-        with tempfile.NamedTemporaryFile(
-            mode="w+", prefix="test_kconfgen_", delete=False
-        ) as f:
+        with tempfile.NamedTemporaryFile(mode="w+", prefix="test_kconfgen_", delete=False) as f:
             self.addCleanup(os.remove, f.name)
-            self.args.update(
-                {"config": f.name}
-            )  # this is input in contrast with {'output': 'config'}
+            self.args.update({"config": f.name})  # this is input in contrast with {'output': 'config'}
             f.write("")
 
     def testNoNumDefault(self):
