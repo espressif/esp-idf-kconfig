@@ -319,7 +319,7 @@ Example:
     menu "Crew"
 
         rsource "./Kconfig.core_crew"
-        oursource "./Kconfig.optional_crew"
+        orsource "./Kconfig.optional_crew"
 
 .. _Options:
 
