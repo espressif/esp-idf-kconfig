@@ -2,12 +2,17 @@
 #
 # Command line tool to check kconfig files
 #
-# SPDX-FileCopyrightText: 2018-2024 Espressif Systems (Shanghai) CO LTD
+# SPDX-FileCopyrightText: 2018-2025 Espressif Systems (Shanghai) CO LTD
 # SPDX-License-Identifier: Apache-2.0
+
 import argparse
 import os
 import re
+from typing import Optional
 from typing import Tuple
+
+from .check_deprecated_options import _prepare_deprecated_options
+from .check_deprecated_options import check_deprecated_options
 
 # output file with suggestions will get this suffix
 OUTPUT_SUFFIX = ".new"
@@ -668,8 +673,15 @@ def validate_file(file_full_path: str, verbose: bool = False, replace: bool = Fa
         return True
 
 
-def main():
+def main() -> int:
     parser = argparse.ArgumentParser(description="Kconfig style checker")
+    parser.add_argument(
+        "--check",
+        "-c",
+        choices=["syntax", "deprecated"],
+        default="syntax",
+        help="Check syntax or deprecated options",
+    )
     parser.add_argument(
         "files",
         nargs="*",
@@ -684,26 +696,68 @@ def main():
     parser.add_argument(
         "--replace",
         action="store_true",
-        help="Apply the changes to the original files instead of creating .new files",
+        help=f"[only for --check syntax] Apply the changes to the original files instead of creating {OUTPUT_SUFFIX} files",
     )
+    parser.add_argument(
+        "--includes",
+        "-d",
+        nargs="*",
+        help="[only for --check deprecated] Paths for recursive search of sdkconfig files",
+        type=valid_directory,
+    )
+    parser.add_argument(
+        "--exclude-submodules",
+        nargs="*",
+        type=valid_directory,
+        help="[only for --check deprecated] Exclude ESP-IDF submodules",
+    )
+
     args = parser.parse_args()
+
+    if args.check == "syntax" and (args.includes is not None or args.exclude_submodules is not None):
+        raise argparse.ArgumentError(
+            None, "--includes and --exclude-submodules are available only when using --check deprecated option."
+        )
+
+    if args.check == "deprecated" and args.replace:
+        raise argparse.ArgumentError(None, "--replace is available only when using --check syntax option.")
 
     success_counter = 0
     failure_counter = 0
+    ignored_counter = 0
 
     files = [os.path.abspath(file_path) for file_path in args.files]
 
+    if args.check == "deprecated":
+        files, deprecated_options, ignore_dirs = _prepare_deprecated_options(
+            args.includes, args.exclude_submodules, files
+        )
+
     for full_path in files:
-        is_valid = validate_file(full_path, args.verbose, args.replace)
-        if is_valid:
+        file_ok: Optional[bool] = False
+        if args.check == "syntax":
+            file_ok = validate_file(full_path, args.verbose, args.replace)
+        elif args.check == "deprecated":
+            file_ok = check_deprecated_options(full_path, deprecated_options, ignore_dirs)
+        else:
+            raise argparse.ArgumentError(None, f"Unknown check type: {args.check} passed to --check argument.")
+
+        if file_ok is None:
+            ignored_counter += 1
+        elif file_ok is True:
             success_counter += 1
         else:
             failure_counter += 1
 
+    def _handle_plural(cnt: int) -> str:
+        return "s" if cnt > 1 else ""
+
     if success_counter > 0:
-        print("{} files have been successfully checked.".format(success_counter))
+        print(f"{success_counter} file{_handle_plural(success_counter)} have been successfully checked.")
+    if ignored_counter > 0:
+        print(f"{ignored_counter} file{_handle_plural(success_counter)} have been ignored.")
     if failure_counter > 0:
-        print("{} files have errors. Please take a look at the log.".format(failure_counter))
+        print(f"{failure_counter} file{_handle_plural(success_counter)} have errors. Please take a look at the log.")
         return 1
 
     if not files:

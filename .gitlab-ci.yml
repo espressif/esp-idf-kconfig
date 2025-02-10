@@ -105,6 +105,7 @@ test_kconfcheck:
   script:
     - cd test/kconfcheck/
     - ./test_kconfcheck.py
+    - pytest test_deprecated_options.py --verbose
 
 # TESTS in VENV
 test_kconfserver_venv:
@@ -135,6 +136,8 @@ test_kconfcheck_venv:
   script:
     - cd test/kconfcheck/
     - ./test_kconfcheck.py
+    - pytest test_deprecated_options.py --verbose
+
 
 # ------------------------------------------------------------------------------------------------------
 # BUILD AND DEPLOY DOCS
