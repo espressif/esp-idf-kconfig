@@ -191,7 +191,8 @@ The ``choice`` entry consists of the ``choice`` keyword, followed by ``choice_na
                 bool "Sublight drive"
 
             menu "Warp drive configuration"
-                # This menu will be shown inside the choice in GUI/TUI, but it is not a part of the choice
+                # This menu will be shown inside the choice in GUI/TUI,
+                # but it is separated from the choice logic (WARP_SPEED is not a choice config).
                 visible if WARP_DRIVE
 
                 config WARP_SPEED

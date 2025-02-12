@@ -132,7 +132,8 @@ class KconfigHelpBlock(KconfigBlock):
 symbol_regex = r"""(?<!\S)
                     (y|n|\"y\"|\"n\")(?!\S)  # y, n, "y", "n" symbols
                     |0[x|X][\da-fA-F]+  # hexnums: 0x1234, 0X1234ABCD
-                    |-?[\d]+   # numbers: 1234, -1234
+                    |\d+(\.\d+){1,2} # versions: 4.4, 5.3.1 (versions without dots are handled by the "numbers" below)
+                    |-?\d+   # numbers: 1234, -1234
                     |[A-Z\d_]+  # variables: FOO, BAR_BAR, ENABLE_ESP64
                     |'[^']*'  # strings: 'here is a đĐđĐ[]tring'
                     |\"[^\"]*\" # strings: "hello world", ""
