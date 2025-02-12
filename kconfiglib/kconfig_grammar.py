@@ -482,18 +482,14 @@ class KconfigGrammar:
         ########################
         # Choice
         ########################
-        choice_if_entry = Forward()
-        choice_if_entry << Keyword("if") + (expression + IndentedBlock(choice_if_entry | config)).set_parse_action(
-            parser.parse_if_entry
-        ) + Keyword("endif")
-
+        entries = Forward()
         # Choice is a group of configs that can have only one active at a time.
         choice = (
             Keyword("choice")
             + (
                 Opt(symbol).set_results_name("name")
                 + Opt(KconfigOptionBlock().set_results_name("config_opts"))
-                + IndentedBlock(config | choice_if_entry).set_results_name("configs")
+                + IndentedBlock(entries).set_results_name("entries")
             ).set_parse_action(parser.parse_choice)
             + Keyword("endchoice")
         )
@@ -514,7 +510,7 @@ class KconfigGrammar:
         # List of all possible entries in the menu/if block.
         # Every entry should have the same indentation and optionally, an empty line in between two entries.
         # But e.g. lvgl does not follow any rules in their Kconfig files and thus, formal specifications needs to be loosen.
-        entries = ZeroOrMore(config | menu | choice | source | menuconfig | if_entry | comment).set_results_name(
+        entries << ZeroOrMore(config | menu | choice | source | menuconfig | if_entry | comment).set_results_name(
             "entries"
         )
 

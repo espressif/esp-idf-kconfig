@@ -161,34 +161,62 @@ Examples:
 The ``choice`` Entry
 ^^^^^^^^^^^^^^^^^^^^
 
-The ``choice`` entry is used to define an exclusive choice between several configs. These configs need to be defined in the body of the choice and can be included conditionally with the ``if`` block. The ``choice`` entry has the same options as the ``config`` entry, except for the ``<type>`` option, which is always ``bool`` and it is not necessary to define it (although possible, for compatibility reasons).
+The ``choice`` entry is used to define an exclusive choice between several configs. These configs need to be defined in the body of the choice. The ``choice`` entry has the same options as the ``config`` entry, except for the ``<type>`` option, which is always ``bool`` and it is not necessary to define it (although possible, for compatibility reasons).
 
 .. note::
 
     In contrast to the upstream Kconfig language, the ``optional`` keyword is not supported in the ``choice`` entry, as well as other types.
 
 
-The syntax is as follows. The ``choice_name`` is a non-quoted capitalized string consisting of letters from the English alphabet, numbers, and underscores, and ``config_options`` are described in the `Options`_ section. The ``config_options``, ``config`` and ``config_if_entry`` entries are indented by one level, ``endchoice`` token is at the same indentation level as the ``choice`` token.
+The ``choice`` entry consists of the ``choice`` keyword, followed by ``choice_name``, ``config_options`` block and several ``entries`` closed by ``endchoice`` keyword (see the formal syntax below). The ``choice_name`` is a non-quoted capitalized string consisting of letters, numbers, and underscores, ``config_options`` are described in the `Options`_ section. The ``config_options`` and ``entries`` are indented by one level, ``endchoice`` token is at the same indentation level as the ``choice`` token.
+
 
 .. code-block:: bnf
 
-    choice ::= "choice" + choice_name + config_options + (config | choice_if_entry)* + "endchoice"
+    choice ::= "choice" + choice_name + config_options + entries* + "endchoice"
 
 .. note::
 
-    The ``choice_if_entry`` entry is syntactically very similar to the ``if`` entry. The only difference is that the ``choice_if_entry`` accepts only ``config`` or another ``choice_if_entry`` entries.
+    The ``choice`` entry should contain only ``config`` entries as its sub-entries. Syntactically, ``choice`` is allowed to contain other entries (such as ``menu``) as well, although this functionality results in rather unusual and confusing structure. Usually, it is better to define those elements outside of the ``choice``.
+
+    .. code-block:: kconfig
+
+        choice DRIVE_IN_USE
+            prompt "Choose drive type"
+
+            config WARP_DRIVE
+                bool "Warp drive"
+
+            config SUBLIGHT_DRIVE
+                bool "Sublight drive"
+
+            menu "Warp drive configuration"
+                # This menu will be shown inside the choice in GUI/TUI, but it is not a part of the choice
+                visible if WARP_DRIVE
+
+                config WARP_SPEED
+                    int "Light years per second"
+                    default 8
+
+            endmenu
+        endchoice
+
+
 
 Example usage:
 
 .. code-block:: kconfig
 
     choice DRIVE
+        prompt "Choose drive type"
 
         config WARP_DRIVE
             bool "Warp drive"
 
         config SUBLIGHT_DRIVE
             bool "Sublight drive"
+
+    endchoice
 
 
 The ``menuconfig`` Entry

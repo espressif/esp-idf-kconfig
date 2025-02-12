@@ -14,7 +14,7 @@ Below, a context-free grammar describing the Kconfig language is presented. This
     # Entries
     config ::= "config" + config_name + config_options
     menu ::= "menu" + menu_name + entries + "endmenu"
-    choice ::= "choice" + choice_name + config_options + config* + "endchoice""
+    choice ::= "choice" + choice_name + config_options + entries* + "endchoice""
     source ::= ("source" | "rsource" | "osource" | "orsource") + path
     menuconfig ::= "menuconfig" + config_name + config_options
     if_entry ::= "if" + expression + entries + "endif"

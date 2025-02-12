@@ -1,0 +1,22 @@
+mainmenu "Menu inside choice"
+
+choice DRIVE_IN_USE
+    prompt "Choose drive type"
+
+    config WARP_DRIVE
+        bool "Warp drive"
+
+    config SUBLIGHT_DRIVE
+        bool "Sublight drive"
+
+    menu "Warp drive configuration"
+        # This menu will be shown inside the choice in GUI/TUI,
+        # but it is separated from the choice logic (WARP_SPEED is not a choice config).
+        visible if WARP_DRIVE
+
+        config WARP_SPEED
+            int "Light years per second"
+            default 8
+
+    endmenu
+endchoice
