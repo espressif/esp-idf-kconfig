@@ -3268,7 +3268,7 @@ class Kconfig(object):
         """
         for sym in self.unique_defined_syms:
             if len(sym.nodes) > 1:
-                occurrences = set(f"    {node.filename}:{node.linenr}" for node in sym.nodes)
+                occurrences = set(f"    {os.path.abspath(node.filename)}:{node.linenr}" for node in sym.nodes)
                 if len(occurrences) > 1 and sym.name not in self.allowed_multi_def_syms:
                     occurrences = "\n".join(occurrences)
                     self._info(
@@ -3277,7 +3277,7 @@ class Kconfig(object):
 
         for choice in self.unique_choices:
             if len(choice.nodes) > 1 and choice.name not in self.allowed_multi_def_choices:
-                occurrences = set(f"    {node.filename}:{node.linenr}" for node in choice.nodes)
+                occurrences = set(f"    {os.path.abspath(node.filename)}:{node.linenr}" for node in choice.nodes)
                 if len(occurrences) > 1:
                     occurrences = "\n".join(occurrences)
                     self._info(
