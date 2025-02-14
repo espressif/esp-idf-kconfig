@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# SPDX-FileCopyrightText: 2024 Espressif Systems (Shanghai) CO LTD
+# SPDX-FileCopyrightText: 2024-2025 Espressif Systems (Shanghai) CO LTD
 # SPDX-FileCopyrightText: 2011-2019, Ulf Magnusson
 # SPDX-License-Identifier: ISC
 # This file is copied from kconfiglib project:
@@ -20,6 +20,7 @@ from typing import Any
 from typing import Dict
 from typing import List
 from typing import Optional
+from typing import Set
 from typing import Tuple
 from typing import Union
 
@@ -441,6 +442,8 @@ class Kconfig(object):
         "_srctree_prefix",
         "_unset_match",
         "_warn_assign_no_prompt",
+        "allowed_multi_def_choices",
+        "allowed_multi_def_syms",
         "choices",
         "comments",
         "config_header",
@@ -496,6 +499,8 @@ class Kconfig(object):
     variables: Dict[str, "Variable"]
     env_vars: set
     _filestack: List[str]
+    allowed_multi_def_syms: Set[str]
+    allowed_multi_def_choices: Set[str]
 
     #
     # Public interface
@@ -581,6 +586,19 @@ class Kconfig(object):
         self._encoding = encoding
 
         self.parser_version = parser_version if parser_version else int(os.environ.get("KCONFIG_PARSER_VERSION", "1"))
+
+        """
+        allowed_multi_def_choices:
+        allowed_multi_def_syms:
+
+            Temporary solution how to hold a set of config/choice names that are allowed to be defined in multiple locations.
+            Reason: In some cases, the same config/choice name is defined in multiple locations intentionally.
+            See e.g. https://github.com/espressif/esp-idf/issues/15242
+
+            Will be handled by Kconfig Report in the future.
+        """
+        self.allowed_multi_def_choices = set()
+        self.allowed_multi_def_syms = set()
 
         """
         srctree:
@@ -1886,6 +1904,18 @@ class Kconfig(object):
 
         return sym
 
+    def check_pragmas(self, line: str) -> None:
+        if _KCONFIG_IGNORE_PRAGMA in line:
+            match = _kconfig_ignore_match(line)
+            if match:
+                sym_choice_name = match.groups()[1]
+                if sym_choice_name:
+                    if match.group("type") in (_MULTIPLE_DEFINITION_LONG, _MULTIPLE_DEFINITION_SHORT):
+                        if match.group("option") == "config":
+                            self.allowed_multi_def_syms.add(sym_choice_name)
+                        elif match.group("option") == "choice":
+                            self.allowed_multi_def_choices.add(sym_choice_name)
+
     def _tokenize(self, s):
         # Parses 's', returning a None-terminated list of tokens. Registers any
         # new symbols encountered with _lookup(_const)_sym().
@@ -1899,6 +1929,7 @@ class Kconfig(object):
         # janky versions of the C tools complicate things though.
 
         self._line = s  # Used for error reporting
+        self.check_pragmas(s)
 
         # Initial token on the line
         match = _command_match(s)
@@ -3237,16 +3268,16 @@ class Kconfig(object):
         """
         for sym in self.unique_defined_syms:
             if len(sym.nodes) > 1:
-                occurrences = set(f"    {node.filename}:{node.linenr}" for node in sym.nodes)
-                if len(occurrences) > 1:
+                occurrences = set(f"    {os.path.abspath(node.filename)}:{node.linenr}" for node in sym.nodes)
+                if len(occurrences) > 1 and sym.name not in self.allowed_multi_def_syms:
                     occurrences = "\n".join(occurrences)
                     self._info(
                         f"INFO: Symbol {sym.name} defined in multiple locations (see below). Please check if this is a correct behavior or a random name match:\n{occurrences}"
                     )
 
         for choice in self.unique_choices:
-            if len(choice.nodes) > 1:
-                occurrences = set(f"    {node.filename}:{node.linenr}" for node in choice.nodes)
+            if len(choice.nodes) > 1 and choice.name not in self.allowed_multi_def_choices:
+                occurrences = set(f"    {os.path.abspath(node.filename)}:{node.linenr}" for node in choice.nodes)
                 if len(occurrences) > 1:
                     occurrences = "\n".join(occurrences)
                     self._info(
@@ -6455,7 +6486,16 @@ _RELATIONS = frozenset(
     }
 )
 
+
+_KCONFIG_IGNORE_PRAGMA = "# ignore:"
+_MULTIPLE_DEFINITION_LONG = "multiple-definition"
+_MULTIPLE_DEFINITION_SHORT = "MD"
 # Various regular expressions used during parsing
+
+# The "# kconfig ignore: multiple-definitions" pragma.
+_kconfig_ignore_match = re.compile(
+    rf"^\s*(?P<option>config|choice)\s+([a-zA-Z0-9_]+)\s+{_KCONFIG_IGNORE_PRAGMA} (?P<type>{_MULTIPLE_DEFINITION_LONG}|{_MULTIPLE_DEFINITION_SHORT}).*"
+).match
 
 # The initial token on a line. Also eats leading and trailing whitespace, so
 # that we can jump straight to the next token (or to the end of the line if
