@@ -593,7 +593,8 @@ class SDKRenameChecker(BaseChecker):
         ############################################
         # Checking correctness of the config names
         ############################################
-        self.config_name_checker.process_config_name(old_name, line, line_number)
+        # We want to check only if correct prefix is used, old names may not comply with the rules
+        self.config_name_checker.rule_prefix(old_name, line, line_number)
         self.config_name_checker.process_config_name(new_name, line, line_number)
 
         # Add the new renaming to the dictionary

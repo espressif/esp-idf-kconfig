@@ -50,7 +50,9 @@ Below, a context-free grammar describing the Kconfig language is presented. This
 
     # Terminals
     symbol ::= config_symbol | envvar | value
-    config_name ::= STRING
+    # Regular expression "[A-Z0-9_]+" means "Capitalized letters from the English alphabet, numbers, and underscores"
+    config_name ::= REGEX("[A-Z0-9_]+")
+    choice_name ::= REGEX("[A-Z0-9_]+")
     value ::= INT | HEX | STRING
     menu_name ::= QUOTED_STRING
     path ::= QUOTED_STRING
