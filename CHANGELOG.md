@@ -1,3 +1,17 @@
+## v2.5.0 (2025-02-17)
+
+### New Features
+
+- **kconfig**: Allow multiple definition without info statement
+- **kconfcheck**: checks for deprecated values in sdkconfig.[ci|defaults]
+- **kconfiglib**: parser v2 support of conditional configs inside choice
+
+### Bug Fixes
+
+- allow old names contain lowercase letters in sdkconfig.rename
+- **docs**: typo in word orsource (was "oursource")
+- Add Python 3.13 as supported version
+
 ## v2.4.1 (2024-12-10)
 
 ### Bug Fixes
