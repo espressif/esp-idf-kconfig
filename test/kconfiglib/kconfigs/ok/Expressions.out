@@ -2,7 +2,11 @@
 # Automatically generated file. DO NOT EDIT.
 # Espressif IoT Development Framework (ESP-IDF)  Project Configuration
 #
+# default:
 # CONFIG_B is not set
+# default:
 # CONFIG_SEVERAL_IDENTICAL_OR is not set
+# default:
 # CONFIG_SEVERAL_IDENTICAL_AND is not set
+# default:
 # CONFIG_PARENS is not set

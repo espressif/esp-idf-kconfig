@@ -49,6 +49,9 @@ class DeprecatedOptions(object):
 
         # r_dic maps deprecated options to new options; rev_r_dic maps in the opposite direction
         # inversion is a list of deprecated options which will be inverted (n/not set -> y, y -> n)
+        self.r_dic: Dict[str, str]
+        self.rev_r_dic: DefaultDict[str, List]
+        self.inversions: List
         self.r_dic, self.rev_r_dic, self.inversions = self._parse_replacements(path_rename_files)
 
         # note the '=' at the end of regex for not getting partial match of configs.
@@ -300,6 +303,7 @@ def min_config_with_labels(config: kconfiglib.Kconfig, header: str) -> str:
     possibly_label = False
     current = None  # None stands for tree root
     comments = []
+    config_has_default_value = False
 
     # Using depth search first, we go down the tree and save the path from the root.
     # If we find an option from min config, we update the whole path to used (True) and print all menu labels.
@@ -335,7 +339,15 @@ def min_config_with_labels(config: kconfiglib.Kconfig, header: str) -> str:
                     output.append(f"\n#\n# {label}\n#\n")
                 # mark the whole path from root as 'used'
                 label_path[label] = True
-            output.append(line + "\n")
+
+            if line.strip() == config.comment_default_value:  # indicator that the next config has a default value
+                config_has_default_value = True
+            else:
+                comment_value_is_default = f"{config.comment_default_value}\n" if config_has_default_value else ""
+                output.append(f"{comment_value_is_default}{line}\n")
+                config_has_default_value = False
+        else:
+            config_has_default_value = False
     # Remove comments from minimal config, while keeping menu labels
     for comment in comments:
         output.remove(f"\n#\n# {comment}\n#\n")

@@ -186,7 +186,9 @@ class ConfigTestCase(KconfgenBaseTestCase):
             f.write(
                 textwrap.dedent(
                     """
+            # default:
             CONFIG_TEST=y
+            # default:
             CONFIG_UNKNOWN=y
             """
                 )
@@ -484,7 +486,7 @@ class DefaultsTestCase(KconfgenBaseTestCase):
         self.assertEqual(cnt, 2)
         # remove labels and empty lines; ignore first three lines that contain header
         with_labels_strip = with_labels[:3] + list(
-            filter(lambda x: not x.startswith("#") and not x == "\n", with_labels[3:])
+            filter(lambda x: (not x.startswith("#") or x == "# default:\n") and not x == "\n", with_labels[3:])
         )
         self.assertEqual(without_labels, with_labels_strip)
 

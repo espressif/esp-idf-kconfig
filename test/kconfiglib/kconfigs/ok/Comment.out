@@ -6,6 +6,7 @@
 #
 # always visible comment
 #
+# default:
 CONFIG_COMMENTS_SHOWN=y
 
 #
@@ -15,4 +16,5 @@ CONFIG_COMMENTS_SHOWN=y
 #
 # Invisible conditional comment
 #
+# default:
 CONFIG_BELOW_COMMENT=y

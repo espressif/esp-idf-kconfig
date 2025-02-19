@@ -2,10 +2,17 @@
 # Automatically generated file. DO NOT EDIT.
 # Espressif IoT Development Framework (ESP-IDF)  Project Configuration
 #
+# default:
 CONFIG_INLINE_SIMPLE=y
+# default:
 CONFIG_INLINE_CONDITIONED=y
+# default:
 CONFIG_INLINE_COMPLEX=y
+# default:
 CONFIG_EXPLICIT_SIMPLE=y
+# default:
 CONFIG_EXPLICIT_CONDITIONED=y
+# default:
 CONFIG_EXPLICIT_COMPLEX=y
+# default:
 CONFIG_SPECIAL_CHARS=y

@@ -2,13 +2,17 @@
 # Automatically generated file. DO NOT EDIT.
 # Espressif IoT Development Framework (ESP-IDF)  Project Configuration
 #
+# default:
 CONFIG_SOURCED=y
 
 #
 # rsourced menu
 #
+# default:
 CONFIG_RSOURCED=y
 # end of rsourced menu
 
+# default:
 CONFIG_OSOURCED=y
+# default:
 CONFIG_ORSOURCED=y
