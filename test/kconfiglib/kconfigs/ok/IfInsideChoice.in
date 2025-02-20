@@ -1,0 +1,24 @@
+mainmenu "If block inside choice"
+
+config EXPERIMENTAL
+    bool "Experimental features"
+    default y
+
+choice DRIVE_IN_USE
+    prompt "Choose drive type"
+
+    config WARP_DRIVE
+        bool "Warp drive"
+
+    config SUBLIGHT_DRIVE
+        bool "Sublight drive"
+
+
+    if EXPERIMENTAL
+
+        config WORMHOLE_DRIVE
+            bool "Experimental drive using wormholes"
+
+    endif
+
+endchoice

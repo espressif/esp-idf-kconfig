@@ -1,0 +1,10 @@
+mainmenu "Test if version is parsed correctly"
+
+    config VER
+        string "Version"
+        default 5.3
+
+    config FOO
+        int "Foo"
+        default 1 if VER = 5.3
+        default 0
