@@ -43,6 +43,8 @@ class BaseKconfigTest:
             "--output",
             "config",
             output_file_name,
+            "--env",
+            "KCONFIG_REPORT_VERBOSITY=default",
         ]
         result = subprocess.run(kconfgen_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         return result

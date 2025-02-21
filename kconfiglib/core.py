@@ -26,6 +26,11 @@ from typing import Union
 
 from rich import print
 
+from kconfiglib.report import PRAGMA_PREFIX
+from kconfiglib.report import STATUS_ERROR as REPORT_STATUS_ERROR
+from kconfiglib.report import KconfigReport
+from kconfiglib.report import MultipleDefinitionArea
+
 """
 Overview
 ========
@@ -466,6 +471,8 @@ class Kconfig(object):
         "missing_syms",
         "n",
         "named_choices",
+        "report",
+        "print_report",
         "srctree",
         "syms",
         "top_node",
@@ -494,6 +501,7 @@ class Kconfig(object):
         "_tokens_i",
         "_reuse_tokens",
     )
+    print_report: bool
     warnings: List[str]
     syms: Dict[str, "Symbol"]
     const_syms: Dict[str, "Symbol"]
@@ -523,6 +531,7 @@ class Kconfig(object):
         encoding: str = "utf-8",
         suppress_traceback: bool = False,  # NOTE: deprecated (unused), preserved for compatibility
         parser_version: Optional[int] = None,
+        print_report: bool = False,
     ):
         """
         Creates a new Kconfig object by parsing Kconfig files.
@@ -632,6 +641,13 @@ class Kconfig(object):
         # relative to $srctree. relpath() can cause issues for symlinks,
         # because it assumes symlink/../foo is the same as foo/.
         self._srctree_prefix = realpath(self.srctree) + os.sep
+
+        """
+        report:
+            Singleton instance of KconfigReport to log messages and warnings.
+        """
+        self.report: KconfigReport = KconfigReport(self)
+        self.print_report = print_report
 
         """
         warn:
@@ -1018,6 +1034,10 @@ class Kconfig(object):
         # Add extra dependencies from choices to choice symbols that get
         # awkward during dependency loop detection
         self._add_choice_deps()
+
+        # Errors are printed every time
+        if self.print_report or self.report.status == REPORT_STATUS_ERROR:
+            self.report.print_report()
 
         return self
 
@@ -2065,16 +2085,8 @@ class Kconfig(object):
         return sym
 
     def check_pragmas(self, line: str) -> None:
-        if _KCONFIG_IGNORE_PRAGMA in line:
-            match = _kconfig_ignore_match(line)
-            if match:
-                sym_choice_name = match.groups()[1]
-                if sym_choice_name:
-                    if match.group("type") in (_MULTIPLE_DEFINITION_LONG, _MULTIPLE_DEFINITION_SHORT):
-                        if match.group("option") == "config":
-                            self.allowed_multi_def_syms.add(sym_choice_name)
-                        elif match.group("option") == "choice":
-                            self.allowed_multi_def_choices.add(sym_choice_name)
+        if PRAGMA_PREFIX in line:
+            self.report.add_ignore_line(line)
 
     def _tokenize(self, s):
         # Parses 's', returning a None-terminated list of tokens. Registers any
@@ -3449,21 +3461,13 @@ class Kconfig(object):
             if len(sym.nodes) > 1:
                 occurrences = set(f"    {os.path.abspath(node.filename)}:{node.linenr}" for node in sym.nodes)
                 if len(occurrences) > 1 and sym.name not in self.allowed_multi_def_syms:
-                    occurrences = "\n".join(occurrences)
-                    self._info(
-                        f"Symbol {sym.name} defined in multiple locations (see below). "
-                        f"Please check if this is a correct behavior or a random name match:\n{occurrences}"
-                    )
+                    self.report.add_record(MultipleDefinitionArea, sym_or_choice=sym, occurrences=occurrences)
 
         for choice in self.unique_choices:
             if len(choice.nodes) > 1 and choice.name not in self.allowed_multi_def_choices:
                 occurrences = set(f"    {os.path.abspath(node.filename)}:{node.linenr}" for node in choice.nodes)
                 if len(occurrences) > 1:
-                    occurrences = "\n".join(occurrences)
-                    self._info(
-                        f"Choice {choice.name} defined in multiple locations (see below)."
-                        f" Please check if this is a correct behavior or a random name match:\n{occurrences}"
-                    )
+                    self.report.add_record(MultipleDefinitionArea, sym_or_choice=sym, occurrences=occurrences)
 
     def _check_sym_sanity(self):
         # Checks various symbol properties that are handiest to check after
@@ -6717,15 +6721,7 @@ _RELATIONS = frozenset(
 )
 
 
-_KCONFIG_IGNORE_PRAGMA = "# ignore:"
-_MULTIPLE_DEFINITION_LONG = "multiple-definition"
-_MULTIPLE_DEFINITION_SHORT = "MD"
 # Various regular expressions used during parsing
-
-# The "# kconfig ignore: multiple-definitions" pragma.
-_kconfig_ignore_match = re.compile(
-    rf"^\s*(?P<option>config|choice)\s+([a-zA-Z0-9_]+)\s+{_KCONFIG_IGNORE_PRAGMA} (?P<type>{_MULTIPLE_DEFINITION_LONG}|{_MULTIPLE_DEFINITION_SHORT}).*"  # noqa: E501
-).match
 
 # The initial token on a line. Also eats leading and trailing whitespace, so
 # that we can jump straight to the next token (or to the end of the line if

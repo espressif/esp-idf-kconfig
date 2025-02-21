@@ -10,3 +10,4 @@ This developer guide is intended for developers who want to work on the ``esp-id
 
     Contributions Guide <contributing>
     Writing Tests <writing-tests>
+    Writing Good Kconfig Files <good-kconfig>
