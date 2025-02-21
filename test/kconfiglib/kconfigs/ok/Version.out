@@ -2,5 +2,7 @@
 # Automatically generated file. DO NOT EDIT.
 # Espressif IoT Development Framework (ESP-IDF)  Project Configuration
 #
+# default:
 CONFIG_VER="5.3"
+# default:
 CONFIG_FOO=1
