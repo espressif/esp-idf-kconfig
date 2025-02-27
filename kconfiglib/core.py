@@ -592,7 +592,8 @@ class Kconfig(object):
         allowed_multi_def_choices:
         allowed_multi_def_syms:
 
-            Temporary solution how to hold a set of config/choice names that are allowed to be defined in multiple locations.
+            Temporary solution how to hold a set of config/choice names that are allowed to be defined
+            in multiple locations.
             Reason: In some cases, the same config/choice name is defined in multiple locations intentionally.
             See e.g. https://github.com/espressif/esp-idf/issues/15242
 
@@ -1193,7 +1194,8 @@ class Kconfig(object):
                         # to the right of '=', for whatever reason
                         if not val.startswith(("y", "n")):
                             self._warn(
-                                f"'{val}' is not a valid value for the {TYPE_TO_STR[sym.orig_type]} symbol {sym.name_and_loc}. Assignment ignored.",
+                                f"'{val}' is not a valid value for the {TYPE_TO_STR[sym.orig_type]} symbol "
+                                f"{sym.name_and_loc}. Assignment ignored.",
                                 filename,
                                 linenr,
                             )
@@ -1268,7 +1270,8 @@ class Kconfig(object):
                 else:  # Symbol has only a default value and it is different between sdkconfig and Kconfig
                     if sym._user_value is None and sym.str_value != str(val):
                         self._info(
-                            f"Default value for {sym.name} in sdkconfig is {_quote_value(val)} but according to Kconfig, it is {_quote_value(sym.str_value)}. "
+                            f"Default value for {sym.name} in sdkconfig is {_quote_value(val)} but according to "
+                            f"Kconfig, it is {_quote_value(sym.str_value)}. "
                             f"Using default value from sdkconfig ({val})."
                         )
                         _inject_default_value(sym, val)
@@ -1814,7 +1817,8 @@ class Kconfig(object):
             # We already know that the file exists
             raise _KconfigIOError(
                 e,
-                f"{self.filename}:{self.linenr}: Could not open '{filename}' (in '{self._line.strip()}') ({errno.errorcode[e.errno]}: {e.strerror})",
+                f"{self.filename}:{self.linenr}: Could not open '{filename}' (in '{self._line.strip()}') "
+                f"({errno.errorcode[e.errno]}: {e.strerror})",
             )
 
         self.filename = rel_filename
@@ -2456,7 +2460,8 @@ class Kconfig(object):
                     expected_args = f"{min_arg}-{max_arg}"
 
                 raise KconfigError(
-                    f"{self.filename}:{self.linenr}: bad number of arguments in call to {fn}, expected {expected_args}, got {len(args) - 1}"
+                    f"{self.filename}:{self.linenr}: bad number of arguments in call to {fn}, "
+                    f"expected {expected_args}, got {len(args) - 1}"
                 )
 
             return py_fn(self, *args)
@@ -2730,7 +2735,9 @@ class Kconfig(object):
 
         if end_token:
             raise KconfigError(
-                f"error: expected {'endchoice' if end_token == _T_ENDCHOICE else 'endif' if end_token == _T_ENDIF else 'endmenu'} at end of {self.filename}"
+                "error: expected "
+                f"{'endchoice' if end_token == _T_ENDCHOICE else 'endif' if end_token == _T_ENDIF else 'endmenu'} "
+                f"at end of {self.filename}"
             )
 
         return prev
@@ -2816,12 +2823,14 @@ class Kconfig(object):
 
                 if node.item and node.item.__class__ is Symbol:
                     self._warn(
-                        f'config {node.item.name} {_locs(node.item)} has a "visible if" option, which is not supported for configs'
+                        f'config {node.item.name} {_locs(node.item)} has a "visible if" option, '
+                        "which is not supported for configs"
                     )
 
                 elif node.item and node.item.__class__ is Choice:
                     self._warn(
-                        f'choice {node.item.name} {_locs(node.item)} has a "visible if" option, which is not supported for choices'
+                        f'choice {node.item.name} {_locs(node.item)} has a "visible if" option, '
+                        "which is not supported for choices"
                     )
                 else:
                     node.visibility = self._make_and(node.visibility, self._expect_expr_and_eol())
@@ -2862,8 +2871,8 @@ class Kconfig(object):
                     else:
                         self._warn(
                             "'option defconfig_list' set on multiple "
-                            f"symbols ({self.defconfig_list.name} and {node.item.name}). Only {self.defconfig_list.name} will be "
-                            "used.",
+                            f"symbols ({self.defconfig_list.name} and {node.item.name}). "
+                            f"Only {self.defconfig_list.name} will be used.",
                             self.filename,
                             self.linenr,
                         )
@@ -3293,9 +3302,10 @@ class Kconfig(object):
 
         sym.direct_dep = self._make_or(sym.direct_dep, node.dep)
 
-        # TODO: Because finalize_node is called twice, we should compare if head of sym.defaults is the same as node defaults.
-        #       If yes, do not add again.
-        #       Currently, cannot easily compare Symbols, so just add all. Symbol comparison will be probably added in IDF-2971.
+        # TODO: Because finalize_node is called twice, we should compare if head of sym.defaults
+        #       is the same as node defaults. If yes, do not add again.
+        #       Currently, cannot easily compare Symbols, so just add all.
+        #       Symbol comparison will be probably added in IDF-2971.
         sym.defaults += node.defaults
         sym.ranges += node.ranges
         sym.selects += node.selects
@@ -3327,7 +3337,8 @@ class Kconfig(object):
                 if len(occurrences) > 1 and sym.name not in self.allowed_multi_def_syms:
                     occurrences = "\n".join(occurrences)
                     self._info(
-                        f"INFO: Symbol {sym.name} defined in multiple locations (see below). Please check if this is a correct behavior or a random name match:\n{occurrences}"
+                        f"INFO: Symbol {sym.name} defined in multiple locations (see below). "
+                        f"Please check if this is a correct behavior or a random name match:\n{occurrences}"
                     )
 
         for choice in self.unique_choices:
@@ -3336,7 +3347,8 @@ class Kconfig(object):
                 if len(occurrences) > 1:
                     occurrences = "\n".join(occurrences)
                     self._info(
-                        f"INFO: Choice {choice.name} defined in multiple locations (see below). Please check if this is a correct behavior or a random name match:\n{occurrences}"
+                        f"INFO: Choice {choice.name} defined in multiple locations (see below)."
+                        f" Please check if this is a correct behavior or a random name match:\n{occurrences}"
                     )
 
     def _check_sym_sanity(self):
@@ -3362,20 +3374,23 @@ class Kconfig(object):
                 for target_sym, _ in sym.selects:
                     if target_sym.orig_type not in _BOOL_UNKNOWN:
                         self._warn(
-                            f"{sym.name_and_loc} selects the {TYPE_TO_STR[target_sym.orig_type]} symbol {target_sym.name_and_loc}, which is not bool"
+                            f"{sym.name_and_loc} selects the {TYPE_TO_STR[target_sym.orig_type]} symbol "
+                            f"{target_sym.name_and_loc}, which is not bool"
                         )
 
                 for target_sym, _ in sym.implies:
                     if target_sym.orig_type not in _BOOL_UNKNOWN:
                         self._warn(
-                            f"{sym.name_and_loc} implies the {TYPE_TO_STR[target_sym.orig_type]} symbol {target_sym.name_and_loc}, which is not bool"
+                            f"{sym.name_and_loc} implies the {TYPE_TO_STR[target_sym.orig_type]} symbol "
+                            f"{target_sym.name_and_loc}, which is not bool"
                         )
 
             elif sym.orig_type:  # STRING/INT/HEX
                 for default, _ in sym.defaults:
                     if default.__class__ is not Symbol:
                         raise KconfigError(
-                            f"the {TYPE_TO_STR[sym.orig_type]} symbol {sym.name_and_loc} has a malformed default {expr_str(default)} -- expected a single symbol"
+                            f"the {TYPE_TO_STR[sym.orig_type]} symbol {sym.name_and_loc} has a malformed default "
+                            f"{expr_str(default)} -- expected a single symbol"
                         )
 
                     if sym.orig_type == STRING:
@@ -3385,13 +3400,13 @@ class Kconfig(object):
                             # the quotes were left out if 'foo' isn't all-uppercase
                             # (and no symbol named 'foo' exists).
                             self._warn(
-                                "style: quotes recommended around "
-                                "default value for string symbol " + sym.name_and_loc
+                                f"style: quotes recommended around default value for string symbol {sym.name_and_loc}"
                             )
 
                     elif not num_ok(default, sym.orig_type):  # INT/HEX
                         self._warn(
-                            f"the {TYPE_TO_STR[sym.orig_type]} symbol {sym.name_and_loc} has a non-{TYPE_TO_STR[sym.orig_type]} default {default.name_and_loc}"
+                            f"the {TYPE_TO_STR[sym.orig_type]} symbol {sym.name_and_loc} has "
+                            f"a non-{TYPE_TO_STR[sym.orig_type]} default {default.name_and_loc}"
                         )
 
                 if sym.selects or sym.implies:
@@ -3409,7 +3424,8 @@ class Kconfig(object):
                     for low, high, _ in sym.ranges:
                         if not num_ok(low, sym.orig_type) or not num_ok(high, sym.orig_type):
                             self._warn(
-                                f"the {TYPE_TO_STR[sym.orig_type]} symbol {sym.name_and_loc} has a non-{TYPE_TO_STR[sym.orig_type]} range [{low.name_and_loc}, {high.name_and_loc}]"
+                                f"the {TYPE_TO_STR[sym.orig_type]} symbol {sym.name_and_loc} has "
+                                f"a non-{TYPE_TO_STR[sym.orig_type]} range [{low.name_and_loc}, {high.name_and_loc}]"
                             )
 
     def _check_choice_sanity(self):
@@ -3417,7 +3433,10 @@ class Kconfig(object):
         # parsing. Only generates errors and warnings.
 
         def warn_select_imply(sym, expr, expr_type):
-            msg = f"the choice symbol {sym.name_and_loc} is {expr_type} by the following symbols, but select/imply has no effect on choice symbols"
+            msg = (
+                f"the choice symbol {sym.name_and_loc} is {expr_type} by the following symbols, "
+                "but select/imply has no effect on choice symbols"
+            )
 
             # si = select/imply
             for si in split_expr(expr, OR):
@@ -3441,7 +3460,8 @@ class Kconfig(object):
 
                 if default.choice is not choice:
                     self._warn(
-                        f"the default selection {default.name_and_loc} of {choice.name_and_loc} is not contained in the choice"
+                        f"the default selection {default.name_and_loc} of {choice.name_and_loc} "
+                        "is not contained in the choice"
                     )
 
             for sym in choice.syms:
@@ -3615,7 +3635,8 @@ class Symbol:
 
     def init_rest(self):
         """
-        Because kconfig.y and kconfig.n are symbols as well, we can't initialize many of the attributes in the constructor.
+        Because kconfig.y and kconfig.n are symbols as well, we can't initialize many of the attributes
+        in the constructor.
         This method is called after the constructor to initialize the rest of the attributes.
         """
 
@@ -3845,8 +3866,9 @@ class Symbol:
                 if has_active_range and not low <= user_val <= high:
                     num2str = str if base == 10 else hex
                     self.kconfig._warn(
-                        f"user value {num2str(user_val)} on the {TYPE_TO_STR[self.orig_type]} symbol {self.name_and_loc} ignored due to "
-                        f"being outside the active range ([{num2str(low)}, {num2str(high)}]) -- falling back on defaults"
+                        f"user value {num2str(user_val)} on the {TYPE_TO_STR[self.orig_type]} symbol "
+                        f"{self.name_and_loc} ignored due to being outside the active range "
+                        f"([{num2str(low)}, {num2str(high)}]) -- falling back on defaults"
                     )
                 else:
                     # If the user value is well-formed and satisfies range
@@ -3932,8 +3954,8 @@ class Symbol:
             if self.orig_type:  # != UNKNOWN
                 # Would take some work to give the location here
                 self.kconfig._warn(
-                    f"The {TYPE_TO_STR[self.orig_type]} symbol {self.name_and_loc} is being evaluated in a logical context "
-                    "somewhere. It will always evaluate to n."
+                    f"The {TYPE_TO_STR[self.orig_type]} symbol {self.name_and_loc} is being evaluated in a logical "
+                    "context somewhere. It will always evaluate to n."
                 )
 
             self._cached_bool_val = 0
@@ -4473,8 +4495,9 @@ class Symbol:
         # and menus) is selected by some other symbol.
 
         msg = (
-            f"{self.name_and_loc} has direct dependencies {expr_str(self.direct_dep)} with value {BOOL_TO_STR[expr_value(self.direct_dep)]}, but is "
-            f"currently being {BOOL_TO_STR[expr_value(self.rev_dep)]}-selected by the following symbols:"
+            f"{self.name_and_loc} has direct dependencies {expr_str(self.direct_dep)} with value "
+            f"{BOOL_TO_STR[expr_value(self.direct_dep)]}, but is currently being "
+            f"{BOOL_TO_STR[expr_value(self.rev_dep)]}-selected by the following symbols:"
         )
 
         # The reverse dependencies from each select are ORed together
@@ -4489,7 +4512,10 @@ class Symbol:
             # In both cases, we can split on AND and pick the first operand
             selecting_sym = split_expr(select, AND)[0]
 
-            msg += f"\n - {selecting_sym.name_and_loc}, with value {selecting_sym.str_value}, direct dependencies {expr_str(selecting_sym.direct_dep)} (value: {BOOL_TO_STR[expr_value(selecting_sym.direct_dep)]})"
+            msg += (
+                f"\n - {selecting_sym.name_and_loc}, with value {selecting_sym.str_value}, direct dependencies "
+                f"{expr_str(selecting_sym.direct_dep)} (value: {BOOL_TO_STR[expr_value(selecting_sym.direct_dep)]})"
+            )
 
             if select.__class__ is tuple:
                 msg += f", and select condition {expr_str(select[2])} (value: {BOOL_TO_STR[expr_value(select[2])]})"
@@ -5323,7 +5349,7 @@ class MenuNode:
         )
 
     def _menu_comment_node_str(self, sc_expr_str_fn):
-        s = f"{'menu' if self.item == MENU else 'comment'} \"{self.prompt[0]}\""
+        s = f'{"menu" if self.item == MENU else "comment"} "{self.prompt[0]}"'
 
         if self.dep is not self.kconfig.y:
             s += f"\n\tdepends on {expr_str(self.dep, sc_expr_str_fn)}"
@@ -6550,7 +6576,7 @@ _MULTIPLE_DEFINITION_SHORT = "MD"
 
 # The "# kconfig ignore: multiple-definitions" pragma.
 _kconfig_ignore_match = re.compile(
-    rf"^\s*(?P<option>config|choice)\s+([a-zA-Z0-9_]+)\s+{_KCONFIG_IGNORE_PRAGMA} (?P<type>{_MULTIPLE_DEFINITION_LONG}|{_MULTIPLE_DEFINITION_SHORT}).*"
+    rf"^\s*(?P<option>config|choice)\s+([a-zA-Z0-9_]+)\s+{_KCONFIG_IGNORE_PRAGMA} (?P<type>{_MULTIPLE_DEFINITION_LONG}|{_MULTIPLE_DEFINITION_SHORT}).*"  # noqa: E501
 ).match
 
 # The initial token on a line. Also eats leading and trailing whitespace, so

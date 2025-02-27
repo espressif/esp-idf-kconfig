@@ -7,7 +7,7 @@
 # generated, allowing options to be referenced in other documents
 # (using :ref:`CONFIG_FOO`)
 #
-# SPDX-FileCopyrightText: 2017-2024 Espressif Systems (Shanghai) CO LTD
+# SPDX-FileCopyrightText: 2017-2025 Espressif Systems (Shanghai) CO LTD
 # SPDX-License-Identifier: Apache-2.0
 import re
 
@@ -72,11 +72,7 @@ class ConfigTargetVisibility(object):
                     self._implies_invisibility(item[2]),
                 ]
                 if all([implies for (implies, _) in implication_list]):
-                    source_list = [
-                        s
-                        for (_, s) in implication_list
-                        if s.startswith(self.target_env_var)
-                    ]
+                    source_list = [s for (_, s) in implication_list if s.startswith(self.target_env_var)]
                     # if source_list has more items then it should not matter which will imply the invisibility
                     return (True, source_list[0])
                 return (False, None)
@@ -97,11 +93,7 @@ class ConfigTargetVisibility(object):
         else:  # Symbol or Choice
             vis_list = [self._visible(node) for node in item.nodes]
             if len(vis_list) > 0 and all([not visible for (visible, _) in vis_list]):
-                source_list = [
-                    s
-                    for (_, s) in vis_list
-                    if s is not None and s.startswith(self.target_env_var)
-                ]
+                source_list = [s for (_, s) in vis_list if s is not None and s.startswith(self.target_env_var)]
                 # if source_list has more items then it should not matter which will imply the invisibility
                 return (True, source_list[0])
 
@@ -122,9 +114,7 @@ class ConfigTargetVisibility(object):
     def _visible(self, node):
         if node.item == kconfiglib.COMMENT:
             return (False, None)
-        if isinstance(node.item, kconfiglib.Symbol) or isinstance(
-            node.item, kconfiglib.Choice
-        ):
+        if isinstance(node.item, kconfiglib.Symbol) or isinstance(node.item, kconfiglib.Choice):
             dependencies = node.item.direct_dep  # "depends on" for configs
             name_id = node.item.name
             simple_def = len(node.item.nodes) <= 1  # defined only in one source file
@@ -143,14 +133,10 @@ class ConfigTargetVisibility(object):
             def invert_first_arg(_tuple):
                 return (not _tuple[0], _tuple[1])
 
-            (visib, source) = (
-                self._visible(node.parent) if node.parent else (True, None)
-            )
+            (visib, source) = self._visible(node.parent) if node.parent else (True, None)
 
             if visib:
-                (visib, source) = invert_first_arg(
-                    self._implies_invisibility(dependencies)
-                )
+                (visib, source) = invert_first_arg(self._implies_invisibility(dependencies))
 
             if simple_def:
                 # Configs defined at multiple places are not stored because they could have different visibility based
@@ -244,38 +230,24 @@ def format_rest_text(text, indent):
 
 def _minimize_expr(expr, visibility):
     def expr_nodes_invisible(e):
-        return (
-            hasattr(e, "nodes")
-            and len(e.nodes) > 0
-            and all(not visibility.visible(i) for i in e.nodes)
-        )
+        return hasattr(e, "nodes") and len(e.nodes) > 0 and all(not visibility.visible(i) for i in e.nodes)
 
     if isinstance(expr, tuple):
         if expr[0] == kconfiglib.NOT:
             new_expr = _minimize_expr(expr[1], visibility)
-            return (
-                kconfiglib.Kconfig.y
-                if new_expr == kconfiglib.Kconfig.n
-                else kconfiglib.Kconfig.n
-            )
+            return kconfiglib.Kconfig.y if new_expr == kconfiglib.Kconfig.n else kconfiglib.Kconfig.n
         else:
             new_expr1 = _minimize_expr(expr[1], visibility)
             new_expr2 = _minimize_expr(expr[2], visibility)
             if expr[0] == kconfiglib.AND:
-                if (
-                    new_expr1 == kconfiglib.Kconfig.n
-                    or new_expr2 == kconfiglib.Kconfig.n
-                ):
+                if new_expr1 == kconfiglib.Kconfig.n or new_expr2 == kconfiglib.Kconfig.n:
                     return kconfiglib.Kconfig.n
                 if new_expr1 == kconfiglib.Kconfig.y:
                     return new_expr2
                 if new_expr2 == kconfiglib.Kconfig.y:
                     return new_expr1
             elif expr[0] == kconfiglib.OR:
-                if (
-                    new_expr1 == kconfiglib.Kconfig.y
-                    or new_expr2 == kconfiglib.Kconfig.y
-                ):
+                if new_expr1 == kconfiglib.Kconfig.y or new_expr2 == kconfiglib.Kconfig.y:
                     return kconfiglib.Kconfig.y
                 if new_expr1 == kconfiglib.Kconfig.n:
                     return new_expr2
@@ -296,39 +268,23 @@ def _minimize_expr(expr, visibility):
                     return kconfiglib.Kconfig.n  # e.g "True < 2"
 
                 if expr_nodes_invisible(new_expr1) or expr_nodes_invisible(new_expr2):
-                    return (
-                        kconfiglib.Kconfig.y
-                        if kconfiglib.expr_value(expr)
-                        else kconfiglib.Kconfig.n
-                    )
+                    return kconfiglib.Kconfig.y if kconfiglib.expr_value(expr) else kconfiglib.Kconfig.n
 
             return (expr[0], new_expr1, new_expr2)
 
-    if (
-        not kconfiglib.expr_value(expr)
-        and len(expr.config_string) == 0
-        and expr_nodes_invisible(expr)
-    ):
+    if not kconfiglib.expr_value(expr) and len(expr.config_string) == 0 and expr_nodes_invisible(expr):
         # nodes which are invisible
         # len(expr.nodes) > 0 avoids constant symbols without actual node definitions, e.g. integer constants
         # len(expr.config_string) == 0 avoids hidden configs which reflects the values of choices
         return kconfiglib.Kconfig.n
 
-    if (
-        kconfiglib.expr_value(expr)
-        and len(expr.config_string) > 0
-        and expr_nodes_invisible(expr)
-    ):
+    if kconfiglib.expr_value(expr) and len(expr.config_string) > 0 and expr_nodes_invisible(expr):
         # hidden config dependencies which will be written to sdkconfig as enabled ones.
         return kconfiglib.Kconfig.y
 
     if any(node.item.name.startswith(visibility.target_env_var) for node in expr.nodes):
         # We know the actual values for IDF_TARGETs
-        return (
-            kconfiglib.Kconfig.y
-            if kconfiglib.expr_value(expr)
-            else kconfiglib.Kconfig.n
-        )
+        return kconfiglib.Kconfig.y if kconfiglib.expr_value(expr) else kconfiglib.Kconfig.n
 
     return expr
 
@@ -418,9 +374,7 @@ def write_menu_item(f, node, visibility):
             if cond == kconfiglib.Kconfig.n:
                 continue
             if not isinstance(cond, tuple) and cond != kconfiglib.Kconfig.y:
-                if len(cond.nodes) > 0 and all(
-                    not visibility.visible(i) for i in cond.nodes
-                ):
+                if len(cond.nodes) > 0 and all(not visibility.visible(i) for i in cond.nodes):
                     if not kconfiglib.expr_value(cond):
                         continue
             range_str = "%s- from %s to %s" % (
@@ -442,9 +396,7 @@ def write_menu_item(f, node, visibility):
             if cond == kconfiglib.Kconfig.n:
                 continue
             if not isinstance(cond, tuple) and cond != kconfiglib.Kconfig.y:
-                if len(cond.nodes) > 0 and all(
-                    not visibility.visible(i) for i in cond.nodes
-                ):
+                if len(cond.nodes) > 0 and all(not visibility.visible(i) for i in cond.nodes):
                     if not kconfiglib.expr_value(cond):
                         continue
             # default.type is mostly UNKNOWN so it cannot be used reliably for detecting the type
@@ -453,9 +405,7 @@ def write_menu_item(f, node, visibility):
                 d = "Yes (enabled)"
             elif d in ["n", "N"]:
                 d = "No (disabled)"
-            elif re.search(
-                r"[^0-9a-fA-F]", d
-            ):  # simple string detection: if it not a valid number
+            elif re.search(r"[^0-9a-fA-F]", d):  # simple string detection: if it not a valid number
                 d = '"%s"' % d
             default_str = "%s- %s" % (INDENT * 2, d)
             if cond != kconfiglib.Kconfig.y and not kconfiglib.expr_value(cond):

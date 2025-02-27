@@ -259,8 +259,10 @@ class IndentAndNameChecker(BaseChecker):
         )
 
         # regexes to get lines containing expressions
-        # Unquoted symbols are either config names, y/n or (hex)num literals. Catching also no-uppercase config names (TyPO_NAME) to throw an error later on.
-        # Quoted symbols are "y"/"n", env_vars or string literals; the last two categories can contain anything between the quotes, thus it is broader.
+        # Unquoted symbols are either config names, y/n or (hex)num literals.
+        # Catching also no-uppercase config names (TyPO_NAME) to throw an error later on.
+        # Quoted symbols are "y"/"n", env_vars or string literals;
+        # the last two categories can contain anything between the quotes, thus it is broader.
         symbol = r"\w+|\".+?\"|'.+?'"
         reg_prompt = re.compile(r"^\".*?\"\s+(?:if)\s+(?P<expression0>.*)$")
         reg_default = re.compile(r"^(?P<expression0>.*)\s+(?:if)\s+(?P<expression1>.*)$")
@@ -271,7 +273,7 @@ class IndentAndNameChecker(BaseChecker):
         reg_depends_on_visible_if = re.compile(r"^(?P<expression0>.*)$")
         reg_config_menuconfig_choice = re.compile(rf"^(?P<expression>{symbol})$")
         self.reg_switch = re.compile(
-            r"^\s*(?P<keyword>prompt|default|select|imply|range|depends on|config|menuconfig|choice|visible if)\s+(?P<body>.*)$"
+            r"^\s*(?P<keyword>prompt|default|select|imply|range|depends on|config|menuconfig|choice|visible if)\s+(?P<body>.*)$"  # noqa: E501
         )
         self.reg_symbol = re.compile(rf"{symbol}", re.X)
 
@@ -575,13 +577,15 @@ class SDKRenameChecker(BaseChecker):
             raise InputError(
                 self.path_in_idf,
                 line_number,
-                f"There is a duplicit line: {old_name} {new_name if not inversion else '!'+new_name}",
+                f"There is a duplicit line: {old_name} {new_name if not inversion else '!' + new_name}",
                 "",  # omit the duplicate
             )
 
         # Check if the there is repeated rename from the old name
-        # This is not allowed because if the two different new names would have different values, the result would be ambiguous
-        # NOTE: Multiple renames to the same new name are allowed. In that case, the value of the new name is just propagated to all the old names.
+        # This is not allowed because if the two different new names would have different values,
+        # the result would be ambiguous
+        # NOTE: Multiple renames to the same new name are allowed.
+        #       In that case, the value of the new name is just propagated to all the old names.
         if old_name in self.renames.keys():
             raise InputError(
                 self.path_in_idf,
@@ -697,7 +701,8 @@ def main() -> int:
     parser.add_argument(
         "--replace",
         action="store_true",
-        help=f"[only for --check syntax] Apply the changes to the original files instead of creating {OUTPUT_SUFFIX} files",
+        help="[only for --check syntax] Apply the changes to the original files"
+        f" instead of creating {OUTPUT_SUFFIX} files",
     )
     parser.add_argument(
         "--includes",

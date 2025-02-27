@@ -587,8 +587,7 @@ def _style_to_curses(style_def):
 
         if not -1 <= color_num < curses.COLORS:
             _warn(
-                f"Ignoring color {color_def}, which is outside the range "
-                f"-1..curses.COLORS-1 (-1..{curses.COLORS - 1})"
+                f"Ignoring color {color_def}, which is outside the range -1..curses.COLORS-1 (-1..{curses.COLORS - 1})"
             )
             return -1
 
@@ -2824,7 +2823,8 @@ def _kconfig_def_info(item):
     s += (len(s) - 1) * "="
 
     for node in nodes:
-        s += f"\n\nAt {node.filename}:{node.linenr}\n{_include_path_info(node)}Menu path: {_menu_path_info(node)}\n\n{_indent(node.custom_str(_name_and_val_str), 2)}"
+        s += f"\n\nAt {node.filename}:{node.linenr}\n{_include_path_info(node)}\
+            Menu path: {_menu_path_info(node)}\n\n{_indent(node.custom_str(_name_and_val_str), 2)}"
 
     return s
 

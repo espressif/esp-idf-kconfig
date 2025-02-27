@@ -87,7 +87,7 @@ mainmenu "Main menu"
     endchoice
 
     config INVISIBLE1
-        bool "depends on cannot be satified at the same time"
+        bool "depends on cannot be satisfied at the same time"
         depends on CONFIG_FOR_CHIPA && IDF_TARGET_CHIPB
 
     config VISIBLE1
