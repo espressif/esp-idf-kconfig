@@ -12,3 +12,6 @@ aaf88c71d761a8e7652de1226a74ac596cd8e589
 
 # Moving docstring to the corresponding attributes
 a063b13da3231e91d1a1bb5c917efda1cf62e4ed
+
+# Fixing linter issues
+33b626fae27fb474520b245f1d4fc23d0e203e4d
