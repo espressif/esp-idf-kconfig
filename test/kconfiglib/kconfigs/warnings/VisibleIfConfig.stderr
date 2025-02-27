@@ -1,0 +1,4 @@
+config FUEL
+has a "visible if" option, which is not supported for configs
+choice LUNCH
+has a "visible if" option, which is not supported for choices

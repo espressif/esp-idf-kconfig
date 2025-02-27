@@ -2814,7 +2814,17 @@ class Kconfig(object):
                 if not self._check_token(_T_IF):
                     self._parse_error("expected 'if' after 'visible'")
 
-                node.visibility = self._make_and(node.visibility, self._expect_expr_and_eol())
+                if node.item and node.item.__class__ is Symbol:
+                    self._warn(
+                        f'config {node.item.name} {_locs(node.item)} has a "visible if" option, which is not supported for configs'
+                    )
+
+                elif node.item and node.item.__class__ is Choice:
+                    self._warn(
+                        f'choice {node.item.name} {_locs(node.item)} has a "visible if" option, which is not supported for choices'
+                    )
+                else:
+                    node.visibility = self._make_and(node.visibility, self._expect_expr_and_eol())
 
             elif t0 == _T_OPTION:
                 if self._check_token(_T_ENV):
