@@ -2,11 +2,14 @@
 # Automatically generated file. DO NOT EDIT.
 # Espressif IoT Development Framework (ESP-IDF)  Project Configuration
 #
+# default:
 CONFIG_WARP_DRIVE=y
+# default:
 # CONFIG_SUBLIGHT_DRIVE is not set
 
 #
 # Warp drive configuration
 #
+# default:
 CONFIG_WARP_SPEED=8
 # end of Warp drive configuration
