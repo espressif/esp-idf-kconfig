@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# SPDX-FileCopyrightText: 2024 Espressif Systems (Shanghai) CO LTD
+# SPDX-FileCopyrightText: 2024-2025 Espressif Systems (Shanghai) CO LTD
 # SPDX-License-Identifier: Apache-2.0
 import argparse
 import json
@@ -31,9 +31,7 @@ def parse_testcases(version):
         send = cases[i + 1]
         expect = cases[i + 2]
         if not desc.startswith("* "):
-            raise RuntimeError(
-                "Unexpected description at line %d: '%s'" % (i + 1, desc)
-            )
+            raise RuntimeError("Unexpected description at line %d: '%s'" % (i + 1, desc))
         if not send.startswith("> "):
             raise RuntimeError("Unexpected send at line %d: '%s'" % (i + 2, send))
         if not expect.startswith("< "):
@@ -56,9 +54,7 @@ def main():
     try:
         # set up temporary file to use as sdkconfig copy
         with tempfile.NamedTemporaryFile(mode="w", delete=False) as temp_sdkconfig:
-            temp_sdkconfig_path = os.path.join(
-                tempfile.gettempdir(), temp_sdkconfig.name
-            )
+            temp_sdkconfig_path = os.path.join(tempfile.gettempdir(), temp_sdkconfig.name)
             with open("sdkconfig") as orig:
                 temp_sdkconfig.write(orig.read())
 
@@ -66,9 +62,7 @@ def main():
             temp_kconfigs_source_file = os.path.join(tempfile.gettempdir(), f.name)
 
         with tempfile.NamedTemporaryFile(delete=False) as f:
-            temp_kconfig_projbuilds_source_file = os.path.join(
-                tempfile.gettempdir(), f.name
-            )
+            temp_kconfig_projbuilds_source_file = os.path.join(tempfile.gettempdir(), f.name)
 
         cmdline = """python -m kconfserver --env "COMPONENT_KCONFIGS_SOURCE_FILE=%s" \
                                            --env "COMPONENT_KCONFIGS_PROJBUILD_SOURCE_FILE=%s" \
@@ -154,15 +148,8 @@ def test_protocol_version(p, version):
             read_vals = readback[expect_key]
             exp_vals = expected[expect_key]
             if read_vals != exp_vals:
-                expect_diff = dict(
-                    (k, v)
-                    for (k, v) in exp_vals.items()
-                    if k not in read_vals or v != read_vals[k]
-                )
-                raise RuntimeError(
-                    "Test failed! Was expecting %s: %s"
-                    % (expect_key, json.dumps(expect_diff))
-                )
+                expect_diff = dict((k, v) for (k, v) in exp_vals.items() if k not in read_vals or v != read_vals[k])
+                raise RuntimeError("Test failed! Was expecting %s: %s" % (expect_key, json.dumps(expect_diff)))
         print("OK")
     print("Version %d OK" % version)
 
@@ -182,18 +169,14 @@ def test_load_save(p, temp_sdkconfig_path):
     load_result = send_request(p, {"version": 2, "load": temp_sdkconfig_path})
     print("V2 Load result: %s" % (json.dumps(load_result)))
     assert "error" not in load_result
-    assert (
-        len(load_result["values"]) == 0
-    )  # in V2, loading same file should return no config items
+    assert len(load_result["values"]) == 0  # in V2, loading same file should return no config items
     assert len(load_result["ranges"]) == 0
 
     # Do a V1 load
     load_result = send_request(p, {"version": 1, "load": temp_sdkconfig_path})
     print("V1 Load result: %s" % (json.dumps(load_result)))
     assert "error" not in load_result
-    assert (
-        len(load_result["values"]) > 0
-    )  # in V1, loading same file should return all config items
+    assert len(load_result["values"]) > 0  # in V1, loading same file should return all config items
     assert len(load_result["ranges"]) > 0
 
 

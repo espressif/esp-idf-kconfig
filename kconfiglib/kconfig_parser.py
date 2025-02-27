@@ -61,7 +61,8 @@ class Parser:
     """
     The Parser class is responsible for parsing the Kconfig file and building the menu tree.
 
-    Parsing logic: pyparsing is used to parse the input Kconfig file(s) and provide tokens. It is supposed that new formats (beside Kconfig) will be supported in the future, so the grammar describing Kconfig
+    Parsing logic: pyparsing is used to parse the input Kconfig file(s) and provide tokens.
+    It is supposed that new formats (beside Kconfig) will be supported in the future, so the grammar describing Kconfig
     is in its separate class KconfigGrammar.
 
     In contrast to the previous (C-like) parsing char-by-char, the new approach utilizes pyparsing
@@ -101,7 +102,6 @@ class Parser:
             if not adopted:
                 break
 
-        # NOTE: this situation with linear list is inherited from the original implementation of kconfiglib and should be refactored
         orphans_for_adoption.reverse()
         # MenuNode.list = first child element
         for orphan in orphans_for_adoption:
@@ -138,7 +138,8 @@ class Parser:
         self.parse_options(node, parsed_config)
         if parsed_config["config_opts"]["visible_if"]:
             self.kconfig._warn(
-                f'config {sym.name} (defined at {self.file_stack[-1]}:{node.linenr}) has a "visible if" option, which is not supported for configs'
+                f'config {sym.name} (defined at {self.file_stack[-1]}:{node.linenr}) has a "visible if" option, '
+                "which is not supported for configs"
             )
 
         orphan = Orphan(
@@ -236,7 +237,8 @@ class Parser:
             )
         if parsed_choice["config_opts"]["visible_if"]:
             self.kconfig._warn(
-                f'choice {choice.name} (defined at {self.file_stack[-1]}:{node.linenr}) has a "visible if" option, which is not supported for choices'
+                f'choice {choice.name} (defined at {self.file_stack[-1]}:{node.linenr}) has a "visible if" option, '
+                "which is not supported for choices"
             )
 
         self.get_children(node, (self.file_stack[-1], line_number))
@@ -251,7 +253,10 @@ class Parser:
 
         for child in children_with_default:
             self.kconfig._warn(
-                f"default on the choice symbol {child.item.name if isinstance(child.item, (Symbol, Choice)) else child.item} (defined at {self.file_stack[-1]}:{child.linenr}) will have no effect, as defaults do not affect choice symbols"
+                "default on the choice symbol "
+                f"{child.item.name if isinstance(child.item, (Symbol, Choice)) else child.item} "
+                f"(defined at {self.file_stack[-1]}:{child.linenr}) will have no effect, as defaults "
+                "do not affect choice symbols"
             )
 
         orphan = Orphan(
@@ -410,7 +415,7 @@ class Parser:
                     node.linenr,
                 )
 
-    # mypy cannot recognize "if parsed_expr.__class__" as handling certatin types and then complains in the rest of the function
+    # mypy cannot recognize "if parsed_expr.__class__" as handling certain types complains in the rest of the function
     @no_type_check
     def infix_to_prefix(self, parsed_expr: Union[str, list, Symbol]) -> Union[str, tuple, Symbol]:
         """
