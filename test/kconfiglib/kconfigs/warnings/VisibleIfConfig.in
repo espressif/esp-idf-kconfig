@@ -1,0 +1,20 @@
+mainmenu "Test if visible if for config and choice raises warning"
+
+    config FUEL
+        visible if MOTORS_ENABLED
+        string "Fuel"
+        default "kerosene"
+
+    choice LUNCH
+        visible if CREW
+        prompt "Lunch"
+
+        config LUNCH_SANDWICH
+            bool "Sandwich"
+
+        config LUNCH_PIZZA
+            bool "Pizza"
+
+        config LUNCH_SALAD
+            bool "Salad"
+    endchoice
