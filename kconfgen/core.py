@@ -105,11 +105,13 @@ class DeprecatedOptions(object):
                     for opt in (dep_opt, new_opt):
                         if not opt:
                             raise RuntimeError(
-                                f"Error in {rename_path} (line {line_number}): Config {opt} is not prefixed with {self.config_prefix}"
+                                f"Error in {rename_path} (line {line_number}): "
+                                f"Config {opt} is not prefixed with {self.config_prefix}"
                             )
                     if dep_opt == new_opt:
                         raise RuntimeError(
-                            f"Error in {rename_path} (line {line_number}): Replacement name is the same as original name ({dep_opt})."
+                            f"Error in {rename_path} (line {line_number}): "
+                            f"Replacement name is the same as original name ({dep_opt})."
                         )
                     rep_dic[dep_opt] = new_opt
                     rev_rep_dic[new_opt].append(dep_opt)
@@ -295,7 +297,8 @@ def min_config_with_labels(config: kconfiglib.Kconfig, header: str) -> str:
     end_regex = re.compile(r"^# end of (.*)$").match
     # `label_path` marks the current path from the root; labels represent tree nodes.
     # The path is represented as an ordered Dict; the last element in the Dict is closest to the leaves.
-    # The label name is the key, and a boolean value indicates whether the label was added to the output (i.e., the label is used in the output).
+    # The label name is the key, and a boolean value indicates whether the label was added to the output
+    # (i.e., the label is used in the output).
     # We need to track used labels to ensure correct timing when printing the label ending.
     # Note that label names are not necessarily unique, so the order is significant.
     label_path: OrderedDict[str, bool] = OrderedDict()
@@ -594,7 +597,8 @@ def write_json_menus(_, config: kconfiglib.Kconfig, filename: str) -> None:
             node_id = get_menu_node_id(node)
             if node_id in existing_ids:
                 raise RuntimeError(
-                    f"Config file contains two items with the same id: {node_id} ({node.prompt[0] if node.prompt else ''}). "
+                    "Config file contains two items with the same id: "
+                    f" {node_id} ({node.prompt[0] if node.prompt else ''}). "
                     "Please rename one of these items to avoid ambiguity."
                 )
             new_json["id"] = node_id

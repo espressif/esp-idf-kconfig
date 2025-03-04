@@ -10,17 +10,17 @@ repos:
       - id: mixed-line-ending
         args: ['-f=lf']
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: 'v1.13.0'
+    rev: 'v1.14.1' # mypy v1.15+ does not support Python 3.8
     hooks:
     -   id: mypy
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.7.0
+    rev: v0.9.7
     hooks:
       - id: ruff # Runs ruff linter (replaces flake8 and black)
         args: [--fix, --exit-non-zero-on-fix] # --fix for fixing errors
       - id: ruff-format
   - repo: https://github.com/espressif/check-copyright/
-    rev: v1.0.3
+    rev: v1.1.0
     hooks:
       - id: check-copyright
         args: ['--ignore', 'check_copyright_ignore.txt', '--config', 'check_copyright_config.yaml']
@@ -31,7 +31,7 @@ repos:
         name: Lint rST files in docs folder using Sphinx Lint
         files: ^(docs/en)/.*\.(rst|inc)$
   - repo: https://github.com/codespell-project/codespell
-    rev: v2.3.0
+    rev: v2.4.1
     hooks:
       - id: codespell
         additional_dependencies: [tomli]
@@ -40,5 +40,5 @@ repos:
     hooks:
       - id: conventional-precommit-linter
         stages: [commit-msg]
-default_stages: [commit]
+default_stages: [pre-commit]
 default_install_hook_types: [pre-commit, commit-msg]

@@ -288,7 +288,10 @@ class RenameConfigTestCase(KconfgenBaseTestCase):
         self.invoke_and_test(
             self.input,
             "",
-            expected_error=f"RuntimeError: Error in {input_file} (line 2): Replacement name is the same as original name (NAMED_OPTION).",
+            expected_error=(
+                f"RuntimeError: Error in {input_file} (line 2): "
+                f"Replacement name is the same as original name (NAMED_OPTION)."
+            ),
         )
 
         invalid_rename_file_2 = textwrap.dedent(
@@ -300,7 +303,10 @@ class RenameConfigTestCase(KconfgenBaseTestCase):
         self.invoke_and_test(
             self.input,
             "",
-            expected_error=f"RuntimeError: Error in {input_file} (line 2): Replacement name is the same as original name (NAMED_OPTION).",
+            expected_error=(
+                f"RuntimeError: Error in {input_file} (line 2): "
+                f"Replacement name is the same as original name (NAMED_OPTION)."
+            ),
         )
 
     def testLowercaseInOldName(self):
