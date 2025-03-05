@@ -516,13 +516,13 @@ class Kconfig(object):
 
     def __init__(
         self,
-        filename="Kconfig",
-        warn=True,
-        info=True,
-        warn_to_stderr=True,
-        encoding="utf-8",
+        filename: str = "Kconfig",
+        warn: bool = True,
+        info: bool = True,
+        warn_to_stderr: bool = True,
+        encoding: str = "utf-8",
         suppress_traceback: bool = False,  # NOTE: deprecated (unused), preserved for compatibility
-        parser_version=None,
+        parser_version: Optional[int] = None,
     ):
         """
         Creates a new Kconfig object by parsing Kconfig files.
@@ -1306,6 +1306,7 @@ class Kconfig(object):
 
                 # If the value is not set to default
                 if not value_is_default:
+                    sym._sdkconfig_value = val
                     sym.set_value(val)
                 else:  # Symbol has only a default value and it is different between sdkconfig and Kconfig
                     symbols_with_default_values[sym] = val
@@ -1314,6 +1315,8 @@ class Kconfig(object):
 
             for sym in symbols_with_default_values:
                 val = symbols_with_default_values[sym]
+                sym._sdkconfig_value = val
+                sym._loaded_as_default = True
                 if sym._user_value is None and sym.str_value != str(val):
                     self._info(
                         f"Default value for {sym.name} in sdkconfig is [bold]{_quote_value(val, sym.orig_type)}[/bold] "
@@ -3677,11 +3680,13 @@ class Symbol:
         "is_allnoconfig_y",
         "is_constant",
         "kconfig",
+        "_loaded_as_default",
         "name",
         "nodes",
         "orig_type",
         "ranges",
         "rev_dep",
+        "_sdkconfig_value",
         "selects",
         "_user_value",
         "weak_rev_dep",
@@ -3699,12 +3704,14 @@ class Symbol:
     is_constant: bool
     env_var: Optional[str]
     ranges: List[Tuple]
+    _loaded_as_default: bool
+    _sdkconfig_value: Optional[str]
     _cached_bool_val: Optional[int]
 
     #
     # Public interface
     #
-    def __init__(self, kconfig: Kconfig, name: str, is_constant: bool = False, init_rest=True):
+    def __init__(self, kconfig: Kconfig, name: str, is_constant: bool = False, init_rest: bool = True):
         """
         Symbol constructor -- not intended to be called directly by Kconfiglib
         clients.
@@ -3853,6 +3860,28 @@ class Symbol:
             Symbol.set_value().
         """
         self._user_value = None
+
+        """
+        sdkconfig_value:
+            With a new way of handling default values (they are now distinguished from user values in sdkconfig files),
+            the old way of determining whether it is needed to save new sdkconfig (checking whether _user_value is set)
+            is not valid anymore (values without _user_value just have default value, even when loaded from sdkconfig).
+
+            sdkconfig_value now holds the value loaded from sdkconfig. It is used to determine whether the the value
+            has changed in menuconfig.
+
+            If the value is not set, it means that the value was not loaded from sdkconfig -> potentially new symbol.
+        """
+        self._sdkconfig_value = None
+
+        """
+        loaded_as_default:
+            sdkconfig_value on its own is not enough; we also need to check whether the value was loaded as a default
+            (user now can reset the value to default). This flag is set to True when the value is loaded from sdkconfig
+            as a default value.
+            Symbols with default value which has been "reset" in menuconfig will have this flag set to False.
+        """
+        self._loaded_as_default = False
 
         # Internal attributes
         self._cached_str_val = None

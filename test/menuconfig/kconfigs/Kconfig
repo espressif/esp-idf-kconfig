@@ -1,0 +1,26 @@
+mainmenu "Test kconfig"
+
+    config MOTORS_ENABLED
+        bool "Motors enabled"
+        default n
+
+    config CREW
+        bool "Crew"
+        default n
+
+    config FUEL
+        string "Fuel"
+        default "kerosene"
+
+    choice LUNCH
+        prompt "Lunch"
+
+        config LUNCH_SANDWICH
+            bool "Sandwich"
+
+        config LUNCH_PIZZA
+            bool "Pizza"
+
+        config LUNCH_SALAD
+            bool "Salad"
+    endchoice
