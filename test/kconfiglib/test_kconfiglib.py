@@ -58,7 +58,8 @@ class BaseKconfigTest:
             expected_stderr_content = expected.readlines()
         # We do not check stderr 1:1, because some paths could change.
         for stderrline in expected_stderr_content:
-            assert stderrline.strip() in actual_stderr
+            # For some reason, CI breaks stderr into multiple lines.
+            assert stderrline.strip() in actual_stderr.replace("\n", "")
 
 
 class TestOKCases(BaseKconfigTest):

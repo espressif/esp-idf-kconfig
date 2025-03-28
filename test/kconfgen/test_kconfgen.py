@@ -4,9 +4,13 @@
 import os
 import re
 import subprocess
+import sys
 import tempfile
 import textwrap
 import unittest
+
+from kconfiglib import POLICY_USE_KCONFIG
+from kconfiglib import POLICY_USE_SDKCONFIG
 
 
 class KconfgenBaseTestCase(unittest.TestCase):
@@ -49,7 +53,10 @@ class KconfgenBaseTestCase(unittest.TestCase):
             self.output_file,
         ]  # these arguments belong together
         print(f"Running: {call_args}")
-        subprocess.run(call_args, capture_output=True, text=True, check=True)
+        try:
+            subprocess.run(call_args, capture_output=True, text=True, check=True)
+        except subprocess.CalledProcessError as e:
+            print(f"Command {call_args} failed with error: {e.stderr}", file=sys.stderr)
 
     def invoke_and_test(self, in_text, out_text, test="in", expected_error=None):
         """
@@ -535,6 +542,47 @@ class NonSetValuesTestCase(KconfgenBaseTestCase):
         self.args.update({"output": "config"})
         self.invoke_and_test(self.input, "CONFIG_INTEGER=1", test="not in")
         self.invoke_and_test(self.input, "CONFIG_HEXADECIMAL=0xAA", test="not in")
+
+
+class ChooseDefaultValueTestCase(KconfgenBaseTestCase):
+    @classmethod
+    def setUpClass(self):
+        super(ChooseDefaultValueTestCase, self).setUpClass()
+        self.args.update({"output": "config"})
+        self.sdkconfig_file = "sdkconfig"
+        self.input = textwrap.dedent(
+            """
+            mainmenu "Test Choose Default Value"
+
+                config FOO
+                    bool "Foo config option"
+                    default y
+
+            """
+        )
+        with open(self.sdkconfig_file, "w") as sdkconfig:
+            sdkconfig.write("# default:\n")
+            sdkconfig.write("CONFIG_FOO=n\n")
+            self.args.update({"config": self.sdkconfig_file})  # this is input in contrast with {'output': 'config'}
+
+    @classmethod
+    def tearDownClass(self):
+        try:
+            os.remove(self.sdkconfig_file)
+        except FileNotFoundError:
+            pass
+
+    def testDefault(self):
+        self.args.update({"env": f"KCONFIG_DEFAULTS_POLICY={POLICY_USE_SDKCONFIG}"})
+        self.invoke_and_test(self.input, "# CONFIG_FOO is not set")
+        with open(self.output_file, "r") as f:
+            self.assertIn("# CONFIG_FOO is not set\n", f.readlines())
+
+    def testIgnoreSdkconfig(self):
+        self.args.update({"env": f"KCONFIG_DEFAULTS_POLICY={POLICY_USE_KCONFIG}"})
+        self.invoke_and_test(self.input, "CONFIG_FOO=y")
+        with open(self.output_file, "r") as f:
+            self.assertIn("CONFIG_FOO=y\n", f.readlines())
 
 
 # Used by multiple testHexPrefix() test cases to verify correct hex output for each format

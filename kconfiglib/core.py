@@ -24,6 +24,8 @@ from typing import Set
 from typing import Tuple
 from typing import Union
 
+from rich import print
+
 """
 Overview
 ========
@@ -423,6 +425,10 @@ Preferably, user-defined functions should be stateless.
 # Public classes
 #
 
+POLICY_USE_SDKCONFIG = "sdkconfig"
+POLICY_INTERACTIVE = "interactive"
+POLICY_USE_KCONFIG = "kconfig"
+
 
 class Kconfig(object):
     """
@@ -450,6 +456,7 @@ class Kconfig(object):
         "config_header",
         "config_prefix",
         "const_syms",
+        "defaults_policy",
         "defconfig_list",
         "defined_syms",
         "env_vars",
@@ -707,6 +714,16 @@ class Kconfig(object):
             the same way in the C tools.
         """
         self.config_prefix = os.getenv("CONFIG_", "CONFIG_")
+
+        """
+        defaults_policy:
+            Determines how to resolve conflicts in default values between sdkconfig and Kconfig
+            for configuration options.
+        """
+        self.defaults_policy = os.environ.get("KCONFIG_DEFAULTS_POLICY", POLICY_USE_SDKCONFIG)
+        if self.defaults_policy not in (POLICY_USE_SDKCONFIG, POLICY_INTERACTIVE, POLICY_USE_KCONFIG):
+            self._warn("Malformed KCONFIG_DEFAULTS_POLICY environment variable. Using default policy.")
+            self.defaults_policy = POLICY_USE_SDKCONFIG
 
         """
         comment_default_value:
@@ -1138,6 +1155,16 @@ class Kconfig(object):
 
     def _load_config(self, filename, replace):
         def _inject_default_value(sym: Symbol, val: Any) -> None:
+            """
+            When using default values from sdkconfig, we need to temporarily inject the default value of the symbol
+            to the build system.
+            NOTE: Temporarily = for current configuration session/current Kconfig run.
+            """
+            # self._parsing_kconfigs originally prevented adding new symbols during expression parsing
+            # However, now, we change the configuration structure even outside the parsing and we want possibly
+            # add new symbols, e.g. new default value is a previously unseen string/number.
+            parsing_kconfigs = self._parsing_kconfigs
+            self._parsing_kconfigs = True
             for node in sym.nodes:
                 # String literal is a constant symbol
                 if sym.orig_type == STRING:
@@ -1148,11 +1175,23 @@ class Kconfig(object):
             # Invalidate recursively to propagate the change to dependent symbols
             sym._rec_invalidate()
 
-            # sym.defaults need to be recalculated during finalize_node()
+            # sym.defaults need to be recalculated during finalize_node()!
             sym.defaults = []
 
-        def _quote_value(val: str) -> str:
-            return val if val in ("y", "n") else f'"{val}"'
+            # Restore the original value of self._parsing_kconfigs
+            self._parsing_kconfigs = parsing_kconfigs
+
+        def _quote_value(val: str, sym_type: str) -> str:
+            return val if (val in ("y", "n") or sym_type == INT) else f'"{val}"'
+
+        # We need to first load symbols with user-set value, but those can be anywhere in sdkconfig.
+        # We cache symbols with default values and set them additionally.
+        # SYMBOL: VAL_FROM_SDKCONFIG
+        symbols_with_default_values: Dict[str, str] = dict()
+        # SYMBOL_NAME: (OLD_VAL, NEW_VAL)
+        symbols_with_changed_defaults: Dict[str, Tuple[str, str]] = dict()
+        # SYMBOL_NAME: VAL
+        unchanged_symbols: Dict[str, str] = dict()
 
         with self._open_config(filename) as f:
             if replace:
@@ -1265,20 +1304,70 @@ class Kconfig(object):
                 if sym._was_set:
                     self._assigned_twice(sym, val, filename, linenr)
 
-                if not value_is_default:  # If the value is not set to default
+                # If the value is not set to default
+                if not value_is_default:
                     sym.set_value(val)
                 else:  # Symbol has only a default value and it is different between sdkconfig and Kconfig
-                    if sym._user_value is None and sym.str_value != str(val):
+                    symbols_with_default_values[sym] = val
+
+                value_is_default = False
+
+            for sym in symbols_with_default_values:
+                val = symbols_with_default_values[sym]
+                if sym._user_value is None and sym.str_value != str(val):
+                    self._info(
+                        f"Default value for {sym.name} in sdkconfig is [bold]{_quote_value(val, sym.orig_type)}[/bold] "
+                        f"but it is [bold]{_quote_value(sym.str_value, sym.orig_type)}[/bold] according to Kconfig."
+                    )
+                    if self.defaults_policy == POLICY_USE_SDKCONFIG:  # Use default value from sdkconfig
                         self._info(
-                            f"Default value for {sym.name} in sdkconfig is {_quote_value(val)} but according to "
-                            f"Kconfig, it is {_quote_value(sym.str_value)}. "
-                            f"Using default value from sdkconfig ({val})."
+                            "     Using default value from sdkconfig "
+                            f"([bold]{_quote_value(val, sym.orig_type)}[/bold]).\n"
+                            "      HINT: you can run `idf.py refresh-config` to use different default value source.",
+                            supress_info_prefix=True,
                         )
                         _inject_default_value(sym, val)
-                    value_is_default = False
-
+                    elif self.defaults_policy == POLICY_USE_KCONFIG:  # Use default value from Kconfig
+                        self._info(
+                            "Using default value from Kconfig "
+                            f"([bold]{_quote_value(sym.str_value, sym.orig_type)}[/bold]).\n"
+                            "      HINT: you can run `idf.py refresh-config` to use different default value source.",
+                        )
+                        symbols_with_changed_defaults[sym.name] = (sym.str_value, val)
+                    elif self.defaults_policy == POLICY_INTERACTIVE:
+                        preffered_source = None
+                        while preffered_source not in ("s", "k"):
+                            preffered_source = input(
+                                "Do you want to use default value from sdkconfig (s) "
+                                "(value will be converted to user-set) or from Kconfig (k)? [s/k]:"
+                            ).lower()
+                        if preffered_source == "s":
+                            # NOTE: This will make "default" from sdkconfig a user-set value.
+                            # Reason: If we keep it as default, the message about defaults differing between sdkconfig
+                            # and Kconfig would still be present because default values between
+                            # sdkconfig and Kconfig would still differ.
+                            sym.set_value(val)
+                            unchanged_symbols[sym.name] = val
+                        elif preffered_source == "k":
+                            symbols_with_changed_defaults[sym.name] = (sym.str_value, val)
+                    else:
+                        KconfigError(
+                            f"Unsupported default policy in KCONFIG_DEFAULTS_POLICY envvar: {self.defaults_policy}"
+                        )
             # Refresh config tree after all values are set
+            # TODO: In finalize_node(), more values may be changed as a result of changed default values,
+            #       but currently, we cannot easily track these changes and compare them.
+            #       Will be fixed as part of IDF-2971.
             self._finalize_node(self.top_node, self.top_node.visibility)
+
+            if symbols_with_changed_defaults:
+                print("Default values for the following symbols were changed:")
+                for sym in symbols_with_changed_defaults:
+                    print(f"{sym}: {symbols_with_changed_defaults[sym][0]} -> {symbols_with_changed_defaults[sym][1]}")
+            if unchanged_symbols:
+                print("Default values for the following symbols were not changed:")
+                for sym in unchanged_symbols:
+                    print(f"{sym}: {unchanged_symbols[sym]}")
 
         if replace:
             # If we're replacing the configuration, unset the symbols that
@@ -3552,11 +3641,11 @@ class Kconfig(object):
         if self.warn_to_stderr:
             sys.stderr.write(msg + "\n")
 
-    def _info(self, msg):
+    def _info(self, msg, supress_info_prefix=False):
         if not self.info:
             return
 
-        sys.stderr.write(f"info: {msg}\n")
+        print(f"{'info: ' if not supress_info_prefix else ''}{msg}", file=sys.stderr)
 
 
 class Symbol:
@@ -4100,7 +4189,7 @@ class Symbol:
         # _write_to_conf is determined when the value is calculated. This is a
         # hidden function call due to property magic.
         val = self.str_value
-        pragma_default_comment = "" if self._user_value else f"{self.kconfig.comment_default_value}\n"
+        pragma_default_comment = "" if self._user_value or self.choice else f"{self.kconfig.comment_default_value}\n"
         if not self._write_to_conf:
             return ""
 

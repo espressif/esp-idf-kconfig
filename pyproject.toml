@@ -45,6 +45,7 @@ dev = [
     "pexpect",
     "pyparsing",
     "pytest",
+    "rich",
 ]
 docs = [
     "esp-docs~=1.5"
