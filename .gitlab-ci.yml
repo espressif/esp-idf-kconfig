@@ -96,8 +96,7 @@ test_gen_kconfig_doc:
   stage: test
   script:
     - cd test/gen_kconfig_doc/
-    - ./test_target_visibility.py
-    - ./test_kconfig_out.py
+    - pytest --verbose
 
 test_kconfgen:
   extends: .base_template
@@ -127,8 +126,7 @@ test_gen_kconfig_doc_venv:
   stage: test
   script:
     - cd test/gen_kconfig_doc/
-    - ./test_target_visibility.py
-    - ./test_kconfig_out.py
+    - pytest --verbose
 
 test_kconfgen_venv:
   extends: .venv_template
