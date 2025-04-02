@@ -16,6 +16,7 @@ from pyparsing import Literal
 from pyparsing import OneOrMore
 from pyparsing import Opt
 from pyparsing import ParseException
+from pyparsing import ParseResults
 from pyparsing import PrecededBy
 from pyparsing import QuotedString
 from pyparsing import Regex
@@ -636,7 +637,7 @@ class KconfigGrammar:
 
         return return_file if not ensure_end_newline else return_file + "\n"
 
-    def __call__(self, file: str, sourced: bool = False):
+    def __call__(self, file: str, sourced: bool = False) -> ParseResults:
         """
         Here, pyparsing parsing takes place.
         Parameters:

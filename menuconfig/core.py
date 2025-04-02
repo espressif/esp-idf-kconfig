@@ -191,6 +191,7 @@ import os
 import re
 import sys
 import textwrap
+from typing import TYPE_CHECKING
 from typing import Union
 
 from kconfiglib.core import AND
@@ -212,6 +213,9 @@ from kconfiglib.core import split_expr
 from kconfiglib.core import standard_config_filename
 from kconfiglib.core import standard_kconfig
 from kconfiglib.core import standard_sc_expr_str
+
+if TYPE_CHECKING:
+    from kconfiglib import Kconfig
 
 _IS_WINDOWS = os.name == "nt"  # Are we running on Windows?
 
@@ -670,18 +674,27 @@ def _style_attr(fg_color, bg_color, attribs, color_attribs={}):
 #
 # Main application
 #
+_kconf = None
+_conf_filename = None
+_conf_changed = False
+_minconf_filename = None
+_show_all = None
 
 
 def _main():
     menuconfig(standard_kconfig(__doc__))
 
 
-def menuconfig(kconf):
+def menuconfig(kconf: "Kconfig", headless: bool = False) -> None:
     """
     Launches the configuration interface, returning after the user exits.
 
     kconf:
       Kconfig instance to be configured
+
+    headless:
+        If True, run in headless mode, without a terminal interface. This is
+        useful for testing purposes.
     """
     global _kconf
     global _conf_filename
@@ -741,7 +754,8 @@ def menuconfig(kconf):
 
     # Enter curses mode. _menuconfig() returns a string to print on exit, after
     # curses has been de-initialized.
-    print(_wrapper(_menuconfig))  # instead of print(curses.wrapper(_menuconfig))
+    if not headless:
+        print(_wrapper(_menuconfig))  # instead of print(curses.wrapper(_menuconfig))
 
 
 def _wrapper(func):
@@ -804,17 +818,23 @@ def _needs_save():
         return True
 
     for sym in _kconf.unique_defined_syms:
-        if sym._user_value is None:
+        # symbol not loaded from sdkconfig
+        if sym._sdkconfig_value is None:
             if sym.config_string:
                 # Unwritten symbol
                 return True
-        elif sym.orig_type == BOOL:
-            if sym.bool_value != sym._user_value:
-                # Written bool symbol, new value
-                return True
-        elif sym.str_value != sym._user_value:
-            # Written string/int/hex symbol, new value
+        # symbol changed value during menuconfig session for whatever reason
+        elif sym.str_value != sym._sdkconfig_value:
             return True
+        # symbol loaded from sdkconfig having the same value
+        # May still need to save changed (non-)default state
+        else:
+            # symbol set back to default value
+            if not sym._loaded_as_default and sym._user_value is None:
+                return True
+            # symbol was user-set during menuconfig session
+            elif sym._loaded_as_default and sym._user_value is not None:
+                return True
 
     # No need to prompt for save
     return False
@@ -992,7 +1012,7 @@ def _menuconfig(stdscr):
 
 
 def _quit_dialog():
-    if not _conf_changed:
+    if not (_needs_save() or _conf_changed):
         return f"No changes to save (for '{_conf_filename}')"
 
     while True:

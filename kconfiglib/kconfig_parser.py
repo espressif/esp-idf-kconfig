@@ -179,7 +179,7 @@ class Parser:
 
         self.orphans.append(orphan)
 
-    def parse_sourced(self, s: str, loc: int, parsed_source) -> None:
+    def parse_sourced(self, s: str, loc: int, parsed_source: ParseResults) -> None:
         self.kconfig.linenr = lineno(loc, s)
         path = expandvars(parsed_source.path)
         if parsed_source[0] in ["rsource", "orsource"]:

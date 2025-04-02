@@ -1,0 +1,7 @@
+# CONFIG_MOTORS_ENABLED is not set
+# CONFIG_CREW is not set
+# default:
+CONFIG_FUEL="kerosene"
+CONFIG_LUNCH_SANDWICH=y
+# CONFIG_LUNCH_PIZZA is not set
+# CONFIG_LUNCH_SALAD is not set

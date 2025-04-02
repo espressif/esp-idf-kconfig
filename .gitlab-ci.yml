@@ -89,14 +89,21 @@ test_kconfiglib:
   stage: test
   script:
     - cd test/kconfiglib/
-    - pytest --verbose
+    - pytest -vv
+
+test_menuconfig:
+  extends: .base_template
+  stage: test
+  script:
+    - cd test/menuconfig/
+    - pytest -vv
 
 test_gen_kconfig_doc:
   extends: .base_template
   stage: test
   script:
     - cd test/gen_kconfig_doc/
-    - pytest --verbose
+    - pytest -vv
 
 test_kconfgen:
   extends: .base_template
@@ -111,7 +118,7 @@ test_kconfcheck:
   script:
     - cd test/kconfcheck/
     - ./test_kconfcheck.py
-    - pytest test_deprecated_options.py --verbose
+    - pytest test_deprecated_options.py -vv
 
 # TESTS in VENV
 test_kconfserver_venv:
@@ -121,12 +128,26 @@ test_kconfserver_venv:
     - cd test/kconfserver/
     - ./test_kconfserver.py
 
+test_kconfiglib_venv:
+  extends: .venv_template
+  stage: test
+  script:
+    - cd test/kconfiglib/
+    - pytest -vv
+
+test_menuconfig_venv:
+  extends: .venv_template
+  stage: test
+  script:
+    - cd test/menuconfig/
+    - pytest -vv
+
 test_gen_kconfig_doc_venv:
   extends: .venv_template
   stage: test
   script:
     - cd test/gen_kconfig_doc/
-    - pytest --verbose
+    - pytest -vv
 
 test_kconfgen_venv:
   extends: .venv_template
@@ -141,7 +162,7 @@ test_kconfcheck_venv:
   script:
     - cd test/kconfcheck/
     - ./test_kconfcheck.py
-    - pytest test_deprecated_options.py --verbose
+    - pytest test_deprecated_options.py -vv
 
 
 # ------------------------------------------------------------------------------------------------------
