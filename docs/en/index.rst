@@ -24,3 +24,4 @@ Documentation Overview
     Kconfig Language <kconfiglib/index>
     Checking Kconfig Files <kconfcheck/index>
     Developer and Contributor Guide <developer-guide/index>
+    Kconfserver <kconfserver/index>
