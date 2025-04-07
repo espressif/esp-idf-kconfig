@@ -468,9 +468,9 @@ class KconfigGrammar:
         ###########################
         # List of all possible options for the config/choice.
 
-        config_name = Word(alphanums.upper() + "_").set_results_name("config_name", list_all_matches=True)
+        symbol_name = Word(alphanums.upper() + "_").set_results_name("config_name", list_all_matches=True)
         config_opts = KconfigOptionBlock().leave_whitespace().set_results_name("config_opts")
-        config = Keyword("config") + config_name + config_opts
+        config = Keyword("config") + symbol_name + config_opts
         config = config.set_parse_action(parser.parse_config)
 
         ###########################
@@ -501,7 +501,7 @@ class KconfigGrammar:
         choice = (
             Keyword("choice")
             + (
-                Opt(symbol).set_results_name("name")
+                Opt(symbol_name).set_results_name("name")
                 + Opt(KconfigOptionBlock().set_results_name("config_opts"))
                 + IndentedBlock(entries).set_results_name("entries")
             ).set_parse_action(parser.parse_choice)
@@ -511,7 +511,7 @@ class KconfigGrammar:
         ########################
         # Menuconfig
         ########################
-        menuconfig = (Keyword("menuconfig") + config_name + config_opts).set_parse_action(parser.parse_config)
+        menuconfig = (Keyword("menuconfig") + symbol_name + config_opts).set_parse_action(parser.parse_config)
 
         ########################
         # Menu
