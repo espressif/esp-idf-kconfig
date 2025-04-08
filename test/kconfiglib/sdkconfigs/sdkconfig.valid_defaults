@@ -1,0 +1,8 @@
+# default:
+CONFIG_INT_CONFIG=1
+# default:
+CONFIG_BOOL_CONFIG=y
+# default:
+CONFIG_STRING_CONFIG="string"
+# default:
+CONFIG_HEX_CONFIG=0x42
