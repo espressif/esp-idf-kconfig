@@ -9,7 +9,7 @@ mainmenu "mainmenu"
 
     comment "Named choice"
 
-    choice "named choice"
+    choice NAMED_CHOICE
         prompt "prompt for named choice"
 
         config FOO
