@@ -1,0 +1,12 @@
+mainmenu "test using simple macros"
+# Will not work with upstream kconfiglib as it supports only "${NAME}" expansion
+
+MAX_NUMBER_OF_MOTORS = 8
+
+
+config SECOND_MOTOR_NUMBER
+    int "Second number of motors"
+    range 1 10
+    default ${MAX_NUMBER_OF_MOTORS} # should expand to 4 (envvar set in test_kconfiglib.py)
+    help
+        Number of motors connected to the starship

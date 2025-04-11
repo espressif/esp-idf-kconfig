@@ -1,0 +1,9 @@
+mainmenu "Testcase where nor macro nor environment variable is defined"
+
+
+config MOTOR_NUMBER
+    int "Number of motors"
+    range 1 10
+    default $(MAX_NUMBER_OF_MOTORS) # should cause error as nor macro nor envvar should be defined
+    help
+        Number of motors connected to the starship

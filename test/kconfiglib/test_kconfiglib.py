@@ -33,7 +33,7 @@ class TestKconfigVersions:
 
 
 class BaseKconfigTest:
-    def call_kconfig(self, path: str, input_file_name: str, output_file_name: str):
+    def call_kconfig(self, path: str, input_file_name: str, output_file_name: str) -> subprocess.CompletedProcess:
         kconfgen_cmd = [
             sys.executable,
             "-m",
@@ -47,26 +47,32 @@ class BaseKconfigTest:
         result = subprocess.run(kconfgen_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         return result
 
-    def check_output(self, path: str, actual_output_file: Path, expected_output_file: Path):
+    def check_output(self, path: str, actual_output_file: Path, expected_output_file: Path) -> None:
         with open(os.path.join(path, expected_output_file), "r") as expected, open(actual_output_file, "r") as actual:
             expected_output = expected.read()
             actual_output = actual.read()
         assert actual_output == expected_output
 
-    def check_stderr(self, path: str, actual_stderr: str, expected_stderr: Path):
+    def check_stderr(self, path: str, actual_stderr: str, expected_stderr: Path) -> None:
         with open(os.path.join(path, expected_stderr), "r") as expected:
             expected_stderr_content = expected.readlines()
         # We do not check stderr 1:1, because some paths could change.
-        for stderrline in expected_stderr_content:
+        for stderr_line in expected_stderr_content:
             # For some reason, CI breaks stderr into multiple lines.
-            assert stderrline.strip() in actual_stderr.replace("\n", "")
+            assert stderr_line.strip() in actual_stderr.replace("\n", "")
 
 
 class TestOKCases(BaseKconfigTest):
     @pytest.fixture(autouse=True)
     def set_env_vars(self):
         os.environ["TEST_FILE_PREFIX"] = os.path.join(TESTS_PATH_OK, "kconfigs_for_sourcing")
-        os.environ["TEST_ENV_SET"] = "y"
+        os.environ["TEST_ENV_SET"] = "y"  # used in SeveralConfigs
+        os.environ["MAX_NUMBER_OF_MOTORS"] = "4"  # used in Macro
+        yield
+        # Cleanup
+        del os.environ["TEST_FILE_PREFIX"]
+        del os.environ["TEST_ENV_SET"]
+        del os.environ["MAX_NUMBER_OF_MOTORS"]
 
     @pytest.mark.parametrize(
         "filename", set(Path(file).stem for file in os.listdir(TESTS_PATH_OK) if file != "kconfigs_for_sourcing")
@@ -75,6 +81,11 @@ class TestOKCases(BaseKconfigTest):
     def test_ok_cases(self, filename, version):
         os.environ["KCONFIG_PARSER_VERSION"] = version
         assert os.environ.get("KCONFIG_PARSER_VERSION", "") == version
+        v1_skipped_tests = {
+            "EnvironmentVariable": "Original kconfiglib does not support unquoted environment variable expansion.",
+        }
+        if int(version) == 1 and filename in v1_skipped_tests.keys():
+            pytest.skip(v1_skipped_tests[filename])
 
         with tempfile.NamedTemporaryFile() as f:
             result = self.call_kconfig(path=TESTS_PATH_OK, input_file_name=f"{filename}.in", output_file_name=f.name)
@@ -109,7 +120,6 @@ class TestErrorCases(BaseKconfigTest):
     def test_error_cases(self, filename, version):
         v1_skipped_tests = {
             "NoMainmenu": "Original kconfiglib supports Kconfigs without root mainmenu.",
-            "InvalidEntryInChoice": "Original kconfiglib supports all entries in if statement inside choice.",
         }
         if int(version) == 1 and filename in v1_skipped_tests.keys():
             pytest.skip(v1_skipped_tests[filename])

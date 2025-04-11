@@ -35,7 +35,7 @@ if TYPE_CHECKING:
 
 class KconfigBlock(Token):
     """
-    Abstract class for custom Kconfig related pyparsiong blocks.
+    Abstract class for custom Kconfig related pyparsing blocks.
     """
 
     def __init__(self):
@@ -129,7 +129,7 @@ class KconfigHelpBlock(KconfigBlock):
             else:
                 break
             # end of help block
-        # if some lines are overindented in the help, the overindentation is preserved in the help text itself
+        # if some lines are over-indented in the help, the over-indentation is preserved in the help text itself
         return loc, result
 
 
@@ -142,8 +142,8 @@ symbol_regex = r"""(?<!\S)
                     |[A-Z\d_]+  # variables: FOO, BAR_BAR, ENABLE_ESP64
                     |'[^']*'  # strings: 'here is a đĐđĐ[]tring'
                     |\"[^\"]*\" # strings: "hello world", ""
-                    |\"\$\([A-Z_\d]+\)\" # "$(ENVVAR)"
-                    |\"\$[A-Z_\d]+\""""  # "$ENVVAR"
+                    |\"?\$[({]?[A-Z\d_]+[)}]?\"?"""  # $ENV, ENV can be in () or {} and the whole thing can be in ""
+
 symbol = Regex(symbol_regex, re.X)
 operator_with_precedence = [
     (Literal("!"), 1, opAssoc.RIGHT),
@@ -214,8 +214,11 @@ class KconfigOptionBlock(KconfigBlock):
         }
 
         def is_line_with_option(tokens: List[str]) -> bool:
-            if tokens[0].startswith(self.entry_keywords):
+            if tokens[0].startswith(self.entry_keywords) or re.match(
+                r"^\s*([A-Z0-9_]+)\s*[:]?=\s*(.*?)\s*$", " ".join(tokens)
+            ):  # macro
                 return False
+
             return True
 
         def prompt_from_token_list(tokens: List[str]) -> Tuple[str, int]:
@@ -483,6 +486,17 @@ class KconfigGrammar:
         comment = comment.set_parse_action(parser.parse_comment)
 
         ###########################
+        # Macro
+        ###########################
+        # Although not a basic Kconfig syntax, some Kconfig files are using basic macros in the form of NAME := value.
+        # This part adds support for this.
+        macro = (
+            symbol_name.set_results_name("name")
+            + one_of([":=", "="]).set_results_name("operation")
+            + symbol.set_results_name("value")
+        ).set_parse_action(parser.parse_macro)
+
+        ###########################
         # Source
         ###########################
         # [o|r|or]source point to a file that should be placed in the place of source.
@@ -525,9 +539,9 @@ class KconfigGrammar:
         # Every entry should have the same indentation and optionally, an empty line in between two entries.
         # But e.g. lvgl does not follow any rules in their Kconfig files and thus,
         # formal specifications needs to be loosen.
-        entries << ZeroOrMore(config | menu | choice | source | menuconfig | if_entry | comment).set_results_name(
-            "entries"
-        )
+        entries << ZeroOrMore(
+            config | menu | choice | source | menuconfig | if_entry | comment | macro
+        ).set_results_name("entries")
 
         menu << (
             Keyword("menu")
