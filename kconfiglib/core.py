@@ -1154,12 +1154,21 @@ class Kconfig(object):
         return ("Loaded" if replace else "Merged") + msg
 
     def _load_config(self, filename, replace):
-        def _inject_default_value(sym: Symbol, val: Any) -> None:
+        def _inject_default_value(sym: Symbol, val: Any) -> bool:
             """
             When using default values from sdkconfig, we need to temporarily inject the default value of the symbol
             to the build system.
             NOTE: Temporarily = for current configuration session/current Kconfig run.
             """
+            # value_is_valid() accepts only string or 0/2 (corresponding to n/y) values
+            if not sym.value_is_valid(STR_TO_BOOL[val] if val in ("y", "n") else str(val)):
+                self._warn(
+                    f"'{val}' is not a valid value for the {TYPE_TO_STR[sym.orig_type]} symbol "
+                    f"{sym.name_and_loc}. Assignment ignored.",
+                    filename,
+                    self.linenr,
+                )
+                return False
             # self._parsing_kconfigs originally prevented adding new symbols during expression parsing
             # However, now, we change the configuration structure even outside the parsing and we want possibly
             # add new symbols, e.g. new default value is a previously unseen string/number.
@@ -1180,6 +1189,8 @@ class Kconfig(object):
 
             # Restore the original value of self._parsing_kconfigs
             self._parsing_kconfigs = parsing_kconfigs
+
+            return True
 
         def _quote_value(val: str, sym_type: str) -> str:
             return val if (val in ("y", "n") or sym_type == INT) else f'"{val}"'
@@ -1226,6 +1237,7 @@ class Kconfig(object):
                     sym = get_sym(name)
                     if not sym or not sym.nodes:
                         self._undef_assign(name, val, filename, linenr)
+                        value_is_default = False
                         continue
 
                     if sym.orig_type == BOOL:
@@ -1238,6 +1250,7 @@ class Kconfig(object):
                                 filename,
                                 linenr,
                             )
+                            value_is_default = False
                             continue
 
                         val = val[0]
@@ -1266,6 +1279,7 @@ class Kconfig(object):
                                 filename,
                                 linenr,
                             )
+                            value_is_default = False
                             continue
 
                         val = unescape(match.group(1))
@@ -1306,8 +1320,9 @@ class Kconfig(object):
 
                 # If the value is not set to default
                 if not value_is_default:
-                    sym._sdkconfig_value = val
-                    sym.set_value(val)
+                    if sym.set_value(val):
+                        # sdkconfig value is set only if set_value succeeded (e.g. no malformed value in sdkconfig)
+                        sym._sdkconfig_value = val
                 else:  # Symbol has only a default value and it is different between sdkconfig and Kconfig
                     symbols_with_default_values[sym] = val
 
@@ -1323,18 +1338,26 @@ class Kconfig(object):
                         f"but it is [bold]{_quote_value(sym.str_value, sym.orig_type)}[/bold] according to Kconfig."
                     )
                     if self.defaults_policy == POLICY_USE_SDKCONFIG:  # Use default value from sdkconfig
-                        self._info(
-                            "     Using default value from sdkconfig "
-                            f"([bold]{_quote_value(val, sym.orig_type)}[/bold]).\n"
-                            "      HINT: you can run `idf.py refresh-config` to use different default value source.",
-                            supress_info_prefix=True,
-                        )
-                        _inject_default_value(sym, val)
+                        if _inject_default_value(sym, val):
+                            self._info(
+                                "     Using default value from sdkconfig "
+                                f"([bold]{_quote_value(val, sym.orig_type)}[/bold]).\n"
+                                "    HINT: you can run `idf.py refresh-config` to use different default value source.",
+                                supress_info_prefix=True,
+                            )
+                        else:
+                            self._warn(
+                                f"Failed to set default value for {sym.name} from sdkconfig. "
+                                f"Default value will be set to {_quote_value(val, sym.orig_type)}.",
+                                filename,
+                                linenr,
+                            )
+                            unchanged_symbols[sym.name] = val
                     elif self.defaults_policy == POLICY_USE_KCONFIG:  # Use default value from Kconfig
                         self._info(
                             "Using default value from Kconfig "
                             f"([bold]{_quote_value(sym.str_value, sym.orig_type)}[/bold]).\n"
-                            "      HINT: you can run `idf.py refresh-config` to use different default value source.",
+                            "    HINT: you can run `idf.py refresh-config` to use different default value source.",
                         )
                         symbols_with_changed_defaults[sym.name] = (sym.str_value, val)
                     elif self.defaults_policy == POLICY_INTERACTIVE:
@@ -4247,6 +4270,21 @@ class Symbol:
         """
         return self.name + " " + _locs(self)
 
+    def value_is_valid(self, value: Any) -> bool:
+        # Check if the value is valid for our type
+        return (
+            self.orig_type == BOOL
+            and value in (2, 0)  # valid bool
+            or (
+                value.__class__ is str  # values other than bool should be string
+                and (
+                    (self.orig_type == INT and _is_base_n(value, 10))  # valid int
+                    or self.orig_type == STRING  # valid string
+                    or (self.orig_type == HEX and _is_base_n(value, 16) and int(value, 16) >= 0)  # valid hex
+                )
+            )
+        )
+
     def set_value(self, value):
         """
         Sets the user value of the symbol.
@@ -4299,21 +4337,8 @@ class Symbol:
         if value == self._user_value and not self.choice:
             self._was_set = True
             return True
-
         # Check if the value is valid for our type
-        if not (
-            self.orig_type == BOOL
-            and value in (2, 0)
-            or value.__class__ is str
-            and (
-                self.orig_type == STRING
-                or self.orig_type == INT
-                and _is_base_n(value, 10)
-                or self.orig_type == HEX
-                and _is_base_n(value, 16)
-                and int(value, 16) >= 0
-            )
-        ):
+        if not self.value_is_valid(value):
             # Display bool values as n, y in the warning
             self.kconfig._warn(
                 "the value {} is invalid for {}, which has type {} -- assignment ignored".format(

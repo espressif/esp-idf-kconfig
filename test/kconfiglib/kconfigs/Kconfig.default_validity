@@ -1,0 +1,19 @@
+mainmenu "Test validity of injected value"
+
+# This Kconfig is outside ok/warning/error folders because it is used with load_config -> different workflow
+
+    config INT_CONFIG
+        int "Int config"
+        default 1
+
+    config BOOL_CONFIG
+        bool "Bool config"
+        default y
+
+    config STRING_CONFIG
+        string "String config"
+        default "string"
+
+    config HEX_CONFIG
+        hex "Hex config"
+        default 0x42
