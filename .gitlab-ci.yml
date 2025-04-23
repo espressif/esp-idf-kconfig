@@ -117,7 +117,7 @@ test_kconfcheck:
   stage: test
   script:
     - cd test/kconfcheck/
-    - ./test_kconfcheck.py
+    - pytest test_kconfcheck.py -vv
     - pytest test_deprecated_options.py -vv
 
 # TESTS in VENV
@@ -161,7 +161,7 @@ test_kconfcheck_venv:
   stage: test
   script:
     - cd test/kconfcheck/
-    - ./test_kconfcheck.py
+    - pytest test_kconfcheck.py -vv
     - pytest test_deprecated_options.py -vv
 
 
