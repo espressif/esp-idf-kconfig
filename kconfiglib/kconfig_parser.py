@@ -39,6 +39,7 @@ from .core import Kconfig
 from .core import KconfigError
 from .core import MenuNode
 from .core import Symbol
+from .core import Variable
 
 ParserElement.enablePackrat(cache_size_limit=None)  # Speeds up parsing by caching intermediate results
 
@@ -287,6 +288,35 @@ class Parser:
         else:
             node.dep = self.kconfig.y
 
+    def parse_macro(self, s: str, loc: int, parsed_macro: ParseResults) -> None:
+        name = parsed_macro["name"]
+        op = parsed_macro["operation"]
+        val = parsed_macro["value"]
+        if name in self.kconfig.variables:  # Already seen variable
+            var = self.kconfig.variables[name]
+        else:
+            # New variable
+            var = Variable()
+            var.kconfig = self.kconfig
+            var.name = name
+            var._n_expansions = 0
+
+            self.kconfig.variables[name] = var
+
+        # legacy; in order to make everything work, we need to set the value to the is_recursive flag
+        # Difference between "=" and ":=" is that in original kconfiglib, ":=" is expanded immediately,
+        # while "=" is expanded when used. However, we currently support only simple NAME = VALUE macros,
+        # where there is no difference between the two (literal is always expanded to itself).
+        if op == "=":
+            var.is_recursive = True
+        elif op == ":=":
+            var.is_recursive = False
+
+        if isinstance(val, Symbol):
+            val = val.name
+
+        var.value = self.kconfig._expand_whole(val, ())
+
     def parse_prompt(self, node: MenuNode, prompts: List[Tuple]) -> None:
         for prompt in prompts:
             if node.prompt:
@@ -446,7 +476,9 @@ class Parser:
             value = os.environ.get(name) or ""
             env_var_sym = self.kconfig._lookup_const_sym(value)
         else:
-            env_var_sym = self.kconfig._lookup_const_sym("")
+            # If the given name is not in the environment variables, we set the value
+            # to the name itself (e.g. "${ENVAR_NAME}")
+            env_var_sym = self.kconfig._lookup_const_sym(f"${{{name}}}")  # will expand to ${ENVAR_NAME}
         return env_var_sym
 
     def kconfigize_expr(self, expr: Union[str, tuple, list]) -> Union[str, tuple, "Symbol", int]:
@@ -478,11 +510,34 @@ class Parser:
         if isinstance(expr, str):
             if expr in operators:
                 return self.kconfigize_operator[expr]
-            elif expr.startswith(('"$(', "'$(", '"$', "'$")):  # environment variable
-                if expr.startswith(('"$(', "'$(")):
-                    return self.create_envvar(expr[3:-2])  # remove "$( and )"
+            # $(NAME) first tries to expand as a macro, then as an environment variable,
+            # ${NAME} only as environment variable.
+            # Also their quoted versions, e.g. "$(NAME)", "${NAME}" are allowed.
+            # This really matters only with "$(NAME)" because macro can be an int. Others are strings by default.
+            elif expr.startswith(('"$', "'$", "$")):  # environment variable or macro to expand
+                quoted = False
+                # remove quotes and $, then decide what to do based on brackets
+                if expr.startswith(('"$', "'$")):
+                    expr = expr[2:-1]  # remove "$ and trailing "
+                    quoted = True
                 else:
-                    return self.create_envvar(expr[2:-1])  # remove "$ and trailing "
+                    expr = expr[1:]  # remove only $
+                if expr.startswith("(") and expr.endswith(
+                    ")"
+                ):  # first try to expand as a macro, then as an environment variable, then cause error
+                    expr = expr[1:-1]
+                    if self.kconfig.variables.get(expr):
+                        return self.kconfigize_expr(
+                            f'"{self.kconfig.variables[expr].value}"' if quoted else self.kconfig.variables[expr].value
+                        )
+                    elif expr in os.environ:
+                        return self.create_envvar(expr)
+                    else:
+                        raise KconfigError(f"{expr}: macro expanded to blank string")
+                else:  # name in {} or without brackets at all (only for environment variables)
+                    expr = expr[1:-1] if expr.startswith("{") and expr.endswith("}") else expr
+                    return self.create_envvar(expr)
+
             else:  # symbol
                 if expr in ("n", "'n'", '"n"'):
                     return self.kconfig.n

@@ -5586,7 +5586,6 @@ class MenuNode:
 
 class Variable(object):
     """
-    # TODO/NOTE Variable/preprocessor logic can be removed, thus this class was not refactored
     Represents a preprocessor variable/function.
 
     The following attributes are available:
@@ -5617,6 +5616,11 @@ class Variable(object):
         "name",
         "value",
     )
+    kconfig: "Kconfig"
+    name: str
+    value: str
+    is_recursive: bool
+    _n_expansions: int
 
     @property
     def expanded_value(self):

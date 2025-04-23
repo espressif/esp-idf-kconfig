@@ -1,0 +1,11 @@
+mainmenu "test using simple macros"
+
+
+MAX_NUMBER_OF_MOTORS = 8
+
+config MOTOR_NUMBER
+    int "Number of motors"
+    range 1 10
+    default $(MAX_NUMBER_OF_MOTORS) # should expand to 8
+    help
+        Number of motors connected to the starship

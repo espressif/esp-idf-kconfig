@@ -11,7 +11,7 @@ Introduction and Basic Concepts
 
 The language is used to describe configuration options (configs and choices), organize them in a tree-like structure for e.g. GUI configurators and to define relations between the configs. Kconfig keywords can be divided into two groups: entries and options. Entries define basic structure of the configuration itself and individual configuration options. Options further specify the entries. All the possible keywords together with their syntax and semantics will be described further. For now, here is a list of all Kconfig keywords:
 
-- entries (described in `Entries`_): ``mainmenu``, ``menu``, ``config``, ``menuconfig``, ``choice``, ``source``, ``if``, ``comment``
+- entries (described in `Entries`_): ``mainmenu``, ``menu``, ``config``, ``menuconfig``, ``choice``, ``source``, ``if``, ``comment`` and macros
 - options (described in `Options`_), ``<type>`` (one of ``bool``, ``int``, ``string``, ``hex``), ``prompt``, ``depends on``, ``default``, ``help``, ``range``, ``select``, ``imply``, ``option``, ``visible if``
 
 Kconfig is indentation based language (like e.g. Python or YAML). In the context of `esp-idf-kconfig`, the indentation should always be 4 spaces. The language is case-sensitive, so ``config`` and ``CONFIG`` have different meaning. When quoting strings, it is highly recommended to use double quotes.
@@ -270,6 +270,40 @@ Example usage:
     - Use ``choice`` when you want to have an exclusive choice between several configs.
     - Use ``menu`` when you want to group several entries together, but you don't need to have an umbrella config for them - or those entries are not only configs.
 
+The Macro Entry
+^^^^^^^^^^^^^^^
+
+Macro is a special type of entry allowing user to define a name for given value without creating a config option. Instead of other entries, it is not started by any keyword, but rather a direct assignment of a value to a name. Once defined, the macro can be used in other entries as a value (e.g. in ``default`` or ``range`` options). If used before its definition, the system will evaluate it as non-existent. There are two ways how to use the macro:
+
+* ``$(MACRO_NAME)``: The system will first try to expand it as a macro. If the macro is not defined, the system will try to expand it as an environment variable. If that fails, the value is empty and will cause a parse error. The value may be bool, string, int or hex.
+* ``"$(MACRO_NAME)"``: Same as above, but the value will always be a string and empty expansion does not result in an error but empty string instead.
+
+.. note::
+
+    Macros are only helpers when e.g. some value is used repeatedly in one ``Kconfig`` file. Unlike config options, macros are not written out to ``sdkconfig`` files in any way.
+
+The syntax is as follows. The ``symbol_name`` is a non-quoted capitalized string consisting of letters from the English alphabet, numbers, and underscores, ``value`` is an integer, hexadecimal number, string or a Kconfig boolean (y/n). In the context of simple ``NAME = value`` pairs, there is not difference between ``=`` and ``:=`` and the support of the latter is only for compatibility reasons.
+
+.. code-block:: bnf
+
+    macro ::= symbol_name + ("=" | ":=") + value
+
+.. note::
+
+    Original ``kconfiglib`` supported wider variety of macros. However, ESP-IDF does not use them and thus, only basic macros are supported.
+
+Example:
+
+.. code-block:: kconfig
+
+    MAX_NUMBER_OF_MOTORS := 1
+
+    config MOTOR_NUMBER
+        int "Number of motors"
+        default $(MAX_NUMBER_OF_MOTORS)
+        help
+            Number of motors
+
 The ``if`` Entry
 ^^^^^^^^^^^^^^^^
 
@@ -414,7 +448,7 @@ If no prompt is defined, given entry is considered as not visible (refer to :ref
 
 .. note::
 
-    Prompt vs config name: prompt is the string you see, when you type ``idf.py menuconfig``, config name is what ESP-IDF sees when reading e.g. ``sdkconifg``. Kconfig system also adds a ``CONFIG_`` prefix to all the config names to distinguish them from e.g. environment variables.
+    Prompt vs config name: prompt is the string you see in ``menuconfig`` TUI, config name is what ESP-IDF sees when reading e.g. ``sdkconfig``. Kconfig system also adds a ``CONFIG_`` prefix to all the config names to distinguish them from e.g. environment variables.
 
 Example:
 
@@ -629,7 +663,7 @@ The ``option`` option is used to define an environment variable for the configur
 
 .. note::
 
-    There is no need to use ``option env=``. Instead, it is possible to directly use ``default "$ENV_VAR_NAME"``.
+    There is no need to use ``option env=``. Instead, it is possible to directly use ``default "${ENV_VAR_NAME}"``.
 
 
 Expressions
@@ -662,3 +696,21 @@ Example:
     (...)
     default 10 if WARP_TURBO
     (...)
+
+
+Using Environment Variables in Expressions
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Environment variables can also be used in expressions. The name of the environment variable is enclosed in curly brackets and preceded by a dollar sign. The whole expression is then enclosed in double quotes. Subsequently, values from environment variables can be used only with ``string`` config options. Environment variables are evaluated in parse-time. If the environment variable is not defined, Kconfig system treats it as an string with the value of environment variable name (including the dollar sign and curly brackets, e.g. ``${ENV_VAR_NAME}``).
+
+Example:
+
+.. code-block:: kconfig
+
+    config CAPTAIN_NAME
+        string "Name of the ship's captain"
+        default "${CAPTAIN_NAME}" # if CAPTAIN_NAME environment is defined, it will have it's value. If not, the value will be "${CAPTAIN_NAME}"
+
+.. note::
+
+    Originally, the value of environment variables was transferred into Kconfig system with the ``option env=ENV_VAR_NAME`` syntax. This is currently deprecated and it is strongly recommended to use ``default "${ENV_VAR_NAME}"`` instead.

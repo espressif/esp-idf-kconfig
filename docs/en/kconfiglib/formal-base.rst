@@ -9,7 +9,7 @@ Below, a context-free grammar describing the Kconfig language is presented. This
 
     # Entry point
     mainmenu ::= "mainmenu" + menu_name + entries*
-    entries ::= config | menu | choice | source | menuconfig | if_entry | comment
+    entries ::= config | menu | choice | source | menuconfig | if_entry | comment | macro
 
     # Entries
     config ::= "config" + config_name + config_options
@@ -19,6 +19,7 @@ Below, a context-free grammar describing the Kconfig language is presented. This
     menuconfig ::= "menuconfig" + config_name + config_options
     if_entry ::= "if" + expression + entries + "endif"
     comment ::= "comment" + STRING + depends_on*
+    macro ::= macro_name + ("=" | ":=") + value
 
     # (menu)config and choice options
     config_options ::= (config_type | config_and_prompt)
@@ -53,6 +54,7 @@ Below, a context-free grammar describing the Kconfig language is presented. This
     # Regular expression "[A-Z0-9_]+" means "Capitalized letters from the English alphabet, numbers, and underscores"
     config_name ::= REGEX("[A-Z0-9_]+")
     choice_name ::= REGEX("[A-Z0-9_]+")
+    macro_name ::= REGEX("[A-Z0-9_]+")
     value ::= INT | HEX | STRING
     menu_name ::= QUOTED_STRING
     path ::= QUOTED_STRING
