@@ -1,200 +1,143 @@
-#!/usr/bin/env python
 # SPDX-FileCopyrightText: 2024-2025 Espressif Systems (Shanghai) CO LTD
 # SPDX-License-Identifier: Apache-2.0
-import argparse
 import json
 import os
 import re
 import tempfile
 
 import pexpect
+import pytest
 
-# Each protocol version to be tested needs a 'testcases_vX.txt' file
 PROTOCOL_VERSIONS = [1, 2]
+KCONFIG_PARSER_VERSIONS = [1, 2]
 
 
 def parse_testcases(version):
-    with open("testcases_v%d.txt" % version, "r") as f:
-        cases = [line for line in f.readlines() if len(line.strip()) > 0]
-    # Each 3 lines in the file should be formatted as:
-    # * Description of the test change
-    # * JSON "changes" to send to the server
-    # * Result JSON to expect back from the server
+    with open(f"testcases_v{version}.txt", "r") as f:
+        cases = [line for line in f.readlines() if line.strip()]
     if len(cases) % 3 != 0:
-        print(
-            "Warning: testcases.txt has wrong number of non-empty lines (%d). Should be 3 lines per test case, always."
-            % len(cases)
-        )
-
+        pytest.fail("testcases.txt has wrong number of non-empty lines. Should be 3 lines per test case.")
     for i in range(0, len(cases), 3):
-        desc = cases[i]
-        send = cases[i + 1]
-        expect = cases[i + 2]
-        if not desc.startswith("* "):
-            raise RuntimeError("Unexpected description at line %d: '%s'" % (i + 1, desc))
-        if not send.startswith("> "):
-            raise RuntimeError("Unexpected send at line %d: '%s'" % (i + 2, send))
-        if not expect.startswith("< "):
-            raise RuntimeError("Unexpected expect at line %d: '%s'" % (i + 3, expect))
-        desc = desc[2:]
-        send = json.loads(send[2:])
-        expect = json.loads(expect[2:])
-        yield (desc, send, expect)
+        desc, send, expect_line = cases[i : i + 3]
+        assert desc.startswith("* "), f"Unexpected description at line {i + 1}: '{desc}'"
+        assert send.startswith("> "), f"Unexpected send at line {i + 2}: '{send}'"
+        assert expect_line.startswith("< "), f"Unexpected expect at line {i + 3}: '{expect_line}'"
+        yield (desc[2:].strip(), json.loads(send[2:].strip()), json.loads(expect_line[2:].strip()))
 
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--logfile",
-        type=argparse.FileType("w"),
-        help="Optional session log of the interactions with kconfserver.py",
+def expect_json(p):
+    # Expect a JSON object terminated by newline
+    p.expect(r"\{.*\}\r?\n")
+    return json.loads(p.match.group(0).strip())
+
+
+def send_request(p, req):
+    p.sendline(json.dumps(req))
+    return expect_json(p)
+
+
+def spawn_kconfserver(sdkconfig_path, kconfigs_src, kconfig_projbuilds_src):
+    cmd = (
+        f"python -u -m kconfserver "
+        f"--env COMPONENT_KCONFIGS_SOURCE_FILE={kconfigs_src} "
+        f"--env COMPONENT_KCONFIGS_PROJBUILD_SOURCE_FILE={kconfig_projbuilds_src} "
+        f"--env COMPONENT_KCONFIGS= --env COMPONENT_KCONFIGS_PROJBUILD= "
+        f"--kconfig Kconfig --config {sdkconfig_path}"
     )
-    args = parser.parse_args()
+    # Use spawnu for unicode support
+    return pexpect.spawnu(re.sub(r" +", " ", cmd), timeout=30, echo=False, use_poll=True)
 
-    try:
-        # set up temporary file to use as sdkconfig copy
-        with tempfile.NamedTemporaryFile(mode="w", delete=False) as temp_sdkconfig:
-            temp_sdkconfig_path = os.path.join(tempfile.gettempdir(), temp_sdkconfig.name)
-            with open("sdkconfig") as orig:
-                temp_sdkconfig.write(orig.read())
 
-        with tempfile.NamedTemporaryFile(delete=False) as f:
-            temp_kconfigs_source_file = os.path.join(tempfile.gettempdir(), f.name)
+@pytest.fixture
+def temp_files():
+    # Create temporary sdkconfig copy
+    with tempfile.NamedTemporaryFile(mode="w", delete=False) as temp:
+        sdkconfig_path = temp.name
+        with open("sdkconfig") as orig:
+            temp.write(orig.read())
 
-        with tempfile.NamedTemporaryFile(delete=False) as f:
-            temp_kconfig_projbuilds_source_file = os.path.join(tempfile.gettempdir(), f.name)
+    # Other temp files
+    kconfigs_src = tempfile.NamedTemporaryFile(delete=False).name
+    kconfig_projbuilds_src = tempfile.NamedTemporaryFile(delete=False).name
 
-        cmdline = """python -m kconfserver --env "COMPONENT_KCONFIGS_SOURCE_FILE=%s" \
-                                           --env "COMPONENT_KCONFIGS_PROJBUILD_SOURCE_FILE=%s" \
-                                           --env "COMPONENT_KCONFIGS=" \
-                                           --env "COMPONENT_KCONFIGS_PROJBUILD=" \
-                                           --kconfig Kconfig \
-                                           --config %s \
-                  """ % (
-            temp_kconfigs_source_file,
-            temp_kconfig_projbuilds_source_file,
-            temp_sdkconfig_path,
-        )
+    yield sdkconfig_path, kconfigs_src, kconfig_projbuilds_src
 
-        cmdline = re.sub(r" +", " ", cmdline)
-
-        print("Running: %s" % cmdline)
-        p = pexpect.spawn(
-            cmdline,
-            timeout=30,
-            logfile=args.logfile,
-            echo=False,
-            use_poll=True,
-            maxread=1,
-        )
-
-        p.expect("Server running.+\r\n")
-        initial = expect_json(p)
-        print("Initial: %s" % initial)
-
-        for version in PROTOCOL_VERSIONS:
-            test_protocol_version(p, version)
-
-        test_load_save(p, temp_sdkconfig_path)
-
-        test_invalid_json(p)
-
-        print("Done. All passed.")
-
-    finally:
+    # Cleanup
+    for path in (sdkconfig_path, kconfigs_src, kconfig_projbuilds_src):
         try:
-            os.remove(temp_sdkconfig_path)
-            os.remove(temp_kconfigs_source_file)
-            os.remove(temp_kconfig_projbuilds_source_file)
+            os.remove(path)
         except OSError:
             pass
 
 
-def expect_json(p):
-    # run p.expect() to expect a json object back, and return it as parsed JSON
-    p.expect("{.+}\r\n")
-    result = p.match.group(0).strip().decode()
-    print("Read raw data from server: %s" % result)
-    return json.loads(result)
+@pytest.fixture
+def server(request, temp_files):
+    # request.param provided by parametrized tests
+    parser_version = request.param
+    os.environ["KCONFIG_PARSER_VERSION"] = str(parser_version)
+
+    sdkconfig_path, kconfigs_src, kconfig_projbuilds_src = temp_files
+    p = spawn_kconfserver(sdkconfig_path, kconfigs_src, kconfig_projbuilds_src)
+
+    # Consume banner and initial state
+    p.expect(r"Server running.+\r?\n")
+    _ = expect_json(p)
+
+    yield p, sdkconfig_path
+
+    # Teardown
+    p.terminate()
 
 
-def send_request(p, req):
-    req = json.dumps(req)
-    print("Sending: %s" % (req))
-    p.send("%s\n" % req)
-    readback = expect_json(p)
-    print("Read back: %s" % (json.dumps(readback)))
-    return readback
+# Parametrize parser_version for all tests that need the server fixture
+@pytest.mark.parametrize("server", KCONFIG_PARSER_VERSIONS, indirect=True, ids=["parser-v1", "parser-v2"])
+@pytest.mark.parametrize("protocol_version", PROTOCOL_VERSIONS)
+def test_protocol_versions(server, protocol_version):
+    p, _ = server
+
+    # Load initial state
+    send_request(p, {"version": protocol_version, "load": None})
+
+    # Protocol-specific testcases
+    for desc, send, expected in parse_testcases(protocol_version):
+        resp = send_request(p, {"version": protocol_version, "set": send})
+        assert resp.get("version") == protocol_version
+        for key, val in expected.items():
+            assert resp[key] == val, f"Mismatch in {key}: expected {val}, got {resp[key]}"
 
 
-def test_protocol_version(p, version):
-    print("*****")
-    print("Testing version %d..." % version)
+@pytest.mark.parametrize("server", KCONFIG_PARSER_VERSIONS, indirect=True)
+def test_load_save(server):
+    p, sdkconfig_path = server
 
-    # reload the config from the sdkconfig file
-    req = {"version": version, "load": None}
-    readback = send_request(p, req)
-    print("Reset response: %s" % (json.dumps(readback)))
+    before = os.stat(sdkconfig_path).st_mtime
+    save_resp = send_request(p, {"version": 2, "save": sdkconfig_path})
+    assert "error" not in save_resp
+    assert not save_resp["values"]
+    assert not save_resp["ranges"]
+    assert os.stat(sdkconfig_path).st_mtime > before
 
-    # run through each test case
-    cases = parse_testcases(version)
-    for desc, send, expected in cases:
-        print(desc)
-        req = {"version": version, "set": send}
-        readback = send_request(p, req)
-        if readback.get("version", None) != version:
-            raise RuntimeError('Expected {"version" : %d} in response' % version)
-        for expect_key in expected.keys():
-            read_vals = readback[expect_key]
-            exp_vals = expected[expect_key]
-            if read_vals != exp_vals:
-                expect_diff = dict((k, v) for (k, v) in exp_vals.items() if k not in read_vals or v != read_vals[k])
-                raise RuntimeError("Test failed! Was expecting %s: %s" % (expect_key, json.dumps(expect_diff)))
-        print("OK")
-    print("Version %d OK" % version)
+    # Test loading in both versions
+    load_resp = send_request(p, {"version": 2, "load": sdkconfig_path})
+    assert "error" not in load_resp
+    assert not load_resp["values"]
+    assert not load_resp["ranges"]
+
+    load_resp = send_request(p, {"version": 1, "load": sdkconfig_path})
+    assert "error" not in load_resp
+    assert load_resp["values"]
+    assert load_resp["ranges"]
 
 
-def test_load_save(p, temp_sdkconfig_path):
-    print("Testing load/save...")
-    before = os.stat(temp_sdkconfig_path).st_mtime
-    save_result = send_request(p, {"version": 2, "save": temp_sdkconfig_path})
-    print("Save result: %s" % (json.dumps(save_result)))
-    assert "error" not in save_result
-    assert len(save_result["values"]) == 0  # nothing changes when we save
-    assert len(save_result["ranges"]) == 0
-    after = os.stat(temp_sdkconfig_path).st_mtime
-    assert after > before  # something got written to disk
+@pytest.mark.parametrize("server", KCONFIG_PARSER_VERSIONS, indirect=True)
+def test_invalid_json(server):
+    p, _ = server
 
-    # Do a V2 load
-    load_result = send_request(p, {"version": 2, "load": temp_sdkconfig_path})
-    print("V2 Load result: %s" % (json.dumps(load_result)))
-    assert "error" not in load_result
-    assert len(load_result["values"]) == 0  # in V2, loading same file should return no config items
-    assert len(load_result["ranges"]) == 0
+    bad = r'{ "version": 2, "load": "c:\\some\\path\\not\\escaped\\as\\json" }'
+    p.sendline(bad)
+    resp = expect_json(p)
+    assert "json" in resp.get("error", [""])[0].lower()
 
-    # Do a V1 load
-    load_result = send_request(p, {"version": 1, "load": temp_sdkconfig_path})
-    print("V1 Load result: %s" % (json.dumps(load_result)))
-    assert "error" not in load_result
-    assert len(load_result["values"]) > 0  # in V1, loading same file should return all config items
-    assert len(load_result["ranges"]) > 0
-
-
-def test_invalid_json(p):
-    print("Testing invalid JSON formatting...")
-
-    bad_escaping = r'{ "version" : 2, "load" : "c:\some\path\not\escaped\as\json" }'
-    p.send("%s\n" % bad_escaping)
-    readback = expect_json(p)
-    print(readback)
-    assert "json" in readback["error"][0].lower()
-
-    not_really_json = "Hello world!!"
-    p.send("%s\n" % not_really_json)
-    readback = expect_json(p)
-    print(readback)
-    assert "json" in readback["error"][0].lower()
-
-
-if __name__ == "__main__":
-    main()
+    p.sendline("Hello world!!")
+    resp = expect_json(p)
+    assert "json" in resp.get("error", [""])[0].lower()
