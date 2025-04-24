@@ -3451,7 +3451,7 @@ class Kconfig(object):
                 if len(occurrences) > 1 and sym.name not in self.allowed_multi_def_syms:
                     occurrences = "\n".join(occurrences)
                     self._info(
-                        f"INFO: Symbol {sym.name} defined in multiple locations (see below). "
+                        f"Symbol {sym.name} defined in multiple locations (see below). "
                         f"Please check if this is a correct behavior or a random name match:\n{occurrences}"
                     )
 
@@ -3461,7 +3461,7 @@ class Kconfig(object):
                 if len(occurrences) > 1:
                     occurrences = "\n".join(occurrences)
                     self._info(
-                        f"INFO: Choice {choice.name} defined in multiple locations (see below)."
+                        f"Choice {choice.name} defined in multiple locations (see below)."
                         f" Please check if this is a correct behavior or a random name match:\n{occurrences}"
                     )
 
@@ -3665,12 +3665,14 @@ class Kconfig(object):
         self.warnings.append(msg)
         if self.warn_to_stderr:
             sys.stderr.write(msg + "\n")
+            sys.stderr.flush()
 
     def _info(self, msg, suppress_info_prefix=False):
         if not self.info:
             return
 
-        print(f"{'info: ' if not suppress_info_prefix else ''}{msg}", file=sys.stderr)
+        sys.stderr.write(f"{'info: ' if not suppress_info_prefix else ''}{msg}\n")
+        sys.stderr.flush()
 
 
 class Symbol:
