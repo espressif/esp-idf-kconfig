@@ -82,7 +82,7 @@ test_kconfserver:
   stage: test
   script:
     - cd test/kconfserver/
-    - ./test_kconfserver.py
+    - pytest -vv
 
 test_kconfiglib:
   extends: .base_template
@@ -126,7 +126,7 @@ test_kconfserver_venv:
   stage: test
   script:
     - cd test/kconfserver/
-    - ./test_kconfserver.py
+    - pytest -vv
 
 test_kconfiglib_venv:
   extends: .venv_template
