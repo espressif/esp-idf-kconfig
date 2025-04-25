@@ -1340,10 +1340,9 @@ class Kconfig(object):
                     if self.defaults_policy == POLICY_USE_SDKCONFIG:  # Use default value from sdkconfig
                         if _inject_default_value(sym, val):
                             self._info(
-                                "     Using default value from sdkconfig "
-                                f"([bold]{_quote_value(val, sym.orig_type)}[/bold]).\n"
-                                "    HINT: you can run `idf.py refresh-config` to use different default value source.",
-                                supress_info_prefix=True,
+                                "Using default value from sdkconfig "
+                                f"([bold]{_quote_value(val, sym.orig_type)}[/bold]).",
+                                suppress_info_prefix=True,
                             )
                         else:
                             self._warn(
@@ -1356,8 +1355,8 @@ class Kconfig(object):
                     elif self.defaults_policy == POLICY_USE_KCONFIG:  # Use default value from Kconfig
                         self._info(
                             "Using default value from Kconfig "
-                            f"([bold]{_quote_value(sym.str_value, sym.orig_type)}[/bold]).\n"
-                            "    HINT: you can run `idf.py refresh-config` to use different default value source.",
+                            f"([bold]{_quote_value(sym.str_value, sym.orig_type)}[/bold]).",
+                            suppress_info_prefix=True,
                         )
                         symbols_with_changed_defaults[sym.name] = (sym.str_value, val)
                     elif self.defaults_policy == POLICY_INTERACTIVE:
@@ -3452,7 +3451,7 @@ class Kconfig(object):
                 if len(occurrences) > 1 and sym.name not in self.allowed_multi_def_syms:
                     occurrences = "\n".join(occurrences)
                     self._info(
-                        f"INFO: Symbol {sym.name} defined in multiple locations (see below). "
+                        f"Symbol {sym.name} defined in multiple locations (see below). "
                         f"Please check if this is a correct behavior or a random name match:\n{occurrences}"
                     )
 
@@ -3462,7 +3461,7 @@ class Kconfig(object):
                 if len(occurrences) > 1:
                     occurrences = "\n".join(occurrences)
                     self._info(
-                        f"INFO: Choice {choice.name} defined in multiple locations (see below)."
+                        f"Choice {choice.name} defined in multiple locations (see below)."
                         f" Please check if this is a correct behavior or a random name match:\n{occurrences}"
                     )
 
@@ -3666,12 +3665,14 @@ class Kconfig(object):
         self.warnings.append(msg)
         if self.warn_to_stderr:
             sys.stderr.write(msg + "\n")
+            sys.stderr.flush()
 
-    def _info(self, msg, supress_info_prefix=False):
+    def _info(self, msg, suppress_info_prefix=False):
         if not self.info:
             return
 
-        print(f"{'info: ' if not supress_info_prefix else ''}{msg}", file=sys.stderr)
+        sys.stderr.write(f"{'info: ' if not suppress_info_prefix else ''}{msg}\n")
+        sys.stderr.flush()
 
 
 class Symbol:

@@ -107,7 +107,9 @@ class TestWarningCases(BaseKconfigTest):
                 path=TESTS_PATH_WARNINGS, input_file_name=f"{filename}.in", output_file_name=f.name
             )
             self.check_stderr(
-                path=TESTS_PATH_WARNINGS, actual_stderr=result.stderr, expected_stderr=f"{filename}.stderr"
+                path=TESTS_PATH_WARNINGS,
+                actual_stderr=result.stderr,
+                expected_stderr=f"{filename}.stderr",
             )
             assert result.returncode == 0
 
@@ -130,5 +132,9 @@ class TestErrorCases(BaseKconfigTest):
             result = self.call_kconfig(
                 path=TESTS_PATH_ERRORS, input_file_name=f"{filename}.in", output_file_name=f.name
             )
-            self.check_stderr(path=TESTS_PATH_ERRORS, actual_stderr=result.stderr, expected_stderr=f"{filename}.stderr")
+            self.check_stderr(
+                path=TESTS_PATH_ERRORS,
+                actual_stderr=result.stderr,
+                expected_stderr=f"{filename}.stderr",
+            )
             assert result.returncode == 1
