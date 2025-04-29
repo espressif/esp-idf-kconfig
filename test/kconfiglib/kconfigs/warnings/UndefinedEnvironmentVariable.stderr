@@ -1,0 +1,2 @@
+the int symbol SECOND_MOTOR_NUMBER
+has a non-int default ${UNDEFINED_MAX_NUMBER_OF_MOTORS} (undefined)

@@ -101,6 +101,13 @@ class TestWarningCases(BaseKconfigTest):
     def test_warning_cases(self, filename, version):
         os.environ["KCONFIG_PARSER_VERSION"] = version
         assert os.environ.get("KCONFIG_PARSER_VERSION", "") == version
+        v1_skipped_tests = {
+            "UndefinedEnvironmentVariable": (
+                "Original kconfiglib does not support unquoted environment variable expansion."
+            ),
+        }
+        if int(version) == 1 and filename in v1_skipped_tests.keys():
+            pytest.skip(v1_skipped_tests[filename])
 
         with tempfile.NamedTemporaryFile() as f:
             result = self.call_kconfig(

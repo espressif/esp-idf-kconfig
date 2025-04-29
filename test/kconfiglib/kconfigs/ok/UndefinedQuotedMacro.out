@@ -3,6 +3,4 @@
 # Espressif IoT Development Framework (ESP-IDF)  Project Configuration
 #
 # default:
-CONFIG_MOTOR_NUMBER=8
-# default:
-CONFIG_MOTOR_NUMBER_AS_STRING="8"
+CONFIG_UNDEFINED_MACRO=""
