@@ -110,7 +110,7 @@ test_kconfgen:
   stage: test
   script:
     - cd test/kconfgen/
-    - ./test_kconfgen.py
+    - pytest test_kconfgen.py -vv
 
 test_kconfcheck:
   extends: .base_template
@@ -154,7 +154,7 @@ test_kconfgen_venv:
   stage: test
   script:
     - cd test/kconfgen/
-    - ./test_kconfgen.py
+    - pytest test_kconfgen.py -vv
 
 test_kconfcheck_venv:
   extends: .venv_template
