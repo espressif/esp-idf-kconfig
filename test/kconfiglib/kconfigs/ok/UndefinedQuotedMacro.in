@@ -1,0 +1,5 @@
+mainmenu "Test undefined quoted macro"
+
+    config UNDEFINED_MACRO
+        string "Number of motors"
+        default "$(DEFINITELY_NOT_IN_ENV)" # should not throw an error

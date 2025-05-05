@@ -532,6 +532,10 @@ class Parser:
                         )
                     elif expr in os.environ:
                         return self.create_envvar(expr)
+                    elif quoted:
+                        return self.kconfigize_expr(
+                            ""
+                        )  # macros failed to expand even as environment variable are substituted with empty string
                     else:
                         raise KconfigError(f"{expr}: macro expanded to blank string")
                 else:  # name in {} or without brackets at all (only for environment variables)

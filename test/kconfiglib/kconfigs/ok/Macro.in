@@ -9,3 +9,9 @@ config MOTOR_NUMBER
     default $(MAX_NUMBER_OF_MOTORS) # should expand to 8
     help
         Number of motors connected to the starship
+
+config MOTOR_NUMBER_AS_STRING
+    string "Number of motors as string"
+    default "$(MAX_NUMBER_OF_MOTORS)" # should expand to "8"
+    help
+        Number of motors connected to the starship as a string
