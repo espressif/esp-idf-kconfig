@@ -32,6 +32,8 @@ from pyparsing import opAssoc
 if TYPE_CHECKING:
     from kconfiglib.kconfig_parser import Parser
 
+from kconfiglib.report import PRAGMA_PREFIX
+
 
 class KconfigBlock(Token):
     """
@@ -589,7 +591,8 @@ class KconfigGrammar:
             """
             Removes inline comments from the string, preserving # inside quotes.
             """
-            self.parser.kconfig.check_pragmas(line)
+            if PRAGMA_PREFIX in line:
+                self.parser.kconfig.report.add_ignore_line(line)
 
             quote = None  # Tracks if we're inside a quote
             result = []

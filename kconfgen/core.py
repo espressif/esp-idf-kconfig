@@ -357,7 +357,7 @@ def min_config_with_labels(config: kconfiglib.Kconfig, header: str) -> str:
     return "".join(output)
 
 
-def write_min_config(_, config: kconfiglib.Kconfig, filename: str) -> None:
+def write_min_config(_: DeprecatedOptions, config: kconfiglib.Kconfig, filename: str) -> None:
     idf_version = os.environ.get("IDF_VERSION", "")
     target_symbol = config.syms["IDF_TARGET"]
     # 'esp32` is hardcoded here because the default value of IDF_TARGET is set on the first run from the environment
@@ -417,7 +417,7 @@ def write_cmake(deprecated_options: DeprecatedOptions, config: kconfiglib.Kconfi
 
         configs_list = list()
 
-        def write_node(node: kconfiglib.MenuNode):
+        def write_node(node: kconfiglib.MenuNode) -> None:
             sym = node.item
             if not isinstance(sym, kconfiglib.Symbol):
                 return
@@ -481,7 +481,7 @@ def get_json_values(config: kconfiglib.Kconfig) -> dict:
     return config_dict
 
 
-def write_json(_, config: kconfiglib.Kconfig, filename: str) -> None:
+def write_json(_: DeprecatedOptions, config: kconfiglib.Kconfig, filename: str) -> None:
     config_dict = get_json_values(config)
     with open(filename, "w") as f:
         json.dump(config_dict, f, indent=4, sort_keys=True)
@@ -510,7 +510,7 @@ def get_menu_node_id(node: kconfiglib.MenuNode) -> str:
     return "-".join(reversed(result))
 
 
-def write_json_menus(_, config: kconfiglib.Kconfig, filename: str) -> None:
+def write_json_menus(_: DeprecatedOptions, config: kconfiglib.Kconfig, filename: str) -> None:
     existing_ids: Set[str] = set()
     result: List = []  # root level items
     node_lookup: Dict = {}  # lookup from MenuNode to an item in result
@@ -624,6 +624,10 @@ def write_docs(deprecated_options: DeprecatedOptions, config: kconfiglib.Kconfig
     deprecated_options.append_doc(config, visibility, filename)
 
 
+def write_report(_: DeprecatedOptions, config: kconfiglib.Kconfig, filename: str) -> None:
+    config.report.output_json(filename)
+
+
 def update_if_changed(source: str, destination: str) -> None:
     with open(source, "r") as f:
         source_contents = f.read()
@@ -646,6 +650,7 @@ OUTPUT_FORMATS = {
     "json": write_json,
     "json_menus": write_json_menus,
     "savedefconfig": write_min_config,
+    "report": write_report,
 }
 
 
@@ -730,7 +735,10 @@ def main():
         env = json.load(args.env_file)
         os.environ.update(env)
     parser_version = int(os.environ.get("KCONFIG_PARSER_VERSION", "1"))
-    config = kconfiglib.Kconfig(args.kconfig, parser_version=parser_version)
+    # TODO Once ESP-IDF will fully support kconfig report, we should switch to "quiet" as default
+    #      to avoid printing the report several times during the build.
+    print_report = os.environ.get("KCONFIG_REPORT_VERBOSITY", "default") != "quiet"
+    config = kconfiglib.Kconfig(args.kconfig, parser_version=parser_version, print_report=print_report)
     config.warn_assign_redun = False
     config.warn_assign_override = False
 
