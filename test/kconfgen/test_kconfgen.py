@@ -1,465 +1,459 @@
-#!/usr/bin/env python
 # SPDX-FileCopyrightText: 2024-2025 Espressif Systems (Shanghai) CO LTD
 # SPDX-License-Identifier: Apache-2.0
 import os
 import re
 import subprocess
-import sys
-import tempfile
 import textwrap
-import unittest
+from dataclasses import asdict
+from dataclasses import dataclass
+from typing import Optional
+
+import pytest
 
 from kconfiglib import POLICY_USE_KCONFIG
 from kconfiglib import POLICY_USE_SDKCONFIG
 
-
-class KconfgenBaseTestCase(unittest.TestCase):
-    @classmethod
-    def setUpClass(self):
-        self.args = dict()
-        self.functions = {
-            "in": self.assertIn,
-            "not in": self.assertNotIn,
-            "equal": self.assertEqual,
-            "not equal": self.assertNotEqual,
-        }
-
-        try:
-            regex_func = self.assertRegex
-        except AttributeError:
-            # Python 2 fallback
-            regex_func = self.assertRegexpMatches
-        finally:
-            self.functions["regex"] = lambda instance, s, expr: regex_func(instance, expr, s)  # reverse args order
-
-    def setUp(self):
-        with tempfile.NamedTemporaryFile(prefix="test_kconfgen_", delete=False) as f:
-            self.output_file = f.name
-            self.addCleanup(os.remove, self.output_file)
-
-    def invoke_kconfgen(self, args):
-        call_args = ["python", "-m", "kconfgen"]
-
-        for k, v in args.items():
-            if k != "output":
-                if isinstance(v, type("")):  # easy Python 2/3 compatible str/unicode
-                    call_args += ["--{}".format(k), v]
-                else:
-                    for i in v:
-                        call_args += ["--{}".format(k), i]
-        call_args += [
-            "--output",
-            args["output"],
-            self.output_file,
-        ]  # these arguments belong together
-        print(f"Running: {call_args}")
-        try:
-            subprocess.run(call_args, capture_output=True, text=True, check=True)
-        except subprocess.CalledProcessError as e:
-            print(f"Command {call_args} failed with error: {e.stderr}", file=sys.stderr)
-
-    def invoke_and_test(self, in_text, out_text, test="in", expected_error=None):
-        """
-        Main utility function for testing kconfgen:
-
-        - Runs kconfgen via invoke_kconfgen(), using output method pre-set in test class setup
-        - in_text is the Kconfig file input content
-        - out_text is some expected output from kconfgen
-        - 'test' can be any function key from self.functions dict (see above). Default is 'in' to test if
-          out_text is a substring of the full kconfgen output.
-        """
-
-        with tempfile.NamedTemporaryFile(mode="w+", prefix="test_kconfgen_", delete=False) as f:
-            self.addCleanup(os.remove, f.name)
-            f.write(textwrap.dedent(in_text))
-
-        self.args["kconfig"] = f.name
-
-        try:
-            self.invoke_kconfgen(self.args)
-        except subprocess.CalledProcessError as e:
-            if expected_error:
-                self.assertIn(expected_error, str(e.stderr))
-            else:
-                raise
-
-        with open(self.output_file) as f_result:
-            result = f_result.read()
-
-        try:
-            out_text = textwrap.dedent(out_text)
-        except TypeError:
-            pass  # probably a regex
-
-        self.functions[test](self, out_text, result)
-        return result
+KCONFIG_PARSER_VERSIONS = ["1", "2"]
 
 
-class CmakeTestCase(KconfgenBaseTestCase):
-    @classmethod
-    def setUpClass(self):
-        super(CmakeTestCase, self).setUpClass()
-        self.args.update({"output": "cmake"})
+# Define argument container for CLI invocation
+@dataclass
+class Args:
+    output: str
+    config: Optional[str] = None
+    sdkconfig_rename: Optional[str] = None
+    env: Optional[str] = None
 
-    def testStringEscape(self):
-        self.invoke_and_test(
-            """
-        config PASSWORD
-            string "password"
-            default "\\\\~!@#$%^&*()\\\""
-        """,
-            'set(CONFIG_PASSWORD "\\\\~!@#$%^&*()\\"")',
-        )
-
-    def testHexPrefix(self):
-        self.invoke_and_test(HEXPREFIX_KCONFIG, 'set(CONFIG_HEX_NOPREFIX "0x33")')
-        self.invoke_and_test(HEXPREFIX_KCONFIG, 'set(CONFIG_HEX_PREFIX "0x77")')
+    def to_cli(self):
+        # Build flags from args fields except env and output (handled separately)
+        flags = []
+        for field, value in asdict(self).items():
+            if value is None or field in ("env", "output"):
+                continue
+            key = field.replace("_", "-")
+            flags.extend([f"--{key}", value])
+        return flags
 
 
-class JsonTestCase(KconfgenBaseTestCase):
-    @classmethod
-    def setUpClass(self):
-        super(JsonTestCase, self).setUpClass()
-        self.args.update({"output": "json"})
-
-    def testStringEscape(self):
-        self.invoke_and_test(
-            """
-        config PASSWORD
-            string "password"
-            default "\\\\~!@#$%^&*()\\\""
-        """,
-            '"PASSWORD": "\\\\~!@#$%^&*()\\""',
-        )
-
-    def testHexPrefix(self):
-        # hex values come out as integers in JSON, due to no hex type
-        self.invoke_and_test(HEXPREFIX_KCONFIG, '"HEX_NOPREFIX": %d' % 0x33)
-        self.invoke_and_test(HEXPREFIX_KCONFIG, '"HEX_PREFIX": %d' % 0x77)
+# Fixture to set parser policy for each test (uses os.environ to avoid scope mismatch)
+@pytest.fixture(autouse=True)
+def set_parser_version(request):
+    version = request.param
+    # set environment variable for this test invocation
+    os.environ["KCONFIG_PARSER_VERSION"] = str(version)
 
 
-class JsonMenuTestCase(KconfgenBaseTestCase):
-    @classmethod
-    def setUpClass(self):
-        super(JsonMenuTestCase, self).setUpClass()
-        self.args.update({"output": "json_menus"})
-
-    def testMultipleRanges(self):
-        self.invoke_and_test(
-            """
-        config IDF_TARGET
-            string "IDF target"
-            default "esp32"
-
-        config SOME_SETTING
-            int "setting for the chip"
-            range 0 100 if IDF_TARGET="esp32s0"
-            range 0 10 if IDF_TARGET="esp32"
-            range -10 1 if IDF_TARGET="esp32s2"
-        """,
-            re.compile(r'"range":\s+\[\s+0,\s+10\s+\]'),
-            "regex",
-        )
-
-    def testHexRanges(self):
-        self.invoke_and_test(
-            """
-        config SOME_SETTING
-            hex "setting for the chip"
-            range 0x0 0xaf if UNDEFINED
-            range 0x10 0xaf
-        """,
-            r'"range":\s+\[\s+16,\s+175\s+\]',
-            "regex",
-        )
-
-
-class ConfigTestCase(KconfgenBaseTestCase):
-    @classmethod
-    def setUpClass(self):
-        super(ConfigTestCase, self).setUpClass()
-        self.args.update({"output": "config"})
-        self.input = """
-        config TEST
-            bool "test"
-            default "n"
-        """
-
-    def setUp(self):
-        super(ConfigTestCase, self).setUp()
-        with tempfile.NamedTemporaryFile(mode="w+", prefix="test_kconfgen_", delete=False) as f:
-            self.addCleanup(os.remove, f.name)
-            self.args.update({"config": f.name})  # this is input in contrast with {'output': 'config'}
-            f.write(
-                textwrap.dedent(
-                    """
-            # default:
-            CONFIG_TEST=y
-            # default:
-            CONFIG_UNKNOWN=y
-            """
-                )
+class KconfgenBaseTestCase:
+    @pytest.fixture(autouse=True)
+    def runner(self, tmp_path):
+        def invoke_and_test(
+            args: Args, in_text: str, expected: str, test: str = "in", expected_error: Optional[str] = None
+        ) -> Optional[str]:
+            # write kconfig input
+            kconfig_path = os.path.join(str(tmp_path), "kconfig")
+            with open(kconfig_path, "w") as f:
+                f.write(textwrap.dedent(in_text))
+            # prepare output path
+            out_path = os.path.join(str(tmp_path), "output")
+            # build command
+            cmd = (
+                ["python", "-m", "kconfgen"]
+                + args.to_cli()
+                + ["--output", args.output, out_path, "--kconfig", kconfig_path]
             )
+            # setup env
+            env = os.environ.copy()
+            if args.env:
+                key, _, val = args.env.partition("=")
+                env[key] = val
+            # execute
+            result = subprocess.run(cmd, capture_output=True, text=True, env=env)
+            if expected_error:
+                assert result.returncode != 0
+                assert expected_error in result.stderr
+                return None
+            assert result.returncode == 0, result.stderr
+            with open(out_path) as f:
+                text = f.read()
+            # assertions
+            if test == "in":
+                assert expected in text
+            elif test == "not in":
+                assert expected not in text
+            elif test == "equal":
+                assert expected == text
+            elif test == "not equal":
+                assert expected != text
+            elif test == "regex":
+                assert re.search(expected, text)
+            else:
+                pytest.skip(f"Unknown test type {test}")
+            return text
 
-    def testKeepSavedOption(self):
-        self.invoke_and_test(self.input, "CONFIG_TEST=y")
-
-    def testDiscardUnknownOption(self):
-        self.invoke_and_test(self.input, "CONFIG_UNKNOWN", "not in")
+        return invoke_and_test
 
 
-class RenameConfigTestCase(KconfgenBaseTestCase):
-    @classmethod
-    def setUpClass(self):
-        super(RenameConfigTestCase, self).setUpClass()
-        # `args` attribute is a dictionary containing the parameters to pass to `kconfgen.py`.
-        # Specify the name of the output file, this will generate the argument `--output config`.
-        self.args.update({"output": "config"})
-        # Setup the KConfig file content in the `input` attribute.
-        # Let's define an option that is enabled by default, this is very important.
-        # Indeed, as we explicitly disables it by its former name below, rename will be considered as functional
-        # if the new name, `(CONFIG_)RENAMED_OPTION` is also disabled in the final configuration file.
-        self.input = """
-        config RENAMED_OPTION
-            bool "Renamed option"
-            default y
+@pytest.mark.parametrize("set_parser_version", KCONFIG_PARSER_VERSIONS, indirect=True)
+class TestCmake(KconfgenBaseTestCase):
+    @pytest.fixture(autouse=True)
+    def init(self):
+        self.args = Args(output="cmake")
+
+    HEXPREFIX = textwrap.dedent(
         """
+        mainmenu "Test"
 
-    def prepare_rename_file(self, text):
-        # The configuration file is ready, we need to prepare a `rename` configuration file which will
-        # provide the new name for `CONFIG_NAMED_OPTION` we defined above
-        with tempfile.NamedTemporaryFile(mode="w+", prefix="test_kconfgen_", delete=False) as f:
-            self.addCleanup(os.remove, f.name)
-            # Same as above, the following entry will result in the generation of `--sdkconfig-rename`
-            # parameter followed by the current temporary file name.
-            self.args.update({"sdkconfig-rename": f.name})
-            # The content of our `rename` file is simple: replace `CONFIG_NAMED_OPTION` by `CONFIG_RENAMED_OPTION`
-            f.write(text)
-            return f.name
+            config HEX_NOPREFIX
+                hex "Hex Item default no prefix"
+                default 33
 
-    def prepare_sdkconifg_file(self, text):
-        with tempfile.NamedTemporaryFile(mode="w+", prefix="test_kconfgen_", delete=False) as f:
-            self.addCleanup(os.remove, f.name)
-            # The current file name will be given to `kconfgen.py` after `--config` argument.
-            self.args.update({"config": f.name})
-            # Specify the content of that configuration file, in our case, we want to explicitly
-            # have an option, which needs to be renamed, disabled/not set.
-            f.write(text)
-
-    def testRenamedOptionDisabled(self):
-        # Setup the test. What we want to do is to have a configuration file containing which
-        # option should be enabled or not, this is the equivalent of the `sdkconfig` that we can find
-        # in the examples.
-
-        rename_text = textwrap.dedent(
-            """
-            CONFIG_NAMED_OPTION             CONFIG_RENAMED_OPTION
-            """
-        )
-        self.prepare_rename_file(rename_text)
-
-        sdkconfig_text = textwrap.dedent(
-            """
-            # CONFIG_NAMED_OPTION is not set
-            """
-        )
-        self.prepare_sdkconifg_file(sdkconfig_text)
-        # Invoke the unit test, specify that the final `sdkconfig` generated must contain the string:
-        # "# CONFIG_RENAMED_OPTION is not set"
-
-        self.invoke_and_test(self.input, "# CONFIG_RENAMED_OPTION is not set")
-
-    def testRenameInversion(self):
-        rename_text = textwrap.dedent(
-            """
-            CONFIG_NAMED_OPTION             !CONFIG_RENAMED_OPTION
-            """
-        )
-        self.prepare_rename_file(rename_text)
-
-        sdkconfig_text = textwrap.dedent(
-            """
-            # CONFIG_NAMED_OPTION is not set
-            """
-        )
-        self.prepare_sdkconifg_file(sdkconfig_text)
-        self.invoke_and_test(self.input, "CONFIG_RENAMED_OPTION=y")
-
-    def testForbiddenRenaming(self):
-        invalid_rename_file_1 = textwrap.dedent(
-            """
-            CONFIG_NAMED_OPTION             CONFIG_NAMED_OPTION
-            """
-        )
-        input_file = self.prepare_rename_file(invalid_rename_file_1)
-        self.invoke_and_test(
-            self.input,
-            "",
-            expected_error=(
-                f"RuntimeError: Error in {input_file} (line 2): "
-                f"Replacement name is the same as original name (NAMED_OPTION)."
-            ),
-        )
-
-        invalid_rename_file_2 = textwrap.dedent(
-            """
-            CONFIG_NAMED_OPTION             !CONFIG_NAMED_OPTION
-            """
-        )
-        input_file = self.prepare_rename_file(invalid_rename_file_2)
-        self.invoke_and_test(
-            self.input,
-            "",
-            expected_error=(
-                f"RuntimeError: Error in {input_file} (line 2): "
-                f"Replacement name is the same as original name (NAMED_OPTION)."
-            ),
-        )
-
-    def testLowercaseInOldName(self):
-        self.input = """
-        config named_OPTION
-            bool "Lowercase option"
-            default y
+            config HEX_PREFIX
+                hex "Hex Item default prefix"
+                default 0x77
         """
-        rename_file = textwrap.dedent(
-            """
-            CONFIG_named_OPTION             CONFIG_NAMED_OPTION
-            """
-        )
-        self.prepare_rename_file(rename_file)
-        self.invoke_and_test(self.input, "CONFIG_named_OPTION=y")
+    )
+
+    def test_string_escape(self, runner):
+        if os.environ.get("KCONFIG_PARSER_VERSION") == "2":
+            pytest.skip("Kconfiglib v2 does not support character escaping")
+        in_text = """
+        mainmenu "Test"
+
+            config PASSWORD
+                string "password"
+                default "\\\\~!@#$%^&*()\\\""
+        """
+        runner(self.args, in_text, 'set(CONFIG_PASSWORD "\\\\~!@#$%^&*()\\"")')
+
+    def test_hex_prefix(self, runner):
+        runner(self.args, TestCmake.HEXPREFIX, 'set(CONFIG_HEX_NOPREFIX "0x33")')
+        runner(self.args, TestCmake.HEXPREFIX, 'set(CONFIG_HEX_PREFIX "0x77")')
 
 
-class HeaderTestCase(KconfgenBaseTestCase):
-    @classmethod
-    def setUpClass(self):
-        super(HeaderTestCase, self).setUpClass()
-        self.args.update({"output": "header"})
+@pytest.mark.parametrize("set_parser_version", KCONFIG_PARSER_VERSIONS, indirect=True)
+class TestJson(KconfgenBaseTestCase):
+    @pytest.fixture(autouse=True)
+    def init(self):
+        self.args = Args(output="json")
 
-    def testStringEscape(self):
-        self.invoke_and_test(
-            """
-        config PASSWORD
-            string "password"
-            default "\\\\~!@#$%^&*()\\\""
-        """,
-            '#define CONFIG_PASSWORD "\\\\~!@#$%^&*()\\""',
-        )
+    def test_string_escape(self, runner):
+        if os.environ.get("KCONFIG_PARSER_VERSION") == "2":
+            pytest.skip("Kconfiglib v2 does not support character escaping")
+        in_text = """
+        mainmenu "Test"
 
-    def testHexPrefix(self):
-        self.invoke_and_test(HEXPREFIX_KCONFIG, "#define CONFIG_HEX_NOPREFIX 0x33")
-        self.invoke_and_test(HEXPREFIX_KCONFIG, "#define CONFIG_HEX_PREFIX 0x77")
+            config PASSWORD
+                string "password"
+                default "\\\\~!@#$%^&*()\\\""
+        """
+        runner(self.args, in_text, '"PASSWORD": "\\\\~!@#$%^&*()\\""')
 
-
-class DocsTestCase(KconfgenBaseTestCase):
-    @classmethod
-    def setUpClass(self):
-        super(DocsTestCase, self).setUpClass()
-        self.args.update({"output": "docs", "env": "IDF_TARGET=esp32"})
-
-    def testMultipleRangesWithNegation(self):
-        out = self.invoke_and_test(
-            """
-        config IDF_TARGET
-            string "IDF target"
-            default "esp32"
-
-        config IDF_TARGET_ESP32
-            bool
-            default "y" if IDF_TARGET="esp32"
-
-        config SOME_SETTING
-            int "setting for the chip"
-            range 0 10 if IDF_TARGET_ESP32
-            range 0 100 if !IDF_TARGET_ESP32
-        """,
-            re.compile(r"Range:\n\s+- from 0 to 10"),
-            "regex",
-        )
-        assert "- from 0 to 100" not in out
-
-    def testChoice(self):
-        self.invoke_and_test(
-            """
-        menu "TEST"
-            choice TYPES
-                prompt "types"
-                default TYPES_OP2
-                help
-                    Description of TYPES
-
-                config TYPES_OP1
-                    bool "option 1"
-                config TYPES_OP2
-                    bool "option 2"
-            endchoice
-        endmenu
-        """,
-            """
-        TEST
-        ----
-
-        Contains:
-
-        - :ref:`CONFIG_TYPES`
-
-        .. _CONFIG_TYPES:
-
-        CONFIG_TYPES
-        ^^^^^^^^^^^^
-
-            types
-
-            :emphasis:`Found in:` :ref:`test`
-
-            Description of TYPES
-
-            Available options:
-
-                  .. _CONFIG_TYPES_OP1:
-
-                - option 1             (CONFIG_TYPES_OP1)
-
-                  .. _CONFIG_TYPES_OP2:
-
-                - option 2             (CONFIG_TYPES_OP2)
-
-        """,
-        )  # this is more readable than regex
+    def test_hex_prefix(self, runner):
+        snippet = TestCmake.HEXPREFIX
+        runner(self.args, snippet, f'"HEX_NOPREFIX": {0x33}')
+        runner(self.args, snippet, f'"HEX_PREFIX": {0x77}')
 
 
-class DefaultsTestCase(KconfgenBaseTestCase):
-    @classmethod
-    def setUpClass(self):
-        super(DefaultsTestCase, self).setUpClass()
-        self.args.update({"output": "savedefconfig"})
-        self.input = """
-        menu "Label"
+@pytest.mark.parametrize("set_parser_version", KCONFIG_PARSER_VERSIONS, indirect=True)
+class TestJsonMenus(KconfgenBaseTestCase):
+    @pytest.fixture(autouse=True)
+    def init(self):
+        self.args = Args(output="json_menus")
+
+    def test_multiple_ranges(self, runner):
+        in_text = """
+        mainmenu "Test"
+
             config IDF_TARGET
                 string "IDF target"
                 default "esp32"
 
-            menu "This is a menu label"
-                config TEST2
-                    bool "test"
-                    default "y"
+            config SOME_SETTING
+                int "setting for the chip"
+                range 0 100 if IDF_TARGET="esp32s0"
+                range 0 10 if IDF_TARGET="esp32"
+                range -10 1 if IDF_TARGET="esp32s2"
+        """
+        runner(self.args, in_text, r'"range":\s+\[\s+0,\s+10\s+\]', test="regex")
+
+    def test_hex_ranges(self, runner):
+        in_text = """
+        mainmenu "Test"
+
+            config SOME_SETTING
+                hex "setting for the chip"
+                range 0x0 0xaf if UNDEFINED
+                range 0x10 0xaf
+        """
+        runner(self.args, in_text, r'"range":\s+\[\s+16,\s+175\s+\]', test="regex")
+
+
+@pytest.mark.parametrize("set_parser_version", KCONFIG_PARSER_VERSIONS, indirect=True)
+class TestConfig(KconfgenBaseTestCase):
+    input = textwrap.dedent(
+        """
+        mainmenu "Test"
+
+            config TEST
+                bool "test"
+                default "n"
+        """
+    )
+
+    @pytest.fixture(autouse=True)
+    def init(self, tmp_path):
+        cfg = os.path.join(str(tmp_path), "config")
+        with open(cfg, "w") as f:
+            f.write(
+                textwrap.dedent(
+                    """
+                    # default:
+                    CONFIG_TEST=y
+                    # default:
+                    CONFIG_UNKNOWN=y
+                    """
+                )
+            )
+        self.args = Args(output="config", config=cfg)
+
+    def test_keep_saved_option(self, runner):
+        runner(self.args, TestConfig.input, "CONFIG_TEST=y")
+
+    def test_discard_unknown_option(self, runner):
+        runner(self.args, TestConfig.input, "CONFIG_UNKNOWN", test="not in")
+
+
+@pytest.mark.parametrize("set_parser_version", KCONFIG_PARSER_VERSIONS, indirect=True)
+class TestRenameConfig(KconfgenBaseTestCase):
+    input = textwrap.dedent(
+        """
+        mainmenu "Test"
+
+            config RENAMED_OPTION
+                bool "Renamed option"
+                default y
+        """
+    )
+
+    @pytest.fixture(autouse=True)
+    def init(self, tmp_path):
+        self.args = Args(output="config")
+        self.rename_file = os.path.join(str(tmp_path), "rename")
+
+    def prepare_rename_file(self, text):
+        with open(self.rename_file, "w") as f:
+            f.write(textwrap.dedent(text))
+        self.args.sdkconfig_rename = self.rename_file
+
+    def prepare_sdkconfig_file(self, tmp_path, text):
+        cfg = os.path.join(str(tmp_path), "sdkconfig")
+        with open(cfg, "w") as f:
+            f.write(textwrap.dedent(text))
+        self.args.config = cfg
+
+    def test_renamed_option_disabled(self, runner, tmp_path):
+        self.prepare_rename_file(
+            """
+            CONFIG_NAMED_OPTION             CONFIG_RENAMED_OPTION
+            """
+        )
+        self.prepare_sdkconfig_file(
+            tmp_path,
+            """
+            # CONFIG_NAMED_OPTION is not set
+            """,
+        )
+        runner(self.args, TestRenameConfig.input, "# CONFIG_RENAMED_OPTION is not set")
+
+    def test_rename_inversion(self, runner, tmp_path):
+        self.prepare_rename_file(
+            """
+            CONFIG_NAMED_OPTION             !CONFIG_RENAMED_OPTION
+            """
+        )
+        self.prepare_sdkconfig_file(
+            tmp_path,
+            """
+            # CONFIG_NAMED_OPTION is not set
+            """,
+        )
+        runner(self.args, TestRenameConfig.input, "CONFIG_RENAMED_OPTION=y")
+
+    @pytest.mark.parametrize(
+        "invalid_line",
+        (
+            """
+                CONFIG_NAMED_OPTION             CONFIG_NAMED_OPTION
+                """,
+            """
+                CONFIG_NAMED_OPTION             !CONFIG_NAMED_OPTION
+                """,
+        ),
+        ids=("same_name", "inversion"),
+    )
+    def test_forbidden_renaming(self, runner, invalid_line):
+        expected_error = "Replacement name is the same as original name (NAMED_OPTION)."
+        self.prepare_rename_file(invalid_line)
+        runner(
+            self.args,
+            TestRenameConfig.input,
+            "",
+            expected_error=f"RuntimeError: Error in {self.rename_file} (line 2): {expected_error}",
+        )
+
+    def test_lowercase_in_old_name(self, runner):
+        if os.environ.get("KCONFIG_PARSER_VERSION") == "2":
+            pytest.skip("Kconfiglib v2 does not allow lowercase in config names")
+
+        lc_input = textwrap.dedent(
+            """
+            mainmenu "Test"
+
+                config named_OPTION
+                    bool "Lowercase option"
+                    default y
+            """
+        )
+        self.args = Args(output="config")
+        self.prepare_rename_file(
+            """
+            CONFIG_named_OPTION             CONFIG_NAMED_OPTION
+            """
+        )
+        runner(self.args, lc_input, "CONFIG_named_OPTION=y")
+
+
+@pytest.mark.parametrize("set_parser_version", KCONFIG_PARSER_VERSIONS, indirect=True)
+class TestHeader(KconfgenBaseTestCase):
+    @pytest.fixture(autouse=True)
+    def init(self):
+        self.args = Args(output="header")
+
+    def test_string_escape(self, runner):
+        if os.environ.get("KCONFIG_PARSER_VERSION") == "2":
+            pytest.skip("Kconfiglib v2 does not support character escaping")
+        in_text = """
+        mainmenu "Test"
+
+            config PASSWORD
+                string "password"
+                default "\\\\~!@#$%^&*()\\\""
+        """
+        runner(self.args, in_text, '#define CONFIG_PASSWORD "\\\\~!@#$%^&*()\\""')
+
+    def test_hex_prefix(self, runner):
+        runner(self.args, TestCmake.HEXPREFIX, "#define CONFIG_HEX_NOPREFIX 0x33")
+        runner(self.args, TestCmake.HEXPREFIX, "#define CONFIG_HEX_PREFIX 0x77")
+
+
+@pytest.mark.parametrize("set_parser_version", KCONFIG_PARSER_VERSIONS, indirect=True)
+class TestDocs(KconfgenBaseTestCase):
+    @pytest.fixture(autouse=True)
+    def init(self):
+        self.args = Args(output="docs", env="IDF_TARGET=esp32")
+
+    def test_multiple_ranges_with_negation(self, runner):
+        in_text = """
+        mainmenu "Test"
+
+            config IDF_TARGET
+                string "IDF target"
+                default "esp32"
+
+            config IDF_TARGET_ESP32
+                bool
+                default "y" if IDF_TARGET="esp32"
+
+            config SOME_SETTING
+                int "setting for the chip"
+                range 0 10 if IDF_TARGET_ESP32
+                range 0 100 if !IDF_TARGET_ESP32
+        """
+        out = runner(self.args, in_text, r"Range:\n\s+- from 0 to 10", test="regex")
+        assert "- from 0 to 100" not in out
+
+    def test_choice(self, runner):
+        in_text = """
+        mainmenu "Test"
+
+            menu "TEST"
+                choice TYPES
+                    prompt "types"
+                    default TYPES_OP2
+                    help
+                        Description of TYPES
+
+                    config TYPES_OP1
+                        bool "option 1"
+                    config TYPES_OP2
+                        bool "option 2"
+                endchoice
             endmenu
+        """
+        expected = textwrap.dedent(
+            """
+            TEST
+            ----
+
+            Contains:
+
+            - :ref:`CONFIG_TYPES`
+
+            .. _CONFIG_TYPES:
+
+            CONFIG_TYPES
+            ^^^^^^^^^^^^
+
+                types
+
+                :emphasis:`Found in:` :ref:`test`
+
+                Description of TYPES
+
+                Available options:
+
+                      .. _CONFIG_TYPES_OP1:
+
+                    - option 1             (CONFIG_TYPES_OP1)
+
+                      .. _CONFIG_TYPES_OP2:
+
+                    - option 2             (CONFIG_TYPES_OP2)"""
+        ).strip()
+        runner(self.args, in_text, expected)
+
+
+@pytest.mark.parametrize("set_parser_version", KCONFIG_PARSER_VERSIONS, indirect=True)
+class TestDefaults(KconfgenBaseTestCase):
+    input = textwrap.dedent(
+        """
+        mainmenu "Test"
 
             menu "Label"
-                config TEST
-                    bool "test"
-                    default "y"
-                    comment "This is a comment for TEST"
-            endmenu
-        endmenu
-        """
+                config IDF_TARGET
+                    string "IDF target"
+                    default "esp32"
 
-    def setUp(self):
-        super(DefaultsTestCase, self).setUp()
-        with tempfile.NamedTemporaryFile(mode="w+", prefix="test_kconfgen_", delete=False) as f:
-            self.addCleanup(os.remove, f.name)
-            self.args.update({"config": f.name})  # this is input in contrast with {'output': 'config'}
+                menu "This is a menu label"
+                    config TEST2
+                        bool "test"
+                        default "y"
+                endmenu
+
+                menu "Label"
+                    config TEST
+                        bool "test"
+                        default "y"
+                        comment "This is a comment for TEST"
+                endmenu
+            endmenu
+        """
+    )
+
+    @pytest.fixture(autouse=True)
+    def init(self, tmp_path):
+        cfg = os.path.join(str(tmp_path), "config")
+        with open(cfg, "w") as f:
             f.write(
                 textwrap.dedent(
                     """
@@ -468,133 +462,87 @@ class DefaultsTestCase(KconfgenBaseTestCase):
                     """
                 )
             )
+        self.args = Args(output="savedefconfig", config=cfg)
 
-    def testSaveDefault(self):
-        # Make sure that setting bool to false is represented as assignment and not as comment "CONFIG_TEST is not set"
-        self.invoke_and_test(self.input, "CONFIG_TEST=n")
-        self.invoke_and_test(self.input, "# CONFIG_TEST is not set", "not in")
+    def test_save_default(self, runner):
+        runner(self.args, TestDefaults.input, "CONFIG_TEST=n")
+        runner(self.args, TestDefaults.input, "# CONFIG_TEST is not set", test="not in")
 
-    def testSaveDefaultWithLabels(self):
-        # get min config without labels and with labes, remove labes and compare the results
-
-        # without labels
-        self.invoke_and_test(self.input, "# This is a menu label", "not in")
-        with open(self.output_file, "r") as f:
-            without_labels = f.readlines()
-        # set min config labels
-        os.environ["ESP_IDF_KCONFIG_MIN_LABELS"] = "1"
-        # add cleanup to remove the env variable after test
-        self.addCleanup(os.environ.pop, "ESP_IDF_KCONFIG_MIN_LABELS", None)
-        # get result with labels
-        self.invoke_and_test(self.input, "# This is a menu label")
-        with open(self.output_file, "r") as f:
-            with_labels = f.readlines()
-        # verify that comments are not printed out as labels
-        self.assertNotIn("# This is a comment for TEST\n", with_labels)
-        # verify that "Label" is twice in the min config
-        cnt = 0
-        for line in with_labels:
-            if line == "# Label\n":
-                cnt += 1
-        self.assertEqual(cnt, 2)
-        # remove labels and empty lines; ignore first three lines that contain header
-        with_labels_strip = with_labels[:3] + list(
-            filter(lambda x: (not x.startswith("#") or x == "# default:\n") and not x == "\n", with_labels[3:])
-        )
-        self.assertEqual(without_labels, with_labels_strip)
+    def test_save_default_with_labels(self, runner, tmp_path, monkeypatch):
+        # Without labels
+        runner(self.args, TestDefaults.input, "# This is a menu label", test="not in")
+        without = open(os.path.join(str(tmp_path), "output")).read().splitlines(keepends=True)
+        # Enable labels
+        monkeypatch.setenv("ESP_IDF_KCONFIG_MIN_LABELS", "1")
+        runner(self.args, TestDefaults.input, "# This is a menu label")
+        with_labels = open(os.path.join(str(tmp_path), "output")).read().splitlines(keepends=True)
+        assert "# This is a comment for TEST\n" not in with_labels
+        assert with_labels.count("# Label\n") == 2
+        stripped = with_labels[:3] + [
+            line for line in with_labels[3:] if not (line.startswith("#") and line != "# default:\n") and line != "\n"
+        ]
+        assert stripped == without
 
 
-class NonSetValuesTestCase(KconfgenBaseTestCase):
-    @classmethod
-    def setUpClass(self):
-        super(NonSetValuesTestCase, self).setUpClass()
-        self.args.update({"output": "savedefconfig"})
-        self.input = textwrap.dedent(
-            """
-                    menu "Test No Numerical Defaults"
-                        config IDF_TARGET
-                            string "IDF target"
-                            default "esp32"
-
-                        config INTEGER
-                            int "This is an integer without default value."
-                            default 1 if IDF_TARGET="esp48"
-
-                        config HEXADECIMAL
-                            hex "This is a hexadecimal without default value."
-                            default 0xAA if IDF_TARGET="esp48"
-
-                    endmenu
+@pytest.mark.parametrize("set_parser_version", KCONFIG_PARSER_VERSIONS, indirect=True)
+class TestNonSetValues(KconfgenBaseTestCase):
+    input = textwrap.dedent(
         """
-        )
+        mainmenu "Test"
 
-    def setUp(self):
-        super(NonSetValuesTestCase, self).setUp()
-        with tempfile.NamedTemporaryFile(mode="w+", prefix="test_kconfgen_", delete=False) as f:
-            self.addCleanup(os.remove, f.name)
-            self.args.update({"config": f.name})  # this is input in contrast with {'output': 'config'}
-            f.write("")
+            menu "Test No Numerical Defaults"
+                config IDF_TARGET
+                    string "IDF target"
+                    default "esp32"
 
-    def testNoNumDefault(self):
+                config INTEGER
+                    int "This is an integer without default value."
+                    default 1 if IDF_TARGET="esp48"
+
+                config HEXADECIMAL
+                    hex "This is a hexadecimal without default value."
+                    default 0xAA if IDF_TARGET="esp48"
+            endmenu
         """
-        Testing whether configuration is created even if no default value for a specific target is set.
+    )
+
+    @pytest.fixture(autouse=True)
+    def init(self, tmp_path):
+        cfg = os.path.join(str(tmp_path), "config")
+        open(cfg, "w").close()
+        self.args = Args(output="savedefconfig", config=cfg)
+
+    def test_no_num_default(self, runner):
+        self.args.output = "config"
+        runner(self.args, TestNonSetValues.input, "CONFIG_INTEGER=1", test="not in")
+        runner(self.args, TestNonSetValues.input, "CONFIG_HEXADECIMAL=0xAA", test="not in")
+
+
+@pytest.mark.parametrize("set_parser_version", KCONFIG_PARSER_VERSIONS, indirect=True)
+class TestChooseDefaultValue(KconfgenBaseTestCase):
+    input = textwrap.dedent(
         """
-        self.args.update({"output": "config"})
-        self.invoke_and_test(self.input, "CONFIG_INTEGER=1", test="not in")
-        self.invoke_and_test(self.input, "CONFIG_HEXADECIMAL=0xAA", test="not in")
+        mainmenu "Test Choose Default Value"
 
+            config FOO
+                bool "Foo config option"
+                default y
 
-class ChooseDefaultValueTestCase(KconfgenBaseTestCase):
-    @classmethod
-    def setUpClass(self):
-        super(ChooseDefaultValueTestCase, self).setUpClass()
-        self.args.update({"output": "config"})
-        self.sdkconfig_file = "sdkconfig"
-        self.input = textwrap.dedent(
-            """
-            mainmenu "Test Choose Default Value"
+        """
+    )
 
-                config FOO
-                    bool "Foo config option"
-                    default y
+    @pytest.fixture(autouse=True)
+    def init(self, tmp_path):
+        sdk = os.path.join(str(tmp_path), "sdkconfig")
+        with open(sdk, "w") as f:
+            f.write("# default:\nCONFIG_FOO=n\n")
+        self.args = Args(output="config", config=sdk)
 
-            """
-        )
-        with open(self.sdkconfig_file, "w") as sdkconfig:
-            sdkconfig.write("# default:\n")
-            sdkconfig.write("CONFIG_FOO=n\n")
-            self.args.update({"config": self.sdkconfig_file})  # this is input in contrast with {'output': 'config'}
+    def test_default(self, runner):
+        self.args.env = f"KCONFIG_DEFAULTS_POLICY={POLICY_USE_SDKCONFIG}"
+        out = runner(self.args, TestChooseDefaultValue.input, "# CONFIG_FOO is not set")
+        assert "# CONFIG_FOO is not set\n" in out.splitlines(True)
 
-    @classmethod
-    def tearDownClass(self):
-        try:
-            os.remove(self.sdkconfig_file)
-        except FileNotFoundError:
-            pass
-
-    def testDefault(self):
-        self.args.update({"env": f"KCONFIG_DEFAULTS_POLICY={POLICY_USE_SDKCONFIG}"})
-        self.invoke_and_test(self.input, "# CONFIG_FOO is not set")
-        with open(self.output_file, "r") as f:
-            self.assertIn("# CONFIG_FOO is not set\n", f.readlines())
-
-    def testIgnoreSdkconfig(self):
-        self.args.update({"env": f"KCONFIG_DEFAULTS_POLICY={POLICY_USE_KCONFIG}"})
-        self.invoke_and_test(self.input, "CONFIG_FOO=y")
-        with open(self.output_file, "r") as f:
-            self.assertIn("CONFIG_FOO=y\n", f.readlines())
-
-
-# Used by multiple testHexPrefix() test cases to verify correct hex output for each format
-HEXPREFIX_KCONFIG = """
-config HEX_NOPREFIX
-hex "Hex Item default no prefix"
-default 33
-
-config HEX_PREFIX
-hex "Hex Item default prefix"
-default 0x77
-"""
-
-if __name__ == "__main__":
-    unittest.main()
+    def test_ignore_sdkconfig(self, runner):
+        self.args.env = f"KCONFIG_DEFAULTS_POLICY={POLICY_USE_KCONFIG}"
+        runner(self.args, TestChooseDefaultValue.input, "CONFIG_FOO=y")
