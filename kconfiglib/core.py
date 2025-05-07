@@ -24,12 +24,13 @@ from typing import Set
 from typing import Tuple
 from typing import Union
 
-from rich import print
-
 from kconfiglib.report import PRAGMA_PREFIX
 from kconfiglib.report import STATUS_ERROR as REPORT_STATUS_ERROR
 from kconfiglib.report import KconfigReport
 from kconfiglib.report import MultipleDefinitionArea
+
+ANSI_BOLD = "\033[1m"
+ANSI_END = "\033[0m"
 
 """
 Overview
@@ -1354,14 +1355,15 @@ class Kconfig(object):
                 sym._loaded_as_default = True
                 if sym._user_value is None and sym.str_value != str(val):
                     self._info(
-                        f"Default value for {sym.name} in sdkconfig is [bold]{_quote_value(val, sym.orig_type)}[/bold] "
-                        f"but it is [bold]{_quote_value(sym.str_value, sym.orig_type)}[/bold] according to Kconfig."
+                        f"Default value for {sym.name} in sdkconfig is "
+                        f"{ANSI_BOLD}{_quote_value(val, sym.orig_type)}{ANSI_END} but it is "
+                        f"{ANSI_BOLD}{_quote_value(sym.str_value, sym.orig_type)}{ANSI_END} according to Kconfig."
                     )
                     if self.defaults_policy == POLICY_USE_SDKCONFIG:  # Use default value from sdkconfig
                         if _inject_default_value(sym, val):
                             self._info(
                                 "Using default value from sdkconfig "
-                                f"([bold]{_quote_value(val, sym.orig_type)}[/bold]).",
+                                f"({ANSI_BOLD}{_quote_value(val, sym.orig_type)}{ANSI_END}).",
                                 suppress_info_prefix=True,
                             )
                         else:
@@ -1375,25 +1377,25 @@ class Kconfig(object):
                     elif self.defaults_policy == POLICY_USE_KCONFIG:  # Use default value from Kconfig
                         self._info(
                             "Using default value from Kconfig "
-                            f"([bold]{_quote_value(sym.str_value, sym.orig_type)}[/bold]).",
+                            f"({ANSI_BOLD}{_quote_value(sym.str_value, sym.orig_type)}{ANSI_END}).",
                             suppress_info_prefix=True,
                         )
                         symbols_with_changed_defaults[sym.name] = (sym.str_value, val)
                     elif self.defaults_policy == POLICY_INTERACTIVE:
-                        preffered_source = None
-                        while preffered_source not in ("s", "k"):
-                            preffered_source = input(
+                        preferred_source = None
+                        while preferred_source not in ("s", "k"):
+                            preferred_source = input(
                                 "Do you want to use default value from sdkconfig (s) "
                                 "(value will be converted to user-set) or from Kconfig (k)? [s/k]:"
                             ).lower()
-                        if preffered_source == "s":
+                        if preferred_source == "s":
                             # NOTE: This will make "default" from sdkconfig a user-set value.
                             # Reason: If we keep it as default, the message about defaults differing between sdkconfig
                             # and Kconfig would still be present because default values between
                             # sdkconfig and Kconfig would still differ.
                             sym.set_value(val)
                             unchanged_symbols[sym.name] = val
-                        elif preffered_source == "k":
+                        elif preferred_source == "k":
                             symbols_with_changed_defaults[sym.name] = (sym.str_value, val)
                     else:
                         KconfigError(
