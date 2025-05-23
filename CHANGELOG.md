@@ -1,3 +1,22 @@
+## v3.0.0 (2025-05-23)
+
+### New Features
+
+- **kconfig**: add Configuration Report
+- support simple macros in Kconfig files
+- Allow choosing default value if sdkconfig and Kconfig contradict
+- **kconfig**: recognize default values in sdkconfig
+
+### Bug Fixes
+
+- **kconfig**: Undefined quoted macros expand to empty string
+- **kconfig**: check if default value has correct type
+- Correctly parse named choice
+- **menuconfig**: Fix saving logic to work with default values
+- **kconfig**: print warning when misusing "visible if" option
+- **kconfig**: Allow version (X[.Y[.Z]]) as a valid token
+- support all entries as choice children in menutree
+
 ## v2.5.0 (2025-02-17)
 
 ### New Features
