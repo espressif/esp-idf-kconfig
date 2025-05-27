@@ -1,0 +1,12 @@
+#
+# Automatically generated file. DO NOT EDIT.
+# Espressif IoT Development Framework (ESP-IDF)  Project Configuration
+#
+# default:
+CONFIG_FUEL="kerosene"
+# default:
+CONFIG_LUNCH_SANDWICH=y
+# default:
+# CONFIG_LUNCH_PIZZA is not set
+# default:
+# CONFIG_LUNCH_SALAD is not set

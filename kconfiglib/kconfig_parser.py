@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2024 Espressif Systems (Shanghai) CO LTD
+# SPDX-FileCopyrightText: 2024-2025 Espressif Systems (Shanghai) CO LTD
 # SPDX-License-Identifier: Apache-2.0
 import os
 from dataclasses import dataclass
@@ -7,37 +7,38 @@ from os.path import dirname
 from os.path import expandvars
 from os.path import join
 from typing import List
-from typing import no_type_check
 from typing import Optional
 from typing import Tuple
 from typing import Union
+from typing import no_type_check
 
-from pyparsing import line as pyparsing_line
-from pyparsing import lineno
 from pyparsing import ParserElement
 from pyparsing import ParseResults
+from pyparsing import line as pyparsing_line
+from pyparsing import lineno
+
+from kconfiglib.kconfig_grammar import KconfigGrammar
 
 from .core import AND
 from .core import BOOL
-from .core import Choice
 from .core import COMMENT
 from .core import EQUAL
 from .core import GREATER
 from .core import GREATER_EQUAL
 from .core import HEX
 from .core import INT
-from .core import Kconfig
-from .core import KconfigError
 from .core import LESS
 from .core import LESS_EQUAL
 from .core import MENU
-from .core import MenuNode
 from .core import NOT
 from .core import OR
 from .core import STRING
-from .core import Symbol
 from .core import UNEQUAL
-from kconfiglib.kconfig_grammar import KconfigGrammar
+from .core import Choice
+from .core import Kconfig
+from .core import KconfigError
+from .core import MenuNode
+from .core import Symbol
 
 ParserElement.enablePackrat(cache_size_limit=None)  # Speeds up parsing by caching intermediate results
 
@@ -135,6 +136,10 @@ class Parser:
 
         sym.nodes.append(node)
         self.parse_options(node, parsed_config)
+        if parsed_config["config_opts"]["visible_if"]:
+            self.kconfig._warn(
+                f'config {sym.name} (defined at {self.file_stack[-1]}:{node.linenr}) has a "visible if" option, which is not supported for configs'
+            )
 
         orphan = Orphan(
             node=node,
@@ -228,6 +233,10 @@ class Parser:
         if not node.prompt:
             self.kconfig._warn(
                 f"<choice {choice.name}> (defined at {self.file_stack[-1]}:{node.linenr}) defined without a prompt"
+            )
+        if parsed_choice["config_opts"]["visible_if"]:
+            self.kconfig._warn(
+                f'choice {choice.name} (defined at {self.file_stack[-1]}:{node.linenr}) has a "visible if" option, which is not supported for choices'
             )
 
         self.get_children(node, (self.file_stack[-1], line_number))
