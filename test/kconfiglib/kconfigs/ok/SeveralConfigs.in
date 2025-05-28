@@ -40,10 +40,10 @@ mainmenu "Main menu"
         bool "config with unset envvar"
         option env="TEST_ENV_UNSET"
         help
-            This config uses environemnt variable TEST_ENV_UNSET, which is not set.
+            This config uses environment variable TEST_ENV_UNSET, which is not set.
 
     config TEST_ENV_SET
         bool "config with set envvar"
         option env="TEST_ENV_SET"
         help
-            This config uses environemnt variable TEST_ENV_SET, which is set.
+            This config uses environment variable TEST_ENV_SET, which is set.

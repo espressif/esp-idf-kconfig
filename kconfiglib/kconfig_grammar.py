@@ -74,8 +74,10 @@ class KconfigBlock(Token):
 
 class KconfigHelpBlock(KconfigBlock):
     """
-    This ParserElement is used to parse help blocks in Kconfig files. It turned out it is easier to do that directly than to use pyparsing's IndentedBlock or other approach.
-    It is little strange to cast it into one token, but help block is just a plain text without any structure or meaning for the parser. Parsing it as a one token helps
+    This ParserElement is used to parse help blocks in Kconfig files.
+    It turned out it is easier to do that directly than to use pyparsing's IndentedBlock or other approach.
+    It is little strange to cast it into one token, but help block is just a plain text without any structure
+    or meaning for the parser. Parsing it as a one token helps
     the parser not to search for possible matches in it.
     """
 
@@ -90,10 +92,12 @@ class KconfigHelpBlock(KconfigBlock):
         lines = instring[loc:].split("\n")
 
         # This is the indentation of the first line of the help block.
-        # Every line with the same or bigger indentation (plus empty lines after which the same indentation level continues) is considered to be part of the help block.
+        # Every line with the same or bigger indentation (plus empty lines after which the same
+        # indentation level continues) is considered to be part of the help block.
         help_keyword_indent = self.leading_whitespace_len(lines[1])
 
-        # Preserve whitespaces cause that loc originally point to the \n char on line preceding the help keyword, effectively creating ["", "<indent>help", <help body>] list.
+        # Preserve whitespaces cause that loc originally point to the \n char on line preceding the help keyword,
+        # effectively creating ["", "<indent>help", <help body>] list.
         # We ignore the first two lines, as the first one is empty and the second one contains the help keyword.
         loc += len(lines[1]) + 1  # +1 for \n
         lines = lines[2:]
@@ -187,7 +191,8 @@ class KconfigOptionBlock(KconfigBlock):
         1) Go to first non-empty line after the loc
         2) Parse the option block line-by-line until the first token of the line is not recognized
            (i.e. it is not an option keyword)
-           NOTE: Indentation is not controlled, because many third party components have very inconsistent indentation, eg. lvgl
+           NOTE: Indentation is not controlled, because many third party components have very inconsistent indentation,
+                 eg. lvgl
            NOTE: Help block is handled separately in KconfigHelpBlock
         3) Return the parsed dictionary with the options parsed
            NOTE: Semantic checks are not performed here, they are done in the Parser class
@@ -230,10 +235,12 @@ class KconfigOptionBlock(KconfigBlock):
                 )
             return " ".join(prompt_tokens)[1:-1], current_token_idx
 
-        # Unfortunately, pyparsing sometimes points KconfigOptionBlock to the end of the previous line, sometimes directly to the start of current line,
+        # Unfortunately, pyparsing sometimes points KconfigOptionBlock to the end of the previous line,
+        # sometimes directly to the start of current line,
         # sometimes to the start of the actual text on the current line, depending on what is parsed before this block.
         # This is caused by pyparsing's whitespace handling and cannot be mitigated in it.
-        # The parsing algorithm here supposes loc point to the end of previous line. This helps to handle the loc in a unified manner.
+        # The parsing algorithm here supposes loc point to the end of previous line.
+        # This helps to handle the loc in a unified manner.
         while instring[loc] != "\n":
             loc -= 1
 
@@ -404,7 +411,8 @@ class KconfigOptionBlock(KconfigBlock):
 class KconfigGrammar:
     """
     Grammar of the Kconfig language.
-    Parse actions are defined in the Parser class -> if another format will be used, it is enough to change the Parser class.
+    Parse actions are defined in the Parser class -> if another format will be used,
+    it is enough to change the Parser class.
     """
 
     def __init__(self, parser: "Parser") -> None:
@@ -415,14 +423,16 @@ class KconfigGrammar:
         Initializes the grammar for the Kconfig language.
 
         The pyparsing package embraces "bottom-up" approach both in the parsing and grammar definition.
-        Thus, the logic behind the definitions is that first, nested elements are defined (e.g. config options) and only then the wrapping element (e.g. config itself) is defined.
+        Thus, the logic behind the definitions is that first, nested elements are defined (e.g. config options)
+        and only then the wrapping element (e.g. config itself) is defined.
 
         More info is directly in the code below.
         """
         self.parser = parser
 
         condition = Suppress(Keyword("if")) + Group(expression)
-        # By default, pyparsing removes all the leading and trailing whitespaces and thus these two constructs appear the same:
+        # By default, pyparsing removes all the leading and trailing whitespaces
+        # and thus these two constructs appear the same:
         #    ...
         #    default y
         #
@@ -444,8 +454,10 @@ class KconfigGrammar:
         # - "visible if" can be used for menus
         ##########################
 
-        # Prompt is a string (with optional condition) defined either with "prompt" keyword or implicitly (without a keyword) after a type definition
-        # Every config/choice can have max. one prompt which is used to show to the user. Optionally, it can be conditioned.
+        # Prompt is a string (with optional condition) defined either with "prompt" keyword or implicitly
+        # (without a keyword) after a type definition
+        # Every config/choice can have max. one prompt which is used to show to the user.
+        # Optionally, it can be conditioned.
         # Explicit inline prompt parsing occurs because in some cases, inline prompt is not part of an option block.
         inline_prompt = (QuotedString('"') | QuotedString("'")) + Opt(inline_condition)
 
@@ -513,7 +525,8 @@ class KconfigGrammar:
 
         # List of all possible entries in the menu/if block.
         # Every entry should have the same indentation and optionally, an empty line in between two entries.
-        # But e.g. lvgl does not follow any rules in their Kconfig files and thus, formal specifications needs to be loosen.
+        # But e.g. lvgl does not follow any rules in their Kconfig files and thus,
+        # formal specifications needs to be loosen.
         entries = ZeroOrMore(config | menu | choice | source | menuconfig | if_entry | comment).set_results_name(
             "entries"
         )
@@ -542,7 +555,8 @@ class KconfigGrammar:
         ############################
         # Entry points
         ############################
-        # The root of the grammar. It is used to parse the main Kconfig file, which needs to contain mainmenu as a top element.
+        # The root of the grammar. It is used to parse the main Kconfig file,
+        # which needs to contain mainmenu as a top element.
         self.root = mainmenu
 
         # sourced file can have different structure than the main Kconfig file, thus using a separate root.
@@ -552,7 +566,8 @@ class KconfigGrammar:
     def preprocess_file(self, file: str, ensure_end_newline: bool = True) -> str:
         """
         Helper method for preprocessing the Kconfig files.
-        Unfortunately, some Kconfig syntax would be so difficult to support in pyparsing that it is easier to preprocess the files.
+        Unfortunately, some Kconfig syntax would be so difficult to support in pyparsing
+        that it is easier to preprocess the files.
         Specifically, it:
             * merges lines split with '\'
             * removes inline comments
