@@ -26,15 +26,18 @@ workflow:
 # COMMON TEMPLATES
 # ------------------------------------------------------------------------------------------------------
 .base_template:
-  image: python:3.8-bookworm
+  image: python:${PYTHON_VERSION}-bookworm
   tags:
     - build
     - internet
   before_script:
     - pip install -e .[dev] --prefer-binary
+  parallel:
+    matrix:
+      - PYTHON_VERSION: ["3.8", "3.13"]
 
 .venv_template:
-  image: python:3.8-bookworm
+  image: python:${PYTHON_VERSION}-bookworm
   tags:
     - build
     - internet
@@ -42,6 +45,9 @@ workflow:
     - python -m venv venv
     - source venv/bin/activate
     - python -m pip install -e .[dev] --prefer-binary
+  parallel:
+    matrix:
+      - PYTHON_VERSION: ["3.8", "3.13"]
 
 # --------------------------------------------------------------------------------------------------
 
@@ -64,7 +70,8 @@ pre-commit_hooks_MR:
     - echo "Running pre-commit:"
     - pre-commit run --from ${from_sha} --to ${CI_COMMIT_SHA}
   rules:
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && $PYTHON_VERSION == "3.8"' #  run only on oldest python version supported
+
 # ------------------------------------------------------------------------------------------------------
 
 # FORMATTING
