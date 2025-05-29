@@ -17,6 +17,6 @@ config EXT_CONFIG3_FOR_CHIPA
     bool "Config for chip A"
     depends on IDF_TARGET_CHIPA
 
-config EXT_CONFIG4
+config EXT_CONFIG4 # ignore: MD
     bool "Config for every chip (note that the config is defined at multiple places)"
     depends on IDF_TARGET_CHIPA
