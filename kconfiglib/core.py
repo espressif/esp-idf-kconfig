@@ -3737,6 +3737,7 @@ class Symbol:
     _loaded_as_default: bool
     _sdkconfig_value: Optional[str]
     _cached_bool_val: Optional[int]
+    choice: Optional["Choice"]
 
     #
     # Public interface
@@ -4248,7 +4249,8 @@ class Symbol:
         # _write_to_conf is determined when the value is calculated. This is a
         # hidden function call due to property magic.
         val = self.str_value
-        pragma_default_comment = "" if self._user_value or self.choice else f"{self.kconfig.comment_default_value}\n"
+
+        pragma_default_comment = f"{self.kconfig.comment_default_value}\n" if self.has_default_value() else ""
         if not self._write_to_conf:
             return ""
 
@@ -4276,6 +4278,17 @@ class Symbol:
         If the symbol is undefined, the location is given as "(undefined)".
         """
         return self.name + " " + _locs(self)
+
+    def has_default_value(self) -> bool:
+        """
+        Symbol has default value if:
+        - user value is None (and symbol is defined, thus has orig_type) and is not choice symbol (sym.choice is None)
+        - or has choice and the choice user selection is None
+          (choice._user_selection is None -> choice was not touched by user)
+        """
+        return (self._user_value is None and self.orig_type) and (
+            (not self.choice) or self.choice._user_selection is None
+        )
 
     def value_is_valid(self, value: Any) -> bool:
         # Check if the value is valid for our type

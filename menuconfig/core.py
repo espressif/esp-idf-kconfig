@@ -1636,20 +1636,30 @@ def _visible(node):
 
 
 def _restore_default(node):
-    # Restores the default value of the Symbol/Choice item of the menu node 'node`.
+    """
+    Restores the default value of the Symbol/Choice item of the menu node 'node`.
+    """
 
-    if not isinstance(node.item, (Symbol, Choice)):
-        return False
+    def invalidate_choice(choice):
+        choice._user_selection = None
+        choice._rec_invalidate()
+        # When invalidating a choice, also their symbols need to be invalidated.
+        for sym in choice.syms:
+            invalidate_symbol(sym)
+
+    def invalidate_symbol(sym):
+        sym._user_value = None
+        sym._rec_invalidate()
 
     sc = node.item
-    sc._rec_invalidate()
-    sc._user_value = None
-
-    if isinstance(sc, Choice):
-        sc._user_selection = None
-        for sym in sc.syms:
-            sym._rec_invalidate()
-            sym._user_value = None
+    if isinstance(sc, Symbol):
+        invalidate_symbol(sc)
+        if sc.choice is not None:
+            invalidate_choice(sc.choice)
+    elif isinstance(sc, Choice):
+        invalidate_choice(sc)
+    else:
+        return False
 
     return True
 
@@ -3052,10 +3062,9 @@ def _node_str(node):
         if isinstance(node.item, Symbol):
             sym = node.item
 
-            # Print "(NEW)" next to symbols without a user value (from e.g. a
-            # .config), but skip it for choice symbols in choices in y mode,
-            # and for symbols of UNKNOWN type (which generate a warning though)
-            if sym._user_value is None and sym.orig_type and not (sym.choice and sym.choice.bool_value == 2):
+            # Print "(default value)" next to symbols without a user value (from e.g. a
+            # .config), but skip for for symbols of UNKNOWN type (which generate a warning though)
+            if sym.has_default_value():
                 s += " (default value)"
 
     if isinstance(node.item, Choice) and node.item.bool_value == 2:

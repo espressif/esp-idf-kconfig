@@ -9,7 +9,7 @@ mainmenu "Test if statement inside Choice with condition depending on choice"
 
         if FOO
 
-            config BAR # B will NOT be part of the choice
+            config BAR # BAR will NOT be part of the choice
                  bool "bar"
 
         endif

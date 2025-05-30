@@ -1,0 +1,15 @@
+# default:
+CONFIG_A=y
+
+#
+# Named choice
+#
+# CONFIG_FOO is not set
+CONFIG_BAR=y
+
+#
+# Unnamed choice
+#
+# same as default values but e.g. set by user (fixed value)
+CONFIG_BAZ=y
+#CONFIG_QUX is not set
