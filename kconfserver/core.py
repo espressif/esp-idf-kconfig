@@ -29,7 +29,7 @@ def main():
 
     parser.add_argument("--config", help="Project configuration settings", required=True)
 
-    parser.add_argument("--kconfig", help="KConfig file with config item definitions", required=True)
+    parser.add_argument("--kconfig", help="Kconfig file with config item definitions", required=True)
 
     parser.add_argument(
         "--sdkconfig-rename",
