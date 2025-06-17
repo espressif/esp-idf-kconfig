@@ -1,0 +1,23 @@
+#
+# There is no invalid value for string type -> it is omitted here
+#
+# default:
+CONFIG_INT_CONFIG=1
+# default:
+CONFIG_BOOL_CONFIG=y
+# default:
+CONFIG_HEX_CONFIG=0x42
+# default:
+CONFIG_INVALID_INT_CONFIG=string
+# default:
+# CONFIG_INVALID_BOOL_CONFIG is not set
+# default:
+CONFIG_INVALID_HEX_CONFIG=y
+# default:
+CONFIG_INT_OUTSIDE_RANGE_CONFIG=999
+# default:
+CONFIG_HEX_OUTSIDE_RANGE_CONFIG=0xff
+# default:
+CONFIG_SOURCE=y
+# default:
+CONFIG_WEAK_SOURCE=y

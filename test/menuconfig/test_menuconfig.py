@@ -7,6 +7,8 @@ from typing import Union
 
 import pytest
 
+from menuconfig.core import _change_node
+
 if TYPE_CHECKING:
     from kconfiglib.core import Choice
     from kconfiglib.core import Symbol
@@ -229,3 +231,46 @@ class TestChoicesDefault(MenuconfigTestBase):
         assert "# default:\n# CONFIG_QUX is not set" in sdkconfig, (
             f"Default value for choice symbol QUX should be 'n' in {sdkconfig}."
         )
+
+
+@pytest.mark.parametrize("version", ["2"], indirect=True)
+class TestIndirectlySetValues(MenuconfigTestBase):
+    """
+    Test if menuconfig correctly handles values indirectly set via "set" and "set default" options.
+    NOTE: Only for KCONFIG_PARSER_VERSION=2, as this is the only version which supports indirectly set values.
+    """
+
+    def test_indirectly_set_value(self) -> None:
+        """
+        Test if:
+        - "set" option prevent its target from being changed
+        - correct precedence is applied (indirectly set > user-set > default for "set")
+        - target ignores (but preserves) its user-set values when indirectly set via "set" option
+
+        - "set default" option sets the target to given values but allows user to change it
+        - correct precedence (user-set > indirectly set > default for "set default")
+        """
+
+        kconfig = Kconfig(os.path.join(KCONFIGS_PATH, "Kconfig.indirect_sets"))
+        kconfig.load_config(os.path.join(SDKCONFIGS_PATH, "test_indirect_sets", "sdkconfig"))
+
+        sym = kconfig.syms["SET_TARGET"]
+        assert sym.str_value == "4"  # indirectly set value has absolute precedence
+        assert sym._user_value == "2"  # user-set value is preserved, but ignored
+
+        assert _change_node(sym.nodes[0]) is False, "Changing indirectly set value should not be allowed, but it was."
+
+        # Turn off source, which indirectly sets the value. User-set value of the target should be restored.
+        kconfig.syms["SET_SOURCE"].set_value("n")
+        assert sym.str_value == "2", (
+            "User-set value should be restored in target symbol after turning off the source symbol, but it is not."
+        )
+
+        sym = kconfig.syms["SET_DEFAULT_TARGET"]
+        assert sym.str_value == "2"  # set default value has lower precedence than user-set value
+        _restore_default(sym.nodes[0])
+        assert sym.str_value == "4", (
+            "After restoring target symbol's value, indirectly set default value should be used, but it is not."
+        )
+
+        menuconfig(kconfig, headless=True)

@@ -1,0 +1,151 @@
+mainmenu "Test complex indirect set"
+
+    comment "### Test set option ####"
+    comment "A should be 1"
+
+    config A
+        int "A"
+        default 0
+
+    config B
+        bool "B"
+        default y
+        set A=1 if C
+        set A=2
+
+    config C
+        bool "C"
+        default y
+
+    comment "D should be E"
+
+        config D
+            string "D"
+            default "D"
+
+        config E
+            bool "E"
+            default y
+            set D="E"
+
+        config F # F's set will be second in line -> not used
+            bool "F"
+            default y
+            set D="F"
+
+    comment "G should have the same value as D"
+
+        config G
+            string "G"
+            default "G"
+
+        config H
+            bool "H"
+            default y
+            set G=D
+
+    comment "I should be 0x42"
+
+        config I
+            hex "I"
+            default 0x00
+
+        config J
+            bool "J"
+            default y
+            set I=0x42 if G="E"
+
+        config K
+            bool "K"
+            default y
+            set I=0x43 if G="F" || G="G"
+            set I=0x44
+
+
+    comment "### Test set default option ###"
+
+    comment "L should be 1"
+
+    config L
+        int "L"
+        default 0
+
+    config M
+        bool "B"
+        default y
+        set default L=1 if N
+        set default L=2
+
+    config N
+        bool "N"
+        default y
+
+    comment "O should be P"
+
+        config O
+            string "O"
+            default "O"
+
+        config P
+            bool "P"
+            default y
+            set default O="P"
+
+        config Q # Q's set default will be second in line -> not used
+            bool "Q"
+            default y
+            set default O="Q"
+
+    comment "R should have the same value as O"
+
+        config R
+            string "R"
+            default "R"
+
+        config S
+            bool "S"
+            default y
+            set default R=O
+
+    comment "T should be 0x42"
+
+        config T
+            hex "T"
+            default 0x00
+
+        config U
+            bool "U"
+            default y
+            set default T=0x42 if R="P"
+
+        config V
+            bool "V"
+            default y
+            set default T=0x43 if R="Q" || R="R"
+            set default T=0x44
+
+    comment "### Test set and set default options simultaneously ###"
+
+        comment "W should be X"
+
+        config W
+            string "W"
+            default "W"
+
+        config X # set default is first, but has lower precedence
+            bool "X"
+            default y
+            set default W="Y"
+            set W="X"
+
+        comment "Y should be 0x43"
+        config Y
+           hex "Y"
+           default 0x00
+
+        config Z # same case as with W, but with hex value and conditions
+            bool "Z"
+            default y
+            set default Y=0x42 if W="Y"
+            set Y=0x43 if W="X" || W="W"
+            set default Y=0x44

@@ -1,0 +1,40 @@
+#
+# Automatically generated file. DO NOT EDIT.
+# Espressif IoT Development Framework (ESP-IDF)  Project Configuration
+#
+
+#
+# Test indirect set for non bools (set option)
+#
+# default:
+CONFIG_A=y
+# default:
+CONFIG_B=42
+# default:
+CONFIG_D=0
+# default:
+CONFIG_F=0
+# default:
+CONFIG_G=y
+# default:
+CONFIG_G_SELECTOR=y
+# default:
+CONFIG_H=45
+
+#
+# Test indirect set for non bools (set default)
+#
+# default:
+CONFIG_I=y
+# default:
+CONFIG_J=42
+# default:
+CONFIG_L=0
+# default:
+CONFIG_N=0
+# default:
+CONFIG_O=y
+# default:
+CONFIG_O_SELECTOR=y
+# default:
+CONFIG_P=45

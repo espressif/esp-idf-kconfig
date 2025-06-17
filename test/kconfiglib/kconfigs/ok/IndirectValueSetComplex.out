@@ -1,0 +1,108 @@
+#
+# Automatically generated file. DO NOT EDIT.
+# Espressif IoT Development Framework (ESP-IDF)  Project Configuration
+#
+
+#
+# ### Test set option ####
+#
+
+#
+# A should be 1
+#
+# default:
+CONFIG_A=1
+# default:
+CONFIG_B=y
+# default:
+CONFIG_C=y
+
+#
+# D should be E
+#
+# default:
+CONFIG_D="E"
+# default:
+CONFIG_E=y
+# default:
+CONFIG_F=y
+
+#
+# G should have the same value as D
+#
+# default:
+CONFIG_G="E"
+# default:
+CONFIG_H=y
+
+#
+# I should be 0x42
+#
+# default:
+CONFIG_I=0x42
+# default:
+CONFIG_J=y
+# default:
+CONFIG_K=y
+
+#
+# ### Test set default option ###
+#
+
+#
+# L should be 1
+#
+# default:
+CONFIG_L=1
+# default:
+CONFIG_M=y
+# default:
+CONFIG_N=y
+
+#
+# O should be P
+#
+# default:
+CONFIG_O="P"
+# default:
+CONFIG_P=y
+# default:
+CONFIG_Q=y
+
+#
+# R should have the same value as O
+#
+# default:
+CONFIG_R="P"
+# default:
+CONFIG_S=y
+
+#
+# T should be 0x42
+#
+# default:
+CONFIG_T=0x42
+# default:
+CONFIG_U=y
+# default:
+CONFIG_V=y
+
+#
+# ### Test set and set default options simultaneously ###
+#
+
+#
+# W should be X
+#
+# default:
+CONFIG_W="X"
+# default:
+CONFIG_X=y
+
+#
+# Y should be 0x43
+#
+# default:
+CONFIG_Y=0x43
+# default:
+CONFIG_Z=y

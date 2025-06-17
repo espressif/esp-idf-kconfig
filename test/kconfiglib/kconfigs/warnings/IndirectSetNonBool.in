@@ -1,0 +1,21 @@
+mainmenu "Indirectly set values in non-bool configs"
+
+    config NONBOOL
+        int "Non-bool config"
+        default 0
+        set A=1
+        set default A=42
+        select B
+        imply C
+
+    config A
+        int "A"
+        default 0
+
+    config B
+        bool "B"
+        default n
+
+    config C
+        bool "C"
+        default n

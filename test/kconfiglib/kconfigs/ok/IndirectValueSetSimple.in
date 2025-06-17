@@ -1,0 +1,84 @@
+mainmenu "Test simple indirect set"
+
+    comment "Test indirect set for non bools (set option)"
+
+    config A
+        bool
+        default y
+        set B=42
+
+    config B # Should be 42, A is y
+        int "b"
+        default 0
+
+    config C # Won't be in the output sdkconfig as it has no prompt and is n
+        bool
+        default n
+        set D=43
+
+    config D # Should be 0, C is n
+        int "d"
+        default 0
+
+    config E # Won't be in the output sdkconfig as it has no prompt and is n
+        bool
+        set F=44
+
+    config F # Should be 0, E is implicitly n
+        int "f"
+        default 0
+
+    config G
+        bool
+        set H=45
+
+    config G_SELECTOR
+        bool
+        default y
+        select G
+
+    config H # Should be 45, G is selected, thus y
+        int "h"
+        default 0
+
+
+    comment "Test indirect set for non bools (set default)"
+
+    config I
+        bool
+        default y
+        set default J=42
+
+    config J # Should be 42, I is y
+        int "j"
+        default 0
+
+    config K # Won't be in the output sdkconfig as it has no prompt and is n
+        bool
+        default n
+        set default L=43
+
+    config L # Should be 0, K is n
+        int "l"
+        default 0
+
+    config M # Won't be in the output sdkconfig as it has no prompt and is n
+        bool
+        set default F=44
+
+    config N # Should be 0, M is implicitly n
+        int "n"
+        default 0
+
+    config O
+        bool
+        set default P=45
+
+    config O_SELECTOR
+        bool
+        default y
+        select O
+
+    config P # Should be 45, O is selected, thus y
+        int "p"
+        default 0

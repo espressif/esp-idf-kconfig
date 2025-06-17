@@ -933,7 +933,7 @@ def _menuconfig(stdscr):
             if not _change_node(sel_node):
                 _enter_menu(sel_node)
 
-        elif c in (curses.KEY_RIGHT, "\n", "l", "L"):
+        elif c in (curses.KEY_RIGHT, "\n", "l", "L"):  # Enter/Right arrow, l/L
             # Enter the node if possible
             sel_node = _shown[_sel_node_i]
             if not _enter_menu(sel_node):
@@ -1735,7 +1735,12 @@ def _changeable(node):
     if not (node.prompt and expr_value(node.prompt[1])):
         return False
 
-    return sc.orig_type in (STRING, INT, HEX) or len(sc.assignable) > 1 or _is_y_mode_choice_sym(sc)
+    # Active indirectly set value (via "set" option) prevent symbols from being changed.
+    if sc.orig_type in (STRING, INT, HEX):
+        return not sc._has_active_indirect_set
+
+    # Bool symbols case
+    return len(sc.assignable) > 1 or _is_y_mode_choice_sym(sc)
 
 
 def _set_sel_node_bool_val(bool_val):
@@ -2653,6 +2658,7 @@ def _info_str(node):
             + _direct_dep_info(sym)
             + _defaults_info(sym)
             + _select_imply_info(sym)
+            + _set_info(sym)
             + _kconfig_def_info(sym)
         )
 
@@ -2828,12 +2834,10 @@ def _select_imply_info(sym):
 
     if sym.rev_dep is not _kconf.n:
         s += sis(sym.rev_dep, 2, "Symbols currently y-selecting this symbol:\n")
-        s += sis(sym.rev_dep, 1, "Symbols currently m-selecting this symbol:\n")
         s += sis(sym.rev_dep, 0, "Symbols currently n-selecting this symbol (no effect):\n")
 
     if sym.weak_rev_dep is not _kconf.n:
         s += sis(sym.weak_rev_dep, 2, "Symbols currently y-implying this symbol:\n")
-        s += sis(sym.weak_rev_dep, 1, "Symbols currently m-implying this symbol:\n")
         s += sis(
             sym.weak_rev_dep,
             0,
@@ -2841,6 +2845,48 @@ def _select_imply_info(sym):
         )
 
     return s
+
+
+def _set_info(sym):
+    def cond_str(cond):
+        # Returns a string with the condition of a 'set' symbol, or an empty
+        # string if the condition is _kconf.y (always y condition)
+        return f"if {_expr_str(cond)}" if cond is not _kconf.y else ""
+
+    s: str = ""
+    active_indirects = []
+    inactive_indirects = []
+    active_weak_indirects = []
+    inactive_weak_indirects = []
+    for val, cond, src in sym.rev_values:
+        if expr_value(cond):
+            active_indirects.append(f"- {val.name} {cond_str(cond)} (by symbol {src.name})\n")
+        else:
+            inactive_indirects.append(f"- {val.name} {cond_str(cond)} (by symbol {src.name})\n")
+
+    for val, cond, src in sym.weak_rev_values:
+        if expr_value(cond):
+            active_weak_indirects.append(f"- {val.name} {cond_str(cond)} (by symbol {src.name})\n")
+        else:
+            inactive_weak_indirects.append(f"- {val.name} {cond_str(cond)} (by symbol {src.name})\n")
+
+    if active_indirects:
+        s += "Active indirectly set values for this symbol (via 'set' option):\n"
+        s += "".join(active_indirects)
+
+    if inactive_indirects:
+        s += "Inactive indirectly set values for this symbol (via 'set' option):\n"
+        s += "".join(inactive_indirects)
+
+    if active_weak_indirects:
+        s += "Active indirectly weak set values for this symbol (via 'set default' option):\n"
+        s += "".join(active_weak_indirects)
+
+    if inactive_weak_indirects:
+        s += "Inactive indirectly weak set values for this symbol (via 'set default' option):\n"
+        s += "".join(inactive_weak_indirects)
+
+    return s + "\n" if s else ""
 
 
 def _kconfig_def_info(item):
@@ -3066,6 +3112,11 @@ def _node_str(node):
             # .config), but skip for for symbols of UNKNOWN type (which generate a warning though)
             if sym.has_default_value():
                 s += " (default value)"
+
+            for _, cond, source in sym.rev_values:
+                if expr_value(cond):
+                    s += f" (force-set by {source.name})"
+                    break
 
     if isinstance(node.item, Choice) and node.item.bool_value == 2:
         # Print the prompt of the selected symbol after the choice for
