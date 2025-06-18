@@ -1,4 +1,4 @@
-# KConfig Tests
+# Kconfig Tests
 
 ## kconfserver.py tests
 
@@ -14,7 +14,7 @@ If a weird error message comes up from the test, check the log file (`tests.log`
 
 Note: kconfserver.py prints its error messages on stderr, to avoid overlap with JSON content on stdout. However pexpect uses a pty (virtual terminal) which can't distinguish stderr and stdout.
 
-Test cases apply to `KConfig` config schema. Cases are listed in `testcases.txt` and are each of this form:
+Test cases apply to `Kconfig` config schema. Cases are listed in `testcases.txt` and are each of this form:
 
 ```
 * Set TEST_BOOL, showing child items

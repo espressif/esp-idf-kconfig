@@ -654,7 +654,7 @@ def main():
         action="append",
     )
 
-    parser.add_argument("--kconfig", help="KConfig file with config item definitions", required=True)
+    parser.add_argument("--kconfig", help="Kconfig file with config item definitions", required=True)
 
     parser.add_argument(
         "--sdkconfig-rename",
