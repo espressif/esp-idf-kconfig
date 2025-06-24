@@ -738,7 +738,17 @@ def main():
     # TODO Once ESP-IDF will fully support kconfig report, we should switch to "quiet" as default
     #      to avoid printing the report several times during the build.
     print_report = os.environ.get("KCONFIG_REPORT_VERBOSITY", "default") != "quiet"
-    config = kconfiglib.Kconfig(args.kconfig, parser_version=parser_version, print_report=print_report)
+    config = kconfiglib.Kconfig(
+        args.kconfig,
+        parser_version=parser_version,
+        print_report=(
+            print_report
+            and not (
+                args.config and os.path.exists(args.config)
+            )  # if sdkconfig file exists, we'll report after it is loaded
+            and len(args.defaults) == 0  # if defaults are loaded, report will be printed after that
+        ),
+    )
     config.warn_assign_redun = False
     config.warn_assign_override = False
 
@@ -785,6 +795,9 @@ def main():
                     os.remove(temp_file2)
                 except OSError:
                     pass
+        if print_report and not (args.config and os.path.exists(args.config)):
+            # if no sdkconfig file exists, print the report now
+            config.report.print_report()
 
     # If previous sdkconfig file exists, load it
     if args.config and os.path.exists(args.config):
@@ -793,7 +806,7 @@ def main():
             temp_file = f.name
         try:
             deprecated_options.replace(sdkconfig_in=args.config, sdkconfig_out=temp_file)
-            config.load_config(temp_file, replace=False)
+            config.load_config(temp_file, replace=False, print_report=print_report)
             update_if_changed(temp_file, args.config)
         finally:
             try:

@@ -1,0 +1,6 @@
+# default:
+# CONFIG_DEPENDEE is not set
+# default:
+CONFIG_DEP=1
+# default:
+CONFIG_PROMPTLESS_N=y

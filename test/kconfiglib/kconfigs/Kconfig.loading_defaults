@@ -1,0 +1,18 @@
+mainmenu "Test kconfig"
+
+  config DEPENDEE
+         bool "Dependee"
+         default y
+
+    config DEP
+        int "Int dependency"
+        default 0 if !DEPENDEE
+        default 1 if DEPENDEE
+
+    config PROMPTLESS_Y
+        bool
+        default y
+
+    config PROMPTLESS_N
+        bool
+        default n
