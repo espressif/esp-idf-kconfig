@@ -10,8 +10,8 @@ from typing import Optional
 
 import pytest
 
-from kconfiglib import POLICY_USE_KCONFIG
-from kconfiglib import POLICY_USE_SDKCONFIG
+from esp_kconfiglib import POLICY_USE_KCONFIG
+from esp_kconfiglib import POLICY_USE_SDKCONFIG
 
 KCONFIG_PARSER_VERSIONS = ["1", "2"]
 

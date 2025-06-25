@@ -30,9 +30,9 @@ from pyparsing import one_of
 from pyparsing import opAssoc
 
 if TYPE_CHECKING:
-    from kconfiglib.kconfig_parser import Parser
+    from esp_kconfiglib.kconfig_parser import Parser
 
-from kconfiglib.report import PRAGMA_PREFIX
+from esp_kconfiglib.report import PRAGMA_PREFIX
 
 
 class KconfigBlock(Token):

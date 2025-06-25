@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from kconfiglib import Kconfig
+from esp_kconfiglib import Kconfig
 
 TEST_FILES_PATH = os.path.abspath(os.path.dirname(__file__))
 TESTS_PATH_OK = os.path.join(TEST_FILES_PATH, "kconfigs", "ok")

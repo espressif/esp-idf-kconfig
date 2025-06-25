@@ -17,7 +17,7 @@ from pyparsing import ParseResults
 from pyparsing import line as pyparsing_line
 from pyparsing import lineno
 
-from kconfiglib.kconfig_grammar import KconfigGrammar
+from esp_kconfiglib.kconfig_grammar import KconfigGrammar
 
 from .core import AND
 from .core import BOOL

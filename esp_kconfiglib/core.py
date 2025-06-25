@@ -24,11 +24,11 @@ from typing import Set
 from typing import Tuple
 from typing import Union
 
-from kconfiglib.report import PRAGMA_PREFIX
-from kconfiglib.report import STATUS_ERROR as REPORT_STATUS_ERROR
-from kconfiglib.report import DefaultValuesArea
-from kconfiglib.report import KconfigReport
-from kconfiglib.report import MultipleDefinitionArea
+from esp_kconfiglib.report import PRAGMA_PREFIX
+from esp_kconfiglib.report import STATUS_ERROR as REPORT_STATUS_ERROR
+from esp_kconfiglib.report import DefaultValuesArea
+from esp_kconfiglib.report import KconfigReport
+from esp_kconfiglib.report import MultipleDefinitionArea
 
 ANSI_BOLD = "\033[1m"
 ANSI_END = "\033[0m"
@@ -2678,7 +2678,7 @@ class Kconfig(object):
         returns node that was parsed as a last one in this function.
                 probably will be deprecated as the call logic is different from the original.
         """
-        from kconfiglib.kconfig_parser import Parser
+        from esp_kconfiglib.kconfig_parser import Parser
 
         parser = Parser(kconfig=self)
 

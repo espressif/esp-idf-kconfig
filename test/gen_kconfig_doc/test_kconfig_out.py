@@ -10,7 +10,7 @@ from typing import Optional
 
 import pytest
 
-import kconfiglib.core as kconfiglib
+import esp_kconfiglib.core as kconfiglib
 from esp_idf_kconfig import gen_kconfig_doc
 
 

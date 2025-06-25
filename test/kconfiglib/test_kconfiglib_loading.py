@@ -4,7 +4,7 @@ import os
 
 import pytest
 
-from kconfiglib import Kconfig
+from esp_kconfiglib import Kconfig
 
 TEST_FILES_PATH = os.path.abspath(os.path.dirname(__file__))
 KCONFIG_PATH = os.path.join(TEST_FILES_PATH, "kconfigs")

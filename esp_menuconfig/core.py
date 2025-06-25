@@ -194,28 +194,28 @@ import textwrap
 from typing import TYPE_CHECKING
 from typing import Union
 
-from kconfiglib.core import AND
-from kconfiglib.core import BOOL
-from kconfiglib.core import BOOL_TO_STR
-from kconfiglib.core import COMMENT
-from kconfiglib.core import HEX
-from kconfiglib.core import INT
-from kconfiglib.core import MENU
-from kconfiglib.core import OR
-from kconfiglib.core import STRING
-from kconfiglib.core import TYPE_TO_STR
-from kconfiglib.core import Choice
-from kconfiglib.core import MenuNode
-from kconfiglib.core import Symbol
-from kconfiglib.core import expr_str
-from kconfiglib.core import expr_value
-from kconfiglib.core import split_expr
-from kconfiglib.core import standard_config_filename
-from kconfiglib.core import standard_kconfig
-from kconfiglib.core import standard_sc_expr_str
+from esp_kconfiglib.core import AND
+from esp_kconfiglib.core import BOOL
+from esp_kconfiglib.core import BOOL_TO_STR
+from esp_kconfiglib.core import COMMENT
+from esp_kconfiglib.core import HEX
+from esp_kconfiglib.core import INT
+from esp_kconfiglib.core import MENU
+from esp_kconfiglib.core import OR
+from esp_kconfiglib.core import STRING
+from esp_kconfiglib.core import TYPE_TO_STR
+from esp_kconfiglib.core import Choice
+from esp_kconfiglib.core import MenuNode
+from esp_kconfiglib.core import Symbol
+from esp_kconfiglib.core import expr_str
+from esp_kconfiglib.core import expr_value
+from esp_kconfiglib.core import split_expr
+from esp_kconfiglib.core import standard_config_filename
+from esp_kconfiglib.core import standard_kconfig
+from esp_kconfiglib.core import standard_sc_expr_str
 
 if TYPE_CHECKING:
-    from kconfiglib import Kconfig
+    from esp_kconfiglib import Kconfig
 
 _IS_WINDOWS = os.name == "nt"  # Are we running on Windows?
 
