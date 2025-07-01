@@ -35,6 +35,7 @@ dependencies = [
     # older versions does not support Python 3.13: https://github.com/zephyrproject-rtos/windows-curses/issues/69
     "windows-curses>=2.4.1; sys_platform == 'win32' and python_version >= '3.13'",
     "rich",
+    "pyparsing",
 ]
 [project.urls]
 Homepage = "https://github.com/espressif/esp-idf-kconfig"
@@ -44,7 +45,6 @@ dev = [
     "commitizen",
     "pre-commit",
     "pexpect",
-    "pyparsing",
     "pytest",
 ]
 docs = [
