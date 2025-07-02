@@ -1,0 +1,8 @@
+# default:
+CONFIG_NONBOOL=0
+# default:
+CONFIG_A=0
+# default:
+# CONFIG_B is not set
+# default:
+# CONFIG_C is not set

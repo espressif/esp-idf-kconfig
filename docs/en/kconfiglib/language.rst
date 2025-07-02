@@ -491,55 +491,126 @@ Example:
         depends on WARP_DRIVE && ENABLE_WARP
         default 8
 
+.. _select-option:
+.. _imply-option:
+.. _select-imply-options:
+
 The ``select`` and ``imply`` Options
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Previous option ``depends on`` is used to define a direct dependency of the current option on another option. The ``select`` and ``imply`` options are used to define a so-called reverse dependency. Given that the value "y" is defined as bigger than "n", direct dependency can be seen as defining an upper limit of the value of dependent symbol:
+The ``select`` and ``imply`` options are used to define a so-called reverse dependency between ``bool`` configs. Let's suppose you have two ``bool``-type configs, ``SOURCE`` and ``TARGET``. You want to set a value for ``TARGET`` based on the value of ``SOURCE``. Reverse dependency means that the relation between ``SOURCE`` and ``TARGET`` is defined in the ``SOURCE`` config definition. This is in contrast to the direct dependency, which is defined in the ``TARGET`` config definition (for details, please visit :ref:`depends on option <depends-on-option>`).
 
-.. code-block:: kconfig
+If you want to define reverse dependency, you can use the ``select`` or ``imply`` options in the ``SOURCE`` definition. The difference between ``select`` and ``imply`` options is that ``select`` ignores the direct dependencies of the target symbol, while ``imply`` does not ignore them.
 
-    config SUBLIGHT_DRIVE
-        bool "Sublight drive"
-        default y
+.. note::
 
-    config LEFT_MOTOR
-        bool "Left motor"
-        # if SUBLIGHT_DRIVE is disabled (equals n), LEFT_MOTOR is also disabled (equals n)
-        # if SUBLIGHT_DRIVE is enabled (equals y), LEFT_MOTOR can be enabled or disabled (both y and n are allowed)
-        depends on SUBLIGHT_DRIVE
+    Both ``select`` and ``imply`` options are only applicable to ``bool`` type (menu)configs. In other words, you cannot use them to set a value for a non-``bool`` dependent (target) symbol. If you want to set reverse dependency for non-``bool`` target symbol, use the :ref:`set and set default options <set-set-default-options>`.
 
-On the other hand, reverse dependency can be seen as defining a lower limit of the value of dependent symbol:
+    Generally, the source symbol must always be of type ``bool``. However, this limitation can be worked around by introducing so-called "mapping symbol" (see :ref:`reverse_dependencies_by_non_bool_source`).
 
-.. code-block:: kconfig
-
-    config SUBLIGHT_DRIVE
-        bool "Right motor"
-        # if SUBLIGHT_DRIVE is enabled (equals y), RIGHT_MOTOR is also enabled (equals y) and cannot be n (n is "below lower limit") - no matter what its direct dependencies say!
-        # if SUBLIGHT_DRIVE is disabled (equals n), RIGHT_MOTOR can be enabled or disabled (both y and n are allowed)
-        select RIGHT_MOTOR
-        # same here; except if SUBLIGHT_DRIVE is enabled (equals y), LEFT is also enabled (equals y), but can be disabled (equals n) by its direct dependencies!
-        imply LEFT_MOTOR
-
-As seen in the example, the difference between ``select`` and ``imply`` is that ``select`` ignores the direct dependencies of the dependent symbol, while ``imply`` does not.
-
-These two options always select/imply only one other ``(menu)config`` (however, they can be used multiple times) and can be defined conditionally with the ``if`` keyword and a boolean expression.
+Both options always select/imply only one other ``(menu)config`` (however, they can be used multiple times) and can be defined conditionally with the ``if`` keyword and a boolean expression.
 
 These options can be used in the following entries (optionally, multiple times):
 
 - ``config``: only for ``bool`` type
-- ``menuconfig``: only ``bool`` type
-- ``choice``
+- ``menuconfig``: only for ``bool`` type
 
 .. code-block:: bnf
 
     select ::= "select" + symbol [+ "if" + expression]
     imply ::= "imply" + symbol [+ "if" + expression]
 
+Where ``symbol`` is a non-quoted capitalized string consisting of letters from the English alphabet, numbers, and underscores. The ``if`` keyword and the boolean expression are optional.
+
 .. note::
 
     Reverse dependencies are often needed; but use them with caution. They can lead to unexpected behavior and make the configuration harder to understand.
 
-Examples can be seen above.
+Example for ``select`` and ``imply``:
+
+.. code-block:: kconfig
+
+    comment "Reverse dependency example"
+
+    config LEFT_MOTOR
+        bool "Target symbol for imply"
+
+    config RIGHT_MOTOR
+        bool "Target symbol for source"
+
+    config SUBLIGHT_DRIVE
+        bool "Source symbol"
+        # if SUBLIGHT_DRIVE is enabled (equals y), RIGHT_MOTOR is also enabled (equals y) and cannot be set to n - no matter what its direct dependencies say!
+        # if SUBLIGHT_DRIVE is disabled (equals n), RIGHT_MOTOR can be enabled or disabled (both y and n are allowed)
+        select RIGHT_MOTOR
+        # if SUBLIGHT_DRIVE is enabled (equals y), LEFT_MOTOR is also enabled (equals y), but can be disabled (equals n) by its direct dependencies!
+        # if SUBLIGHT_DRIVE is disabled (equals n), LEFT_MOTOR can be enabled or disabled (both y and n are allowed)
+        imply LEFT_MOTOR
+
+.. _set-option:
+.. _set-default-option:
+.. _set-set-default-options:
+
+The ``set`` and ``set default`` Options
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+The ``set`` and ``set default`` options allow you to define reverse dependency between a ``bool``-type source symbol and non-``bool`` (``int``, ``string``, ``hex``) target symbol. Let's suppose you have a ``bool``-type symbol ``SOURCE`` and non-``bool`` symbol ``TARGET``. You want to set a value for ``TARGET`` based on the value of ``SOURCE``. Reverse dependency means that the relation between ``SOURCE`` and ``TARGET`` is defined in the ``SOURCE`` config definition.
+
+The ``set`` option ignores direct dependencies and defaults of the target symbol, the ``set default`` option does not.
+
+Although ``TARGET`` symbol can be of ``int``, ``string``, or ``hex`` type, the ``SOURCE`` symbol must be of type ``bool``.
+
+.. note::
+
+    As mentioned above, source symbols can only be of a ``bool``-type. However, this limitation can be worked around by introducing so-called "mapping symbol" (see :ref:`reverse_dependencies_by_non_bool_source`).
+
+This option can be used in the following entries (optionally, multiple times):
+
+- ``config``: only for ``bool``-type source symbols
+- ``menuconfig``: only for ``bool``-type source symbols
+
+Formal syntax is as follows:
+
+.. code-block:: bnf
+
+    set ::= "set" + assignment [+ "if" + expression ]
+    set_default ::= "set default" + assignment [+ "if" + expression ]
+
+    assignment ::= symbol + "=" +  ( value | symbol )
+
+Where ``symbol`` is a non-quoted capitalized string consisting of letters from the English alphabet, numbers, and underscores, ``value`` is a quoted string, integer or hexadecimal number. The ``if`` keyword and the boolean expression are optional.
+
+Example for ``set`` and ``set default``:
+
+.. code-block:: kconfig
+
+    config SHIP_NAME
+        string "Ship name"
+        default "USS Generic"
+
+    config NUMBER_OF_MOTORS
+        int "Number of motors"
+        default 1
+        depends on SUBLIGHT_DRIVE
+
+    config ENTERPRISE_DEFAULT_VALUES
+        bool "Provide Enterprise default values"
+        default n
+        # If ENTERPRISE_DEFAULT_VALUES is enabled, Enterprise-specific default values
+        # are set for SHIP_NAME and NUMBER_OF_MOTORS.
+        # However, user can still change them.
+        set default SHIP_NAME="USS Enterprise"
+        set default NUMBER_OF_MOTORS=6
+
+    config ENTERPRISE_NCC1701_VALUES
+        bool "Provide values for specific USS Enterprise NCC-1701"
+        default n
+        # If ENTERPRISE_NCC1701_VALUES is enabled, values for specific USS Enterprise NCC-1701
+        # are set for SHIP_NAME and NUMBER_OF_MOTORS. These values would also override values
+        # set by ``set default`` (e.g. by ``ENTERPRISE_DEFAULT_VALUES``).
+        # These cannot be changed by the user.
+        set SHIP_NAME="USS Enterprise NCC-1701"
+        set NUMBER_OF_MOTORS=2
 
 The ``default`` Option
 ^^^^^^^^^^^^^^^^^^^^^^

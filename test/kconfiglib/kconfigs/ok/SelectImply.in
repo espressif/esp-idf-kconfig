@@ -1,0 +1,43 @@
+mainmenu "Test simple indirect set"
+
+
+    comment "Test indirect set for bools - select"
+
+    config I
+        bool
+        default y
+        select J
+
+    config J # Should be y, I is y
+        bool "j"
+
+    config K
+        bool
+        default y
+        select L
+
+    config L # Should be y, K is y, no matter the depends on
+        bool "l"
+        depends on NOT_DEFINED
+
+
+    comment "Test indirect set for bools - imply"
+
+    config M
+        bool
+        default y
+        imply N
+
+    config N # Should be y, M is y
+        bool "n"
+        default n
+
+    config O
+        bool
+        default y
+        imply P
+
+    config P # Shouldn't be in the output sdkconfig; depends on is n/false
+        bool "p"
+        default y
+        depends on NOT_DEFINED

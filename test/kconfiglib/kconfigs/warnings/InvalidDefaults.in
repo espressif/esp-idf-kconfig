@@ -1,0 +1,64 @@
+mainmenu "Invalid default values"
+
+comment "There is no invalid value for string type -> it is omitted here"
+# Valid configs for reference
+
+config INT_CONFIG
+    int "Int config"
+    default 1
+
+config BOOL_CONFIG
+    bool "Bool config"
+    default y
+
+config HEX_CONFIG
+    hex "Hex config"
+    default 0x42
+
+
+# Invalid direct defaults
+
+# Kconfig quirk: although string is not a valid int (and it is recognized as invalid),
+# value will be set nevertheless
+config INVALID_INT_CONFIG
+    int "Invalid Int config"
+    default "string"
+
+config INVALID_BOOL_CONFIG
+    bool "Invalid Bool config"
+    default 0x42
+
+# Kconfig quirk: although y is not a valid hex (and it is recognized as invalid),
+# value will be set nevertheless
+config INVALID_HEX_CONFIG
+    hex "Invalid Hex config"
+    default y
+
+config INT_OUTSIDE_RANGE_CONFIG
+    int "Outside range config"
+    default 1000
+    range 0 999
+
+config HEX_OUTSIDE_RANGE_CONFIG
+    hex "Hex outside range config"
+    default 0x100
+    range 0x0 0xFF
+
+
+# Invalid indirect defaults
+
+config SOURCE
+    bool "Source config"
+    default y
+    set INT_CONFIG="string"
+    set BOOL_CONFIG=0x42
+    set HEX_CONFIG="y"
+
+# Invalid weak indirect defaults
+
+config WEAK_SOURCE
+    bool "Weak source config"
+    default y
+    set INT_CONFIG="weak"
+    set BOOL_CONFIG=0x43
+    set HEX_CONFIG=220

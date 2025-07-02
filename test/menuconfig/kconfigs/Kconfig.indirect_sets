@@ -1,0 +1,19 @@
+mainmenu "Test set and set default options"
+
+    config SET_SOURCE
+        bool "Set option source"
+        default y
+        set SET_TARGET=4
+
+    config SET_TARGET
+        int "Set option target"
+        default 0
+
+    config SET_DEFAULT_SOURCE
+        bool "Set default option source"
+        default y
+        set default SET_DEFAULT_TARGET=4
+
+    config SET_DEFAULT_TARGET
+        int "Set default option target"
+        default 0

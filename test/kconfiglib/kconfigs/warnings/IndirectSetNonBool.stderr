@@ -1,0 +1,5 @@
+warning: NONBOOL of type int
+has 'select' option, which is only supported for boolean symbols. Option ignored.
+has 'imply' option, which is only supported for boolean symbols. Option ignored.
+has 'set' option, which is only supported for boolean symbols. Option ignored.
+has 'set default' option, which is only supported for boolean symbols. Option ignored.

@@ -212,6 +212,8 @@ class KconfigOptionBlock(KconfigBlock):
             "imply": [],
             "option": [],
             "visible_if": [],
+            "set": [],
+            "weak_set": [],
             "help": None,
         }
 
@@ -393,6 +395,40 @@ class KconfigOptionBlock(KconfigBlock):
                     expr = expression.parse_string(" ".join(tokens[2:]), parse_all=True).as_list()
                     option_dict["visible_if"].append(expr)
                     current_loc += len(line) + 1  # +1 for \n
+
+            elif tokens[0] == "set":  # set [default] <config>=<value> [if <condition>]
+                if tokens[1] == "default":
+                    output_list = option_dict["weak_set"]
+                    assignment_idx = 2
+                else:
+                    output_list = option_dict["set"]
+                    assignment_idx = 1
+
+                if_idx = tokens.index("if") if "if" in tokens else -1
+                assignment = expression.parse_string(
+                    " ".join(tokens[assignment_idx:if_idx] if if_idx != -1 else tokens[assignment_idx:]), parse_all=True
+                ).as_list()[0]  # parse_string returns [[<target>, "=", <value>]]
+                if (
+                    len(assignment) != 3  # 3 = len([<target>, "=", <value>])
+                    or assignment[1] != "="
+                ):
+                    raise ParseException(
+                        instring,
+                        current_loc,
+                        (
+                            'Error parsing option block: "set" option syntax is '
+                            '"set [default] <config>=<value> [if <condition>]".'
+                        ),
+                        self,
+                    )
+                if if_idx == -1:
+                    cond = None
+                else:
+                    cond = expression.parse_string(" ".join(tokens[if_idx + 1 :]), parse_all=True).as_list()[0]
+
+                #                  (target,        value,         condition)
+                output_list.append((assignment[0], assignment[2], cond))
+                current_loc += len(line) + 1  # +1 for \n
 
             elif tokens[0] == "option":
                 if not tokens[1].startswith("env="):

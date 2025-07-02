@@ -33,6 +33,7 @@ from .core import MENU
 from .core import NOT
 from .core import OR
 from .core import STRING
+from .core import TYPE_TO_STR
 from .core import UNEQUAL
 from .core import Choice
 from .core import Kconfig
@@ -358,6 +359,9 @@ class Parser:
         #####################
         # _parse_props() functionality
         #####################
+        if node.item.__class__ not in (Symbol, Choice):
+            raise RuntimeError("Attempted to parse options for MenuNode item which is neither Symbol nor Choice.")
+
         config_options = parsed_config.config_opts
         if not config_options:  # choice can have no options
             return
@@ -394,25 +398,45 @@ class Parser:
                 expr = self.parse_expression(depend)
                 node.dep = self.kconfig._make_and(node.dep, expr)
 
+        # NOTE: mypy does not recognize __class__ is <class> checks, thus many # type: ignore[union-attr]
+        #       rather than to sacrifice speed in favor of mypy.
         # parse select
         if config_options["select"]:
-            for select in config_options["select"]:
-                sym = self.kconfigize_expr(select[0])
-                if len(select) > 1 and select[1]:
-                    expr = self.parse_expression(select[1])
-                    node.selects.append((sym, expr))
-                else:
-                    node.selects.append((sym, self.kconfig.y))
+            if node.item.__class__ is Symbol and node.item.orig_type == BOOL:  # type: ignore[union-attr]
+                for select in config_options["select"]:
+                    target_sym = self.kconfigize_expr(select[0])
+                    if len(select) > 1 and select[1]:
+                        expr = self.parse_expression(select[1])
+                        node.selects.append((target_sym, expr))
+                    else:
+                        node.selects.append((target_sym, self.kconfig.y))
+            else:
+                self.kconfig._warn(
+                    (
+                        f"{node.item.name} of type {TYPE_TO_STR[node.item.orig_type]} "  # type: ignore[union-attr]
+                        f"(defined at {self.file_stack[-1]}:{node.linenr}) "
+                        "has 'select' option, which is only supported for boolean symbols. Option ignored."
+                    )
+                )
 
         # parse imply
         if config_options["imply"]:
-            for imply in config_options["imply"]:
-                sym = self.kconfigize_expr(imply[0])
-                if len(imply) > 1 and imply[1]:
-                    expr = self.infix_to_prefix(imply[1])
-                    node.implies.append((sym, expr))
-                else:
-                    node.implies.append((sym, self.kconfig.y))
+            if node.item.__class__ is Symbol and node.item.orig_type == BOOL:  # type: ignore[union-attr]
+                for imply in config_options["imply"]:
+                    target_sym = self.kconfigize_expr(imply[0])
+                    if len(imply) > 1 and imply[1]:
+                        expr = self.infix_to_prefix(imply[1])
+                        node.implies.append((target_sym, expr))
+                    else:
+                        node.implies.append((target_sym, self.kconfig.y))
+            else:
+                self.kconfig._warn(
+                    (
+                        f"{node.item.name} of type {TYPE_TO_STR[node.item.orig_type]} "  # type: ignore[union-attr]
+                        f"(defined at {self.file_stack[-1]}:{node.linenr}) "
+                        "has 'imply' option, which is only supported for boolean symbols. Option ignored."
+                    )
+                )
 
         # parse prompt
         if config_options["prompt"]:
@@ -429,6 +453,40 @@ class Parser:
                 sym0 = self.kconfigize_expr(range_entry[0])
                 sym1 = self.kconfigize_expr(range_entry[1])
                 node.ranges.append((sym0, sym1, condition))
+
+        # parse set default (weak indirect value setting)
+        if config_options["weak_set"]:
+            if node.item.__class__ is Symbol and node.item.orig_type == BOOL:  # type: ignore[union-attr]
+                for set_entry in config_options["weak_set"]:
+                    target_sym = self.kconfigize_expr(set_entry[0])
+                    val = self.kconfigize_expr(set_entry[1])
+                    cond = self.kconfig.y if set_entry[2] is None else self.parse_expression(set_entry[2])
+                    node.weak_sets.append((target_sym, val, cond))
+            else:
+                self.kconfig._warn(
+                    (
+                        f"{node.item.name} of type {TYPE_TO_STR[node.item.orig_type]} "  # type: ignore[union-attr]
+                        f"(defined at {self.file_stack[-1]}:{node.linenr}) "
+                        "has 'set default' option, which is only supported for boolean symbols. Option ignored."
+                    )
+                )
+
+        # parse set (indirect value setting)
+        if config_options["set"]:
+            if node.item.__class__ is Symbol and node.item.orig_type == BOOL:  # type: ignore[union-attr]
+                for set_entry in config_options["set"]:
+                    target_sym = self.kconfigize_expr(set_entry[0])
+                    val = self.kconfigize_expr(set_entry[1])
+                    cond = self.kconfig.y if set_entry[2] is None else self.parse_expression(set_entry[2])
+                    node.sets.append((target_sym, val, cond))
+            else:
+                self.kconfig._warn(
+                    (
+                        f"{node.item.name} of type {TYPE_TO_STR[node.item.orig_type]} "  # type: ignore[union-attr]
+                        f"(defined at {self.file_stack[-1]}:{node.linenr}) "
+                        "has 'set' option, which is only supported for boolean symbols. Option ignored."
+                    )
+                )
 
         # parse option
         if config_options["option"]:

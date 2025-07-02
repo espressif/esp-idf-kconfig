@@ -3200,8 +3200,9 @@ class Kconfig(object):
 
     def _build_dep(self):
         # Populates the Symbol/Choice._dependents sets, which contain all other
-        # items (symbols and choices) that immediately depend on the item in
-        # the sense that changing the value of the item might affect the value
+        # items (symbols and choices) that immediately depend on the item.
+        #
+        # In other words, changing the value of the symbol sym might affect the value
         # of the dependent items. This is used for caching/invalidation.
         #
         # The calculated sets might be larger than necessary as we don't do any
@@ -3234,6 +3235,14 @@ class Kconfig(object):
                 depend_on(sym, low)
                 depend_on(sym, high)
                 depend_on(sym, cond)
+
+            for _, cond, source in sym.rev_values:
+                depend_on(sym, cond)
+                depend_on(sym, source)
+
+            for _, cond, source in sym.weak_rev_values:
+                depend_on(sym, cond)
+                depend_on(sym, source)
 
             # The direct dependencies. This is usually redundant, as the direct
             # dependencies get propagated to properties, but it's needed to get
@@ -3314,7 +3323,7 @@ class Kconfig(object):
         #   the prompts of symbols and choices.
 
         if node.item.__class__ is Symbol:
-            # Copy defaults, ranges, selects, and implies to the Symbol
+            # Copy defaults, ranges, selects, sets, weak sets, and implies to the Symbol
             self._add_props_to_sym(node)
 
             # Find any items that should go in an implicit menu rooted at the
@@ -3409,6 +3418,16 @@ class Kconfig(object):
                 if cur.implies:
                     cur.implies = [(target, self._make_and(cond, dep)) for target, cond in cur.implies]
 
+                # Propagate dependencies to indirectly set values
+                if cur.sets:
+                    cur.sets = [(target, value, self._make_and(cond, dep)) for target, value, cond in cur.sets]
+
+                # Propagate dependencies to weak indirectly set values
+                if cur.weak_sets:
+                    cur.weak_sets = [
+                        (target, value, self._make_and(cond, dep)) for target, value, cond in cur.weak_sets
+                    ]
+
             elif cur.prompt:  # Not a symbol/choice
                 # Propagate dependencies to the prompt. 'visible if' is only
                 # propagated to symbols/choices.
@@ -3418,7 +3437,7 @@ class Kconfig(object):
 
     def _add_props_to_sym(self, node):
         # Copies properties from the menu node 'node' up to its contained
-        # symbol, and adds (weak) reverse dependencies to selected/implied
+        # symbol, and adds (weak) reverse dependencies + indirectly set values to selected/implied/set/weakly set
         # symbols.
         #
         # This can't be rolled into _propagate_deps(), because that function
@@ -3438,6 +3457,8 @@ class Kconfig(object):
         sym.ranges += node.ranges
         sym.selects += node.selects
         sym.implies += node.implies
+        sym.sets += node.sets
+        sym.weak_sets += node.weak_sets
 
         # Modify the reverse dependencies of the selected symbol
         for target, cond in node.selects:
@@ -3447,6 +3468,14 @@ class Kconfig(object):
         # symbol
         for target, cond in node.implies:
             target.weak_rev_dep = self._make_or(target.weak_rev_dep, self._make_and(sym, cond))
+
+        # Modify indirectly set values of the selected symbol
+        for target, value, cond in node.sets:
+            target.rev_values.append((value, self._make_and(sym, cond), sym))
+
+        # Modify weak indirectly set values of the selected symbol
+        for target, value, cond in node.weak_sets:
+            target.weak_rev_values.append((value, self._make_and(sym, cond), sym))
 
     #
     # Misc.
@@ -3699,10 +3728,10 @@ class Symbol:
         "_cached_str_val",
         "_cached_vis",
         "_dependents",
-        "_old_val",
         "_visited",
         "_was_set",
         "_write_to_conf",
+        "_has_active_indirect_set",
         "choice",
         "defaults",
         "direct_dep",
@@ -3721,6 +3750,10 @@ class Symbol:
         "_user_value",
         "weak_rev_dep",
         "env_var",
+        "sets",
+        "weak_sets",
+        "rev_values",
+        "weak_rev_values",
     )
     name: str
     item: Union["Symbol", "Choice", int]
@@ -3738,6 +3771,9 @@ class Symbol:
     _sdkconfig_value: Optional[str]
     _cached_bool_val: Optional[int]
     choice: Optional["Choice"]
+    rev_values: List[Tuple]  # List of (value, condition, source symbol) tuples for values set by other symbols
+    # List of (value, condition, source symbol) tuples for values set by other symbols via 'set default'
+    weak_rev_values: List[Tuple]
 
     #
     # Public interface
@@ -3799,6 +3835,30 @@ class Symbol:
         self.weak_rev_dep = self.kconfig.n
 
         """
+        rev_values:
+            Like rev_dep, but for non bool values.
+            Contains a list of (value, condition, source symbol) tuples from other
+            symbols indirectly setting this one. If any rev_value is active, symbol is locked and cannot be
+            changed even by the user.
+        """
+        self.rev_values = []
+
+        """
+        wek_rev_values:
+            Like rev_values, but for 'set default' option. These are weakly set, meaning they can still be
+            overwritten by the user.
+        """
+        self.weak_rev_values = []
+
+        """
+        _has_active_indirect_set:
+            Helper flag to indicate whether the symbol has an active indirect set.
+            Used to find if symbol has default value (user-set values are preserved even when indirectly set value
+            active -> we cannot use them as an indicator anymore).
+        """
+        self._has_active_indirect_set = False
+
+        """
         orig_type:
             The type as given in the Kconfig file, without any changes applied. Used
             when printing the symbol.
@@ -3856,6 +3916,23 @@ class Symbol:
             Same as 'selects', but for 'imply' properties.
         """
         self.implies = []
+
+        """
+        sets:
+            List of (symbol, value, cond) tuples for the symbol's 'set' properties.
+
+            NOTE: sets vs rev_values:
+            * "sets" hold info about indirectly set values by this symbol (i.e. this symbol is source).
+            * "rev_values" holds info about values set by other symbols (i.e. this symbol is target).
+        """
+        self.sets = []
+
+        """
+        weak_sets:
+            Same as 'sets', but for 'set default' properties. These are weakly set, meaning they can still be
+            overwritten by the user.
+        """
+        self.weak_sets = []
 
         """
         ranges:
@@ -3957,11 +4034,13 @@ class Symbol:
         This is the symbol value that's used in relational expressions
         (A = B, A != B, etc.)
 
-        Gotcha: For int/hex symbols, the exact format of the value is often
+        NOTE: For int/hex symbols, the exact format of the value is often
         preserved (e.g. when writing a .config file), hence why you can't get it
         directly as an int. Do int(int_sym.str_value) or
         int(hex_sym.str_value, 16) to get the integer value.
         """
+        # If cached value exists, return it
+        # NOTE: if exists, it is valid; during _invalidate(), it is set to None
         if self._cached_str_val is not None:
             return self._cached_str_val
 
@@ -3970,29 +4049,32 @@ class Symbol:
             self._cached_str_val = BOOL_TO_STR[self.bool_value]
             return self._cached_str_val
 
-        # As a quirk of Kconfig, undefined symbols get their name as their
-        # string value. This is why things like "FOO = bar" work for seeing if
+        # Undefined symbols get their name as their string value.
+        # This is why things like "FOO = bar" work for seeing if
         # FOO has the value "bar".
         if not self.orig_type:  # UNKNOWN
             self._cached_str_val = self.name
             return self.name
 
         val = ""
-        # Warning: TODO See Symbol._rec_invalidate(), and note that this is a hidden
+        # Warning: See Symbol._rec_invalidate(), and note that this is a hidden
         # function call (property magic)
         vis = self.visibility
 
         self._write_to_conf = vis != 0
 
         if self.orig_type in _INT_HEX:
-            # The C implementation checks the user value against the range in a
-            # separate code path (post-processing after loading a .config).
-            # Checking all values here instead makes more sense for us. It
-            # requires that we check for a range first.
-
+            # 1) Check ranges and get low/high values if any
+            # Precedence (if step does not apply, got to the next step):
+            #     2) Apply rev_values (force-set) if any
+            #     3) Apply user value if any
+            #     4) Apply weak_rev_values (weakly-set) if any
+            #     5) Apply defaults if any
+            # 6) Clamp the value to the range and and check if it is valid
             base = _TYPE_TO_BASE[self.orig_type]
+            num2str = str if base == 10 else hex
 
-            # Check if a range is in effect
+            # 1) Check ranges and get low/high values if any
             for low_expr, high_expr, cond in self.ranges:
                 if expr_value(cond):
                     has_active_range = True
@@ -4006,14 +4088,33 @@ class Symbol:
             else:
                 has_active_range = False
 
+            # 2) Apply rev_values (force-set) if any
+            for rev_value in self.rev_values:
+                candidate_val, cond, src = rev_value
+                if expr_value(cond):
+                    if _is_base_n(candidate_val.name, base):
+                        val = candidate_val.name
+                        val_num = int(val, base)
+                        self._write_to_conf = True
+                        self._has_active_indirect_set = True
+                    else:
+                        num2str = str if base == 10 else hex
+                        self.kconfig._warn(
+                            f"Indirectly set value {candidate_val.str_value} on {self.name_and_loc} "
+                            f"(by {src.name_and_loc}) is not a valid base {base} number."
+                        )
+                    break
+            else:
+                self._has_active_indirect_set = False
+
             # Defaults are used if the symbol is invisible, lacks a user value,
             # or has an out-of-range user value
-            use_defaults = True
+            use_defaults = not self._has_active_indirect_set
 
-            if vis and self._user_value:
+            # 3) Apply user value if any
+            if vis and self._user_value and not self._has_active_indirect_set:
                 user_val = int(self._user_value, base)
                 if has_active_range and not low <= user_val <= high:
-                    num2str = str if base == 10 else hex
                     self.kconfig._warn(
                         f"user value {num2str(user_val)} on the {TYPE_TO_STR[self.orig_type]} symbol "
                         f"{self.name_and_loc} ignored due to being outside the active range "
@@ -4024,60 +4125,107 @@ class Symbol:
                     # constraints, it is stored in exactly the same form as
                     # specified in the assignment (with or without "0x", etc.)
                     val = self._user_value
+                    val_num = int(val, base)
                     use_defaults = False
 
             if use_defaults:
-                # No user value or invalid user value. Look at defaults.
-
                 # Used to implement the warning below
                 has_default = False
 
-                for sym, cond in self.defaults:
+                # 4) Apply weak_rev_values (weakly-set) if any
+                # Check if indirect value setting is in effect - equivalent to select on BOOl symbol
+                for weak_rev_value in self.weak_rev_values:
+                    src: "Symbol"
+                    candidate_val, cond, src = weak_rev_value
                     if expr_value(cond):
-                        has_default = self._write_to_conf = True
-
-                        val = sym.str_value
-
-                        if _is_base_n(val, base):
+                        if _is_base_n(candidate_val.name, base):
+                            val = candidate_val.name
                             val_num = int(val, base)
+                            self._write_to_conf = True
                         else:
-                            val_num = 0  # strtoll() on empty string
-
-                        break
-                else:
-                    val_num = 0  # strtoll() on empty string
-
-                # This clamping procedure runs even if there's no default
-                if has_active_range:
-                    clamp = None
-                    if val_num < low:
-                        clamp = low
-                    elif val_num > high:
-                        clamp = high
-
-                    if clamp is not None:
-                        # The value is rewritten to a standard form if it is
-                        # clamped
-                        val = str(clamp) if self.orig_type == INT else hex(clamp)
-
-                        if has_default:
                             num2str = str if base == 10 else hex
                             self.kconfig._warn(
-                                f"default value {val_num} on {self.name_and_loc} clamped to {num2str(clamp)} due to "
-                                f"being outside the active range ([{num2str(low)}, {num2str(high)}])"
+                                f"Indirectly set value {num2str(candidate_val)} on {self.name_and_loc} "
+                                f"(by {src.name_and_loc}) is not a valid base {base} number."
                             )
+                        break
+                    else:
+                        val_num = 0  # strtoll() on empty string
+
+                # 5) Apply defaults if any
+                if not val:
+                    for sym, cond in self.defaults:
+                        if expr_value(cond):
+                            has_default = self._write_to_conf = True
+                            val = sym.str_value
+                            if _is_base_n(val, base):
+                                val_num = int(val, base)
+                            else:
+                                val_num = 0  # strtoll() on empty string
+                            break
+                    else:
+                        val_num = 0  # strtoll() on empty string
+
+            # 6) Clamp the value to the range and and check if it is valid
+            # This clamping procedure runs even if there's no default
+            if has_active_range:
+                clamp = None
+                if val_num < low:
+                    clamp = low
+                elif val_num > high:
+                    clamp = high
+
+                if clamp is not None:
+                    # The value is rewritten to a standard form if it is
+                    # clamped
+                    val = str(clamp) if self.orig_type == INT else hex(clamp)
+
+                    if has_default:
+                        num2str = str if base == 10 else hex
+                        self.kconfig._warn(
+                            f"default value {val_num} on {self.name_and_loc} clamped to {num2str(clamp)} due to "
+                            f"being outside the active range ([{num2str(low)}, {num2str(high)}])"
+                        )
 
         elif self.orig_type == STRING:
-            if vis and self._user_value is not None:
-                # If the symbol is visible and has a user value, use that
-                val = self._user_value
+            # Precedence (if step does not apply, go to next step):
+            #     1) Apply rev_values (force-set) if any
+            #     2) Apply user value if any
+            #     3) Apply weak_rev_values (weakly-set) if any
+            #     4) Apply defaults if any
+            # No validity checks, everything can be a string
+
+            # 1) Apply rev_values (force-set) if any
+            for rev_value in self.rev_values:
+                candidate_val, cond, _ = rev_value
+                if expr_value(cond):
+                    val = candidate_val.str_value
+                    self._write_to_conf = True
+                    self._has_active_indirect_set = True
+                    break
             else:
-                # Otherwise, look at defaults
-                for sym, cond in self.defaults:
-                    if expr_value(cond):
-                        val = sym.str_value
-                        self._write_to_conf = True
-                        break
+                self._has_active_indirect_set = False
+                # 2) Apply user value if any
+                if vis and self._user_value is not None and not self._has_active_indirect_set:
+                    # If the symbol is visible and has a user value, use that
+                    val = self._user_value
+                else:
+                    # 3) Apply weak_rev_values (weakly-set) if any
+                    for weak_rev_value in self.weak_rev_values:
+                        candidate_val, cond, _ = weak_rev_value
+                        if expr_value(cond):
+                            val = candidate_val.str_value
+                            # same as select; if indirectly set, it is written to .config even if not visible
+                            self._write_to_conf = True
+                            break
+                    # Otherwise, look at defaults
+                    # 4) Apply defaults if any
+                    if not val:
+                        for sym, cond in self.defaults:
+                            if expr_value(cond):
+                                val = sym.str_value
+                                self._write_to_conf = True
+                                break
 
         # env_var corresponds to SYMBOL_AUTO in the C implementation, and is
         # also set on the defconfig_list symbol there. Test for the
@@ -4182,7 +4330,7 @@ class Symbol:
         Returns the empty set for non-bool symbols and for symbols with
         visibility n. The other possible values are (0, 2) and (2,). A (2,) result means
         the symbol is visible but "locked" to y through a select, perhaps in combination with the
-        visibility. menuconfig represents this as and -*-.
+        visibility. menuconfig represents this as -*-.
 
         For string/hex/int symbols, check if Symbol.visibility is non-0 (non-n)
         instead to determine if the value can be changed.
@@ -4282,11 +4430,12 @@ class Symbol:
     def has_default_value(self) -> bool:
         """
         Symbol has default value if:
-        - user value is None (and symbol is defined, thus has orig_type) and is not choice symbol (sym.choice is None)
+        - user value is None or has an active indirectly set value (and symbol is defined, thus has orig_type)
+        - and is not a choice symbol (sym.choice is None)
         - or has choice and the choice user selection is None
           (choice._user_selection is None -> choice was not touched by user)
         """
-        return (self._user_value is None and self.orig_type) and (
+        return ((self._user_value is None or self._has_active_indirect_set) and self.orig_type) and (
             (not self.choice) or self.choice._user_selection is None
         )
 
@@ -5141,6 +5290,8 @@ class MenuNode:
         "selects",
         "implies",
         "ranges",
+        "sets",
+        "weak_sets",
     )
     item: Optional[Union[Symbol, Choice, int]]
     is_menuconfig: bool
@@ -5155,6 +5306,8 @@ class MenuNode:
     implies: List[Tuple]
     ranges: List[Tuple]
     list: Optional["MenuNode"]
+    sets: List[Tuple]
+    weak_sets: List[Tuple]
 
     def __init__(
         self,
@@ -5328,6 +5481,20 @@ class MenuNode:
             Like MenuNode.defaults, for ranges.
         """
         self.ranges = []
+
+        """"
+            sets:
+            A list of (symbol, value, cond) tuples defined in one place.
+            Generally, config options can be defined in multiple places,
+            so menunode.sets are later merged to symbols.sets.
+        """
+        self.sets = []
+
+        """
+        weak_sets:
+            Like MenuNode.sets, but their values respect user-set values.
+        """
+        self.weak_sets = []
 
     @property
     def orig_prompt(self):
@@ -5577,6 +5744,14 @@ class MenuNode:
 
             for imply, cond in self.orig_implies:
                 indent_add_cond("imply " + sc_expr_str_fn(imply), cond)
+
+            for set_ in self.sets:
+                target, value, cond = set_
+                indent_add_cond("set " + sc_expr_str_fn(target) + f"={value.name}", cond)
+
+            for weak_set in self.weak_sets:
+                target, value, cond = weak_set
+                indent_add_cond("set default" + sc_expr_str_fn(target) + f"={value.name}", cond)
 
         if self.dep is not sc.kconfig.y:
             indent_add("depends on " + expr_str(self.dep, sc_expr_str_fn))
@@ -6038,7 +6213,7 @@ def _strcmp(s1, s2):
     return (s1 > s2) - (s1 < s2)
 
 
-def _sym_to_num(sym):
+def _sym_to_num(sym: Union[Symbol, Choice]) -> int:
     # expr_value() helper for converting a symbol to a number. Raises
     # ValueError for symbols that can't be converted.
 
