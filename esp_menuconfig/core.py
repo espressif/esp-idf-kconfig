@@ -207,6 +207,8 @@ from esp_kconfiglib.core import TYPE_TO_STR
 from esp_kconfiglib.core import Choice
 from esp_kconfiglib.core import MenuNode
 from esp_kconfiglib.core import Symbol
+from esp_kconfiglib.core import _recursively_perform_action
+from esp_kconfiglib.core import _restore_default
 from esp_kconfiglib.core import expr_str
 from esp_kconfiglib.core import expr_value
 from esp_kconfiglib.core import split_expr
@@ -1007,7 +1009,24 @@ def _menuconfig(stdscr):
 
         elif c in ("r", "R"):
             sel_node = _shown[_sel_node_i]
-            _restore_default(sel_node)
+            if sel_node.item == MENU:
+                c = None
+                while c is None or c not in ("y", "n"):
+                    c = _key_dialog(
+                        "Restore defaults in menu?",
+                        textwrap.dedent(
+                            """
+                            Do you really want to restore the default values for all symbols in this menu?
+
+                                                            (Y)es  (N)o
+                            """
+                        ),
+                        "yn",
+                    )
+                if c == "y":
+                    _recursively_perform_action(sel_node, _restore_default)
+            else:
+                _restore_default(sel_node)
             _update_menu()
 
 
@@ -1633,35 +1652,6 @@ def _visible(node):
     # mode)
 
     return node.prompt and expr_value(node.prompt[1]) and not (node.item == MENU and not expr_value(node.visibility))
-
-
-def _restore_default(node):
-    """
-    Restores the default value of the Symbol/Choice item of the menu node 'node`.
-    """
-
-    def invalidate_choice(choice):
-        choice._user_selection = None
-        choice._rec_invalidate()
-        # When invalidating a choice, also their symbols need to be invalidated.
-        for sym in choice.syms:
-            invalidate_symbol(sym)
-
-    def invalidate_symbol(sym):
-        sym._user_value = None
-        sym._rec_invalidate()
-
-    sc = node.item
-    if isinstance(sc, Symbol):
-        invalidate_symbol(sc)
-        if sc.choice is not None:
-            invalidate_choice(sc.choice)
-    elif isinstance(sc, Choice):
-        invalidate_choice(sc)
-    else:
-        return False
-
-    return True
 
 
 def _change_node(node):
@@ -3110,7 +3100,7 @@ def _node_str(node):
 
             # Print "(default value)" next to symbols without a user value (from e.g. a
             # .config), but skip for for symbols of UNKNOWN type (which generate a warning though)
-            if sym.has_default_value():
+            if sym.has_active_default_value():
                 s += " (default value)"
 
             for _, cond, source in sym.rev_values:
