@@ -3,7 +3,15 @@
 Default Values and Their Inference
 ==================================
 
-In original ``kconfiglib``, when the configuration was written out to e.g. ``sdkconfig`` file, all the values were considered user-set, no matter if the user actually set them (even indirectly via e.g. ``sdkconfig.defaults``). This behavior resulted in rather confusing situations; when e.g. conditional default values were not updated if the condition was changed. Consider following example:
+In original ``kconfiglib``, when the configuration was written out to e.g. ``sdkconfig`` file, all the values were considered user-set, no matter if the user actually set them (even indirectly via e.g. ``sdkconfig.defaults``). This behavior resulted in rather confusing situations; when e.g. conditional default values were not updated if the condition was changed.
+
+.. note::
+
+    This note is intended primarily for component maintainers.
+
+    The information below applies only to configuration options that have a prompt. Promptless config options have different value inference. When loading ``sdkconfig[.defaults]`` files, the values for promptless config options are **always ignored** (their value is always set to the **Kconfig default value**). These config options are also hidden in configuration tools, such as ``menuconfig``, and cannot be changed by the user.
+
+Consider following example:
 
 .. code-block:: kconfig
 
@@ -76,3 +84,5 @@ In this case, configuration system notifies the user that ``sdkconfig`` and ``Kc
 * ``sdkconfig`` - use the value from ``sdkconfig`` file (default).
 * ``kconfig`` - use the value from Kconfig file.
 * ``interactive`` - ask the user to choose the source of the default value.
+
+For more information about reporting of default value mismatches, see :ref:`default-value-mismatch-area`.

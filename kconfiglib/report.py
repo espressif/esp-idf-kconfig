@@ -15,6 +15,7 @@ from typing import Dict
 from typing import List
 from typing import Optional
 from typing import Set
+from typing import Tuple
 from typing import Union
 
 if TYPE_CHECKING:
@@ -46,6 +47,7 @@ VERBOSITY_VERBOSE = "verbose"  # Report everything every time
 
 AREA_TITLE_STYLE = "bold blue"
 INFO_STRING_STYLE = "italic"
+SUBTITLE_STYLE = "bold"
 
 
 class Area(ABC):
@@ -128,6 +130,137 @@ class Area(ABC):
             return "Warning"
         else:
             return "Error"
+
+
+class DefaultValuesArea(Area):
+    """
+    Area for reporting any problems with default values:
+    * Different values between sdkconfig and Kconfig files
+    * Promptless default values with different values between sdkconfig and Kconfig files
+      This is normally not a problem, but a feature. However, devs may want to know about it.
+    """
+
+    def __init__(self):
+        super().__init__(
+            title="Default Value Mismatch",
+            ignore_codes=tuple(),
+            info_string=textwrap.dedent(
+                """\
+                This area reports issues with default values of the config options.
+                For more information, please visit https://docs.espressif.com/projects/esp-idf-kconfig/en/latest/kconfiglib/configuration-report.html#default-value-mismatch
+                """
+            ),
+        )
+        self.changed_defaults: Set[Tuple[str, str, str]] = set()
+        # Changed configs without prompts should not be reported as it's not something user should care about.
+        # However, it may be useful to report them in verbose mode for devs.
+        self.changed_values_promptless: Set[Tuple[str, str, str, bool]] = set()
+
+    def add_record(self, sym_or_choice: "Union[Symbol, Choice]", **kwargs: Optional[dict]) -> None:
+        promptless: bool = kwargs.get("promptless", False)  # type: ignore
+        record = (
+            str(sym_or_choice.name),
+            str(sym_or_choice.str_value),
+            str(getattr(sym_or_choice, "_sdkconfig_value", "") or ""),
+        )
+        if not promptless:
+            self.changed_defaults.add(record)
+        else:
+            # sdkconfig value is still set even for promptless symbols, so we can decide
+            # if sdkconfig contained default value or not
+            record_with_default_flag = record + (getattr(sym_or_choice, "_user_value", None) is not None,)
+            self.changed_values_promptless.add(record_with_default_flag)
+
+    def add_ignore(self, sym_or_choice: "Union[Symbol, Choice]") -> None:
+        pass
+
+    def report_severity(self) -> int:
+        if not self.changed_defaults and not self.changed_values_promptless:
+            return STATUS_OK
+        if self.changed_defaults or self.changed_values_promptless:
+            return STATUS_OK_WITH_INFO
+        else:  # This should not happen, but just in case
+            return STATUS_ERROR
+
+    def _nothing_to_report(self, verbosity: str = VERBOSITY_VERBOSE) -> bool:
+        """
+        Check if there is nothing to report in the area.
+        """
+        return not self.changed_defaults and (verbosity != VERBOSITY_VERBOSE or not self.changed_values_promptless)
+
+    def print(self, verbosity: str) -> Optional[Table]:
+        # No changed defaults or only promptless changed defaults without verbosity VERBOSITY_VERBOSE
+        # -> nothing to report
+        if self._nothing_to_report(verbosity):
+            return None
+
+        table = Table(title=self.title, title_justify="left", show_header=False, title_style=AREA_TITLE_STYLE)
+        table.box = HORIZONTALS
+        table.add_column(
+            "",
+            justify="left",
+            no_wrap=True,
+        )
+        if verbosity == VERBOSITY_VERBOSE:
+            table.add_row(self.info_string, style=INFO_STRING_STYLE)
+
+        if self.changed_defaults:
+            table.add_row(
+                "Config symbols with different default value between sdkconfig and Kconfig", style=SUBTITLE_STYLE
+            )
+            for sym_name, kconfig_value, sdkconfig_value in self.changed_defaults:
+                table.add_row(
+                    f"{sym_name}: Kconfig default value: {kconfig_value}, sdkconfig default value: {sdkconfig_value}"
+                )
+            table.add_row("")
+
+        if verbosity == VERBOSITY_VERBOSE and self.changed_values_promptless:
+            table.add_row(
+                "Invisible (promptless) config symbols with different values between sdkconfig and Kconfig",
+                style="bold",
+            )
+            for sym_name, kconfig_value, sdkconfig_value, sdkconfig_value_is_default in self.changed_values_promptless:
+                table.add_row(
+                    (
+                        f"{sym_name}: Kconfig default value: {kconfig_value}, "
+                        f"sdkconfig value {sdkconfig_value} "
+                        f"{'(user-set)' if sdkconfig_value_is_default else '(default)'} "
+                        "will be ignored"
+                    )
+                )
+            table.add_row("")
+
+        return table
+
+    def return_json(self) -> Optional[dict]:
+        """
+        Return the area report in JSON format.
+        """
+        if self._nothing_to_report():
+            return None
+        ret_json = super().return_json()
+        if not ret_json:
+            ret_json = dict()
+        ret_json["data"] = dict()
+
+        if self.changed_defaults:
+            ret_json["data"]["changed_defaults"] = list()
+            for sym_name, kconfig_value, sdkconfig_value in self.changed_defaults:
+                ret_json["data"]["changed_defaults"].append(
+                    {"name": sym_name, "kconfig_default": kconfig_value, "sdkconfig_default": sdkconfig_value}
+                )
+        if self.changed_values_promptless:  # There is all the info in json every time
+            ret_json["data"]["mismatched_promptless"] = list()
+            for sym_name, kconfig_value, sdkconfig_value, sdkconfig_value_is_default in self.changed_values_promptless:
+                ret_json["data"]["mismatched_promptless"].append(
+                    {
+                        "name": sym_name,
+                        "kconfig_value": kconfig_value,
+                        "sdkconfig_value": sdkconfig_value,
+                        "sdkconfig_value_is_default": sdkconfig_value_is_default,
+                    }
+                )
+        return ret_json
 
 
 class MultipleDefinitionArea(Area):
@@ -302,7 +435,7 @@ class KconfigReport:
         self.lines_with_ignores: List[str] = list()
 
         # Areas
-        self.areas = (MultipleDefinitionArea(), MiscArea())
+        self.areas = (MultipleDefinitionArea(), MiscArea(), DefaultValuesArea())
 
         # Mapping dictionaries
         """
@@ -331,8 +464,7 @@ class KconfigReport:
         """
         Get the status of the Configuration.
         """
-        if not self._status:
-            self._status = max(area.report_severity() for area in self.areas) or STATUS_OK
+        self._status = max(area.report_severity() for area in self.areas) or STATUS_OK
 
         return self._status
 

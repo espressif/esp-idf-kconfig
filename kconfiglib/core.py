@@ -26,6 +26,7 @@ from typing import Union
 
 from kconfiglib.report import PRAGMA_PREFIX
 from kconfiglib.report import STATUS_ERROR as REPORT_STATUS_ERROR
+from kconfiglib.report import DefaultValuesArea
 from kconfiglib.report import KconfigReport
 from kconfiglib.report import MultipleDefinitionArea
 
@@ -1080,7 +1081,7 @@ class Kconfig(object):
 
         return None
 
-    def load_config(self, filename=None, replace=True, verbose=None):
+    def load_config(self, filename=None, replace=True, verbose=None, print_report=False):
         """
         Loads symbol values from a file in the .config format. Equivalent to
         calling Symbol.set_value() to set each of the values.
@@ -1167,6 +1168,8 @@ class Kconfig(object):
         # This stub only exists to make sure _warn_assign_no_prompt gets re-enabled
         try:
             self._load_config(filename, replace)
+            if print_report:
+                self.report.print_report()
         except UnicodeDecodeError as e:
             _decoding_error(e, filename)
         finally:
@@ -1252,6 +1255,11 @@ class Kconfig(object):
                 # The C tools ignore trailing whitespace
                 line = line.rstrip()
 
+                # If "# default:" is present, the assignment on the next line will be considered a default value
+                if line and line.strip() == self.comment_default_value:
+                    value_is_default = True
+                    continue
+
                 match = set_match(line)
                 if match:
                     name, val = match.groups()
@@ -1318,9 +1326,6 @@ class Kconfig(object):
                                 filename,
                                 linenr,
                             )
-
-                        if line and line.strip() == self.comment_default_value:
-                            value_is_default = True
                         continue
 
                     name = match.group(1)
@@ -1338,14 +1343,27 @@ class Kconfig(object):
 
                 if sym._was_set:
                     self._assigned_twice(sym, val, filename, linenr)
-
-                # If the value is not set to default
+                # If the value is not set to default, set it
                 if not value_is_default:
                     if sym.set_value(val):
                         # sdkconfig value is set only if set_value succeeded (e.g. no malformed value in sdkconfig)
                         sym._sdkconfig_value = val
-                else:  # Symbol has only a default value and it is different between sdkconfig and Kconfig
+                        sym._loaded_as_default = False
+                        if all(node.prompt is None for node in sym.nodes):
+                            # User-set value assignment to promptless symbol
+                            self.report.add_record(DefaultValuesArea, sym_or_choice=sym, promptless=True)
+                # If value is supposed to be a default and symbol has a prompt, save it for later
+                elif any(node.prompt is not None for node in sym.nodes):
                     symbols_with_default_values[sym] = val
+                else:  # Default value assignment to promptless symbol
+                    # These assignments are ignored as per kconfig specification
+                    # Reason: These symbols are in sdkconfig only as a way how to expose them
+                    #         for other tools to use them and are supposed to change.
+                    # _sdkconfig_value and _loaded_as_default still set to prevent unnecessary saves in menuconfig
+                    sym._sdkconfig_value = val
+                    sym._loaded_as_default = True
+                    if sym.str_value != sym._sdkconfig_value:
+                        self.report.add_record(DefaultValuesArea, sym_or_choice=sym, promptless=True)
 
                 value_is_default = False
 
@@ -1360,7 +1378,13 @@ class Kconfig(object):
                         f"{ANSI_BOLD}{_quote_value(sym.str_value, sym.orig_type)}{ANSI_END} according to Kconfig."
                     )
                     if self.defaults_policy == POLICY_USE_SDKCONFIG:  # Use default value from sdkconfig
-                        if _inject_default_value(sym, val):
+                        if sym.choice:
+                            # Choice symbols cannot be set on their own, we need their choice context.
+                            # For now, the best way is just to silently ignore them (any report to the user would
+                            # be IMO confusing as the reason here is rather technical).
+                            # FIXME: IDF-13449
+                            continue
+                        elif _inject_default_value(sym, val):
                             self._info(
                                 "Using default value from sdkconfig "
                                 f"({ANSI_BOLD}{_quote_value(val, sym.orig_type)}{ANSI_END}).",
@@ -1407,6 +1431,10 @@ class Kconfig(object):
             #       Will be fixed as part of IDF-2971.
             self._finalize_node(self.top_node, self.top_node.visibility)
 
+            # Invalidate all cached values as we edited the configuration
+            for sym in self.unique_defined_syms:
+                sym._invalidate()
+
             if symbols_with_changed_defaults:
                 print("Default values for the following symbols were changed:")
                 for sym in symbols_with_changed_defaults:
@@ -1427,6 +1455,9 @@ class Kconfig(object):
             for choice in self.unique_choices:
                 if not choice._was_set:
                     choice.unset_value()
+
+        if self.print_report or self.report.status == REPORT_STATUS_ERROR:
+            self.report.print_report()
 
     def _undef_assign(self, name, val, filename, linenr):
         # Called for assignments to undefined symbols during .config loading
@@ -4435,8 +4466,13 @@ class Symbol:
         - or has choice and the choice user selection is None
           (choice._user_selection is None -> choice was not touched by user)
         """
-        return ((self._user_value is None or self._has_active_indirect_set) and self.orig_type) and (
-            (not self.choice) or self.choice._user_selection is None
+        return (
+            all(node.prompt is None for node in self.nodes)  # promptless symbols always have default value
+            or (
+                (self._user_value is None or self._has_active_indirect_set)
+                and self.orig_type
+                and ((not self.choice) or self.choice._user_selection is None)
+            )
         )
 
     def value_is_valid(self, value: Any) -> bool:
