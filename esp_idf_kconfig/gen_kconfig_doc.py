@@ -11,7 +11,7 @@
 # SPDX-License-Identifier: Apache-2.0
 import re
 
-import kconfiglib.core as kconfiglib
+import esp_kconfiglib.core as kconfiglib
 
 # Indentation to be used in the generated file
 INDENT = "    "

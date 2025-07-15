@@ -12,8 +12,8 @@ import sys
 import tempfile
 from json import JSONDecodeError
 
+import esp_kconfiglib.core as kconfiglib
 import kconfgen.core as kconfgen
-import kconfiglib.core as kconfiglib
 from esp_idf_kconfig import __version__
 
 # Min/Max supported protocol versions

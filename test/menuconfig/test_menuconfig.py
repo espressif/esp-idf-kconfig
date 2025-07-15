@@ -7,16 +7,16 @@ from typing import Union
 
 import pytest
 
-from menuconfig.core import _change_node
+from esp_menuconfig.core import _change_node
 
 if TYPE_CHECKING:
-    from kconfiglib.core import Choice
-    from kconfiglib.core import Symbol
+    from esp_kconfiglib.core import Choice
+    from esp_kconfiglib.core import Symbol
 
-from kconfiglib import Kconfig
-from menuconfig import _needs_save
-from menuconfig import _restore_default
-from menuconfig import menuconfig
+from esp_kconfiglib import Kconfig
+from esp_menuconfig import _needs_save
+from esp_menuconfig import _restore_default
+from esp_menuconfig import menuconfig
 
 TEST_FILES_PATH = os.path.abspath(os.path.dirname(__file__))
 KCONFIGS_PATH = os.path.join(TEST_FILES_PATH, "kconfigs")

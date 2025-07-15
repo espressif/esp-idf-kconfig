@@ -27,7 +27,7 @@ from typing import Set
 from typing import Tuple
 
 import esp_idf_kconfig.gen_kconfig_doc as gen_kconfig_doc
-import kconfiglib.core as kconfiglib
+import esp_kconfiglib.core as kconfiglib
 from esp_idf_kconfig import __version__
 
 
