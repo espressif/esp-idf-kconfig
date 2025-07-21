@@ -9,7 +9,6 @@ Although we tried to keep the ``esp-idf-kconfig`` package as close to the origin
 - ``def_<type>`` keywords are not supported.
 - ``tristate`` logic (and thus ``m`` value) is not supported.
 - ``optional`` keyword for ``choice`` entries is not supported.
-- Explicit prompts for ``menu`` entries are not supported.
 - ``choice`` entries are now forced to be a ``bool`` type.
 - ``---help---`` keyword is not supported.
 - ``config`` or ``choice`` names must contain only numbers, uppercase letters from the English alphabet and underscores.
