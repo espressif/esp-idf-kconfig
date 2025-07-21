@@ -1,7 +1,7 @@
+.. _kconfcheck:
+
 Kconfig Files Checking
 ======================
-
-.. _kconfcheck:
 
 The ``kconfcheck`` tool checks whether given Kconfig files comply with the format rules described below. The checker checks all ``Kconfig[.projbuild]`` files given as arguments, and generates a new file with suffix ``.new`` with suggestions about how to fix issues (if there are any).
 
@@ -20,3 +20,29 @@ Format rules for Kconfig files are as follows:
 - The maximum length of options is 50 characters.
 - The maximum length of lines is 120 characters.
 - The name of a config option must be uppercase.
+
+How to Use the ``kconfcheck`` Tool
+----------------------------------
+
+The ``esp-idf-kconfig`` package provides a pre-commit hook named ``check-kconfig-files`` that can be used to automatically check Kconfig files before committing changes. This ensures that all Kconfig files in your repository comply with the format rules and helps maintain consistency across the project. It is also the most convenient way to use the checker.
+
+To use the ``check-kconfig-files`` pre-commit hook, add the following configuration to your repository's ``.pre-commit-config.yaml`` file:
+
+.. code-block:: yaml
+
+    - repo: https://github.com/espressif/esp-idf-kconfig.git
+      rev: <version>
+      hooks:
+        - id: check-kconfig-files
+
+Check the version of the ``esp-idf-kconfig`` package you are using and replace `<version>` with the appropriate version (e.g. ``3.0.0``). It is recommended to use the latest stable version of the package.
+
+For more information about pre-commit hooks and how to set them up, refer to the official pre-commit documentation: https://pre-commit.com/.
+
+As an alternative, you can also run the checker manually without using pre-commit hooks. This is useful for one-off checks or if you cannot use pre-commit hooks in your workflow.
+
+To run the checker manually, use the following command:
+
+.. code-block:: console
+
+    python -m kconfcheck <path_to_kconfig_file>
