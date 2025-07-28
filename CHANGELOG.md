@@ -1,3 +1,18 @@
+## v3.1.0 (2025-07-28)
+
+### New Features
+
+- **kconfig**: add `set` and `set default` options
+- **kconfiglib**: Recognize default value of choice symbols
+
+### Bug Fixes
+
+- rename `kconfiglib` to `esp_kconfiglib`
+- do not load promptless symbols from sdkconfig
+- move `pyparsing` to core dependencies
+- Add `rich` as a missing dependency
+- ensure the casing of word Kconfig is "Kconfig"
+
 ## v3.0.0 (2025-05-23)
 
 ### New Features
