@@ -11,3 +11,4 @@ This developer guide is intended for developers who want to work on the ``esp-id
     Contributions Guide <contributing>
     Writing Tests <writing-tests>
     Writing Good Kconfig Files <good-kconfig>
+    Migration Guide From esp-idf-kconfig 2.x to 3.x <migration-guide>

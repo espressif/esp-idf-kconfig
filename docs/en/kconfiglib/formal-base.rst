@@ -13,13 +13,15 @@ Below, a context-free grammar describing the Kconfig language is presented. This
 
     # Entries
     config ::= "config" + config_name + config_options
-    menu ::= "menu" + menu_name + entries + "endmenu"
+    menu ::= "menu" + menu_name + menu_options + entries + "endmenu"
     choice ::= "choice" + choice_name + config_options + entries* + "endchoice""
     source ::= ("source" | "rsource" | "osource" | "orsource") + path
     menuconfig ::= "menuconfig" + config_name + config_options
     if_entry ::= "if" + expression + entries + "endif"
     comment ::= "comment" + STRING + depends_on*
     macro ::= macro_name + ("=" | ":=") + value
+
+    menu_options ::= visible_if
 
     # (menu)config and choice options
     config_options ::= (config_type | config_and_prompt)
@@ -39,6 +41,7 @@ Below, a context-free grammar describing the Kconfig language is presented. This
     set ::= "set" + assignment [+ "if" + expression ]
     set_default ::= "set default" + assignment [+ "if" + expression ]
     option ::= "option env=" + STRING
+    visible_if ::= "visible if" + expression
 
     assignment ::= symbol + "=" +  ( value | symbol )
 
