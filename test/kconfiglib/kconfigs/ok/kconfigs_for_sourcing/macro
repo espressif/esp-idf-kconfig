@@ -1,0 +1,7 @@
+RANGE_MIN = 0
+RANGE_MAX := 100
+
+config RANGED_CONFIG
+	int "Ranged config"
+	range $(RANGE_MIN) $(RANGE_MAX)
+	default 50

@@ -577,9 +577,8 @@ class KconfigGrammar:
         # Every entry should have the same indentation and optionally, an empty line in between two entries.
         # But e.g. lvgl does not follow any rules in their Kconfig files and thus,
         # formal specifications needs to be loosen.
-        entries << ZeroOrMore(
-            config | menu | choice | source | menuconfig | if_entry | comment | macro
-        ).set_results_name("entries")
+        entry_records = config | menu | choice | source | menuconfig | if_entry | comment | macro
+        entries << ZeroOrMore(entry_records).set_results_name("entries")
 
         menu << (
             Keyword("menu")
@@ -610,7 +609,7 @@ class KconfigGrammar:
         self.root = mainmenu
 
         # sourced file can have different structure than the main Kconfig file, thus using a separate root.
-        sourced_root = OneOrMore(config | menu | choice | source | menuconfig | if_entry | comment)
+        sourced_root = OneOrMore(entry_records)
         self.sourced_root = sourced_root
 
     def preprocess_file(self, file: str, ensure_end_newline: bool = True) -> str:
