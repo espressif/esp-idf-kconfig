@@ -140,10 +140,10 @@ class DefaultValuesArea(Area):
       This is normally not a problem, but a feature. However, devs may want to know about it.
     """
 
-    def __init__(self):
+    def __init__(self, defaults_policy: str):
         super().__init__(
             title="Default Value Mismatch",
-            ignore_codes=tuple(),
+            ignore_codes=set(),
             info_string=textwrap.dedent(
                 """\
                 This area reports issues with default values of the config options.
@@ -151,33 +151,45 @@ class DefaultValuesArea(Area):
                 """
             ),
         )
+        self.defaults_policy: str = defaults_policy
+
         self.changed_defaults: Set[Tuple[str, str, str]] = set()
         # Changed configs without prompts should not be reported as it's not something user should care about.
         # However, it may be useful to report them in verbose mode for devs.
         self.changed_values_promptless: Set[Tuple[str, str, str, bool]] = set()
+        self.changed_choices: Set[Tuple[str, str, str]] = set()
 
     def add_record(self, sym_or_choice: "Union[Symbol, Choice]", **kwargs: Optional[dict]) -> None:
         promptless: bool = kwargs.get("promptless", False)  # type: ignore
-        record = (
-            str(sym_or_choice.name),
-            str(sym_or_choice.str_value),
-            str(getattr(sym_or_choice, "_sdkconfig_value", "") or ""),
-        )
-        if not promptless:
-            self.changed_defaults.add(record)
-        else:
-            # sdkconfig value is still set even for promptless symbols, so we can decide
-            # if sdkconfig contained default value or not
-            record_with_default_flag = record + (getattr(sym_or_choice, "_user_value", None) is not None,)
-            self.changed_values_promptless.add(record_with_default_flag)
+        record_type: str = kwargs.get("record_type", "symbol")  # type: ignore
+        if record_type == "symbol":  # Symbol
+            record = (
+                str(sym_or_choice.name),
+                str(sym_or_choice.str_value),
+                str(getattr(sym_or_choice, "_sdkconfig_value", "") or ""),
+            )
+            if not promptless:
+                self.changed_defaults.add(record)
+            else:
+                # sdkconfig value is still set even for promptless symbols, so we can decide
+                # if sdkconfig contained default value or not
+                record_with_default_flag = record + (getattr(sym_or_choice, "_user_value", None) is not None,)
+                self.changed_values_promptless.add(record_with_default_flag)
+        else:  # Choice
+            record = (
+                str(sym_or_choice.name or "nameless" + sym_or_choice.name_and_loc),
+                str(sym_or_choice.selection.name),  # type: ignore
+                str(kwargs.get("sdkconfig_selection", False)),
+            )
+            self.changed_choices.add(record)
 
     def add_ignore(self, sym_or_choice: "Union[Symbol, Choice]") -> None:
         pass
 
     def report_severity(self) -> int:
-        if not self.changed_defaults and not self.changed_values_promptless:
+        if not self.changed_defaults and not self.changed_values_promptless and not self.changed_choices:
             return STATUS_OK
-        if self.changed_defaults or self.changed_values_promptless:
+        if self.changed_defaults or self.changed_values_promptless or self.changed_choices:
             return STATUS_OK_WITH_INFO
         else:  # This should not happen, but just in case
             return STATUS_ERROR
@@ -186,7 +198,11 @@ class DefaultValuesArea(Area):
         """
         Check if there is nothing to report in the area.
         """
-        return not self.changed_defaults and (verbosity != VERBOSITY_VERBOSE or not self.changed_values_promptless)
+        return (
+            not self.changed_defaults
+            and not self.changed_choices
+            and (verbosity != VERBOSITY_VERBOSE or not self.changed_values_promptless)
+        )
 
     def print(self, verbosity: str) -> Optional[Table]:
         # No changed defaults or only promptless changed defaults without verbosity VERBOSITY_VERBOSE
@@ -195,11 +211,17 @@ class DefaultValuesArea(Area):
             return None
 
         table = Table(title=self.title, title_justify="left", show_header=False, title_style=AREA_TITLE_STYLE)
+        if self.defaults_policy == "sdkconfig":
+            table.add_row("Using sdkconfig default values", style=INFO_STRING_STYLE)
+        elif self.defaults_policy == "kconfig":
+            table.add_row("Using Kconfig default values", style=INFO_STRING_STYLE)
+        elif self.defaults_policy == "interactive":
+            table.add_row("Value mismatches resolved interactively by the user.", style=INFO_STRING_STYLE)
         table.box = HORIZONTALS
         table.add_column(
             "",
             justify="left",
-            no_wrap=True,
+            no_wrap=False,
         )
         if verbosity == VERBOSITY_VERBOSE:
             table.add_row(self.info_string, style=INFO_STRING_STYLE)
@@ -211,6 +233,17 @@ class DefaultValuesArea(Area):
             for sym_name, kconfig_value, sdkconfig_value in self.changed_defaults:
                 table.add_row(
                     f"{sym_name}: Kconfig default value: {kconfig_value}, sdkconfig default value: {sdkconfig_value}"
+                )
+            table.add_row("")
+
+        if self.changed_choices:
+            table.add_row(
+                "Choice symbols with different default selection between sdkconfig and Kconfig", style=SUBTITLE_STYLE
+            )
+            for choice_name, kconfig_selection, sdkconfig_selection in self.changed_choices:
+                table.add_row(
+                    f"{choice_name}: Kconfig default selection: {kconfig_selection}, "
+                    f"sdkconfig default selection: {sdkconfig_selection}"
                 )
             table.add_row("")
 
@@ -260,6 +293,17 @@ class DefaultValuesArea(Area):
                         "sdkconfig_value_is_default": sdkconfig_value_is_default,
                     }
                 )
+        if self.changed_choices:
+            ret_json["data"]["changed_choices"] = list()
+            for choice_name, kconfig_selection, sdkconfig_selection in self.changed_choices:
+                ret_json["data"]["changed_choices"].append(
+                    {
+                        "name": choice_name,
+                        "kconfig_selection": kconfig_selection,
+                        "sdkconfig_selection": sdkconfig_selection,
+                    }
+                )
+
         return ret_json
 
 
@@ -314,7 +358,7 @@ class MultipleDefinitionArea(Area):
         table.add_column(
             "",
             justify="left",
-            no_wrap=True,
+            no_wrap=False,
         )
         table.add_row(
             "Multiple definitions will have higher severity in the future. Please, visit "
@@ -385,7 +429,7 @@ class MiscArea(Area):
 
         table = Table(title=self.title, title_justify="left", show_header=False, title_style=AREA_TITLE_STYLE)
         table.box = HORIZONTALS
-        table.add_column("", justify="left", no_wrap=True)
+        table.add_column("", justify="left", no_wrap=False)
         for message in self.messages:
             table.add_row(f"* {message}")
         return table
@@ -412,17 +456,19 @@ class KconfigReport:
     _instance = None
     _initialized: bool
 
-    def __new__(cls, kconfig: "Kconfig") -> "KconfigReport":
+    def __new__(cls, kconfig: "Kconfig", defaults_policy: str) -> "KconfigReport":
         """Singleton class to log messages"""
         if cls._instance is None:
             cls._instance = super().__new__(cls)
             cls._instance.kconfig = kconfig
+            cls._instance.defaults_policy = defaults_policy
             cls._instance._initialized = False
         return cls._instance
 
     def __init__(
         self,
         kconfig: "Kconfig",
+        defaults_policy: str,
     ) -> None:
         if hasattr(self, "_initialized") and self._initialized:
             return
@@ -430,12 +476,13 @@ class KconfigReport:
 
         self.kconfig: "Kconfig" = kconfig
         self.verbosity: str = os.getenv("KCONFIG_REPORT_VERBOSITY", VERBOSITY_DEFAULT)
+        self.defaults_policy: str = defaults_policy
 
         # Ignores
         self.lines_with_ignores: List[str] = list()
 
         # Areas
-        self.areas = (MultipleDefinitionArea(), MiscArea(), DefaultValuesArea())
+        self.areas = (MultipleDefinitionArea(), MiscArea(), DefaultValuesArea(defaults_policy))
 
         # Mapping dictionaries
         """
@@ -514,6 +561,7 @@ class KconfigReport:
         if self.verbosity == VERBOSITY_VERBOSE:
             header_table.add_row(f"Symbols parsed: {len(self.kconfig.unique_defined_syms)}")
 
+        header_table.add_row(f"Defaults policy: {self.defaults_policy}")
         status = self.status
         if status == STATUS_OK:
             header_table.add_row("Status: Finished successfully", style="green")
@@ -562,6 +610,19 @@ class KconfigReport:
                 rprint(report_table, file=f)
 
     def output_json(self, file: Optional[str] = None) -> None:
+        report_json = self._return_json()
+
+        if not file:
+            console = Console(force_terminal=True, stderr=True)
+            console.print(json.dumps(report_json, indent=4))
+        else:
+            with open(file, "w+") as f:
+                json.dump(report_json, f, indent=4)
+
+    def _return_json(self) -> Dict:
+        """
+        Return the report in JSON format.
+        """
         report_json: Dict = dict()
         report_json["header"] = dict()
         report_json["header"]["report_type"] = "kconfig"
@@ -569,6 +630,7 @@ class KconfigReport:
         report_json["header"]["verbosity"] = self.verbosity
         report_json["header"]["status"] = Area.severity_to_str(self.status)
         report_json["header"]["unique_defined_syms"] = len(self.kconfig.unique_defined_syms)
+        report_json["header"]["defaults_policy"] = self.defaults_policy
 
         report_json["areas"] = list()
         for area in self.areas:
@@ -577,9 +639,4 @@ class KconfigReport:
                 continue
             report_json["areas"].append(area.return_json())
 
-        if not file:
-            console = Console(force_terminal=True, stderr=True)
-            console.print(json.dumps(report_json, indent=4))
-        else:
-            with open(file, "w+") as f:
-                json.dump(report_json, f, indent=4)
+        return report_json

@@ -1,0 +1,6 @@
+# default:
+# CONFIG_FIRST is not set
+# default:
+CONFIG_SECOND=y
+# default:
+# CONFIG_THIRD is not set

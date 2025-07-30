@@ -1,0 +1,15 @@
+mainmenu "Kconfig for testing choices"
+
+choice CHOICE
+    prompt "Prompt for test choice"
+
+    config FIRST
+        bool "FIRST"
+
+    config SECOND
+        bool "SECOND"
+
+    config THIRD
+        bool "THIRD"
+
+endchoice
