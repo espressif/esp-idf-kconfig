@@ -1,3 +1,9 @@
+## v3.1.1 (2025-08-04)
+
+### Bug Fixes
+
+- **menuconfig**: Allow menuconfig to be directly executed by python
+
 ## v3.1.0 (2025-07-28)
 
 ### New Features
