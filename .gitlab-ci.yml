@@ -1,6 +1,7 @@
 stages:
   - codecheck
   - test
+  - coverage
   - build_docs
   - deploy_docs
 
@@ -25,35 +26,40 @@ workflow:
 
 # COMMON TEMPLATES
 # ------------------------------------------------------------------------------------------------------
-.base_template:
+.common_template:
   image: python:${PYTHON_VERSION}-bookworm
   tags:
     - build
     - internet
-  before_script:
-    - pip install -e .[dev] --prefer-binary
   parallel:
     matrix:
       - PYTHON_VERSION: ["3.8", "3.13"]
+  variables:
+    RUN_TESTS: "coverage run -m pytest -vv"
+    COVERAGE_PROCESS_START: "${CI_PROJECT_DIR}/pyproject.toml"
+    COVERAGE_RCFILE: "${CI_PROJECT_DIR}/pyproject.toml"
+    PYTHONUNBUFFERED: "1"
+  artifacts:
+    when: always # get artifacts no matter what test results are
+    paths:
+      - test/*/.coverage.*
+      - .coverage.*
+
+.base_template:
+  extends: .common_template
+  before_script:
+    - pip install -e .[dev] --prefer-binary
 
 .venv_template:
-  image: python:${PYTHON_VERSION}-bookworm
-  tags:
-    - build
-    - internet
+  extends: .common_template
   before_script:
     - python -m venv venv
     - source venv/bin/activate
     - python -m pip install -e .[dev] --prefer-binary
-  parallel:
-    matrix:
-      - PYTHON_VERSION: ["3.8", "3.13"]
-
 # --------------------------------------------------------------------------------------------------
 
 # JOBS
 # ------------------------------------------------------------------------------------------------------
-
 # CODE CHECK BY PRE-COMMIT HOOKS
 pre-commit_hooks_MR:
   extends: .base_template
@@ -74,51 +80,49 @@ pre-commit_hooks_MR:
 
 # ------------------------------------------------------------------------------------------------------
 
-# FORMATTING
-
 # TESTS
+# ------------------------------------------------------------------------------------------------------
 test_kconfserver:
   extends: .base_template
   stage: test
   script:
     - cd test/kconfserver/
-    - pytest -vv
+    - $RUN_TESTS
 
 test_kconfiglib:
   extends: .base_template
   stage: test
   script:
     - cd test/kconfiglib/
-    - pytest -vv
+    - $RUN_TESTS
 
 test_menuconfig:
   extends: .base_template
   stage: test
   script:
     - cd test/menuconfig/
-    - pytest -vv
+    - $RUN_TESTS
 
 test_gen_kconfig_doc:
   extends: .base_template
   stage: test
   script:
     - cd test/gen_kconfig_doc/
-    - pytest -vv
+    - $RUN_TESTS
 
 test_kconfgen:
   extends: .base_template
   stage: test
   script:
     - cd test/kconfgen/
-    - pytest test_kconfgen.py -vv
+    - $RUN_TESTS
 
 test_kconfcheck:
   extends: .base_template
   stage: test
   script:
     - cd test/kconfcheck/
-    - pytest test_kconfcheck.py -vv
-    - pytest test_deprecated_options.py -vv
+    - $RUN_TESTS
 
 # TESTS in VENV
 test_kconfserver_venv:
@@ -126,46 +130,86 @@ test_kconfserver_venv:
   stage: test
   script:
     - cd test/kconfserver/
-    - pytest -vv
+    - $RUN_TESTS
 
 test_kconfiglib_venv:
   extends: .venv_template
   stage: test
   script:
     - cd test/kconfiglib/
-    - pytest -vv
+    - $RUN_TESTS
 
 test_menuconfig_venv:
   extends: .venv_template
   stage: test
   script:
     - cd test/menuconfig/
-    - pytest -vv
+    - $RUN_TESTS
 
 test_gen_kconfig_doc_venv:
   extends: .venv_template
   stage: test
   script:
     - cd test/gen_kconfig_doc/
-    - pytest -vv
+    - $RUN_TESTS
 
 test_kconfgen_venv:
   extends: .venv_template
   stage: test
   script:
     - cd test/kconfgen/
-    - pytest test_kconfgen.py -vv
+    - $RUN_TESTS
 
 test_kconfcheck_venv:
   extends: .venv_template
   stage: test
   script:
     - cd test/kconfcheck/
-    - pytest test_kconfcheck.py -vv
-    - pytest test_deprecated_options.py -vv
+    - $RUN_TESTS
+# -----------------------------------------------------------------------------------------------------
+
+# CODE COVERAGE
+# -----------------------------------------------------------------------------------------------------
+merge_coverage:
+  stage: coverage
+  image: python:3.13-bookworm
+  tags:
+    - build
+    - internet
+  artifacts:
+    when: always
+    paths:
+      - coverage-merged.xml
+    reports:
+      coverage_report:
+        coverage_format: cobertura
+        path: coverage-merged.xml
+  coverage: '/TOTAL.*? (100(?:\.0+)?\%|[1-9]?\d(?:\.\d+)?\%)$/'
+  script:
+    - pip install -e .[dev] --prefer-binary
+    - find . -name ".coverage.*" -type f -exec cp {} . \;
+    - cd test
+    - |
+      for d in */; do
+        [ -d "$d" ] || continue
+        cd "$d"
+        echo "Coverage for $d"
+        echo "---------------"
+        coverage combine -q
+        coverage report --show-missing
+        echo "---------------"
+        cd ..
+      done
+    - cd ..
+    - ls -la .coverage.* || echo "No coverage files found"
+    - coverage combine .coverage.*
+    - coverage xml -o coverage-merged.xml
+    - coverage report --precision=2
+    - coverage html -d html_report --precision=2
 
 
 # ------------------------------------------------------------------------------------------------------
+
 # BUILD AND DEPLOY DOCS
 # ------------------------------------------------------------------------------------------------------
 build_docs:
