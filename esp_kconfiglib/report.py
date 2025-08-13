@@ -18,6 +18,8 @@ from typing import Set
 from typing import Tuple
 from typing import Union
 
+from .constants import DefaultsPolicy
+
 if TYPE_CHECKING:
     from .core import Choice
     from .core import Kconfig
@@ -140,7 +142,7 @@ class DefaultValuesArea(Area):
       This is normally not a problem, but a feature. However, devs may want to know about it.
     """
 
-    def __init__(self, defaults_policy: str):
+    def __init__(self, defaults_policy: DefaultsPolicy):
         super().__init__(
             title="Default Value Mismatch",
             ignore_codes=set(),
@@ -151,7 +153,7 @@ class DefaultValuesArea(Area):
                 """
             ),
         )
-        self.defaults_policy: str = defaults_policy
+        self.defaults_policy: DefaultsPolicy = defaults_policy
 
         self.changed_defaults: Set[Tuple[str, str, str]] = set()
         # Changed configs without prompts should not be reported as it's not something user should care about.
@@ -211,12 +213,7 @@ class DefaultValuesArea(Area):
             return None
 
         table = Table(title=self.title, title_justify="left", show_header=False, title_style=AREA_TITLE_STYLE)
-        if self.defaults_policy == "sdkconfig":
-            table.add_row("Using sdkconfig default values", style=INFO_STRING_STYLE)
-        elif self.defaults_policy == "kconfig":
-            table.add_row("Using Kconfig default values", style=INFO_STRING_STYLE)
-        elif self.defaults_policy == "interactive":
-            table.add_row("Value mismatches resolved interactively by the user.", style=INFO_STRING_STYLE)
+        table.add_row(self.defaults_policy.description, style=INFO_STRING_STYLE)
         table.box = HORIZONTALS
         table.add_column(
             "",
@@ -456,7 +453,7 @@ class KconfigReport:
     _instance = None
     _initialized: bool
 
-    def __new__(cls, kconfig: "Kconfig", defaults_policy: str) -> "KconfigReport":
+    def __new__(cls, kconfig: "Kconfig", defaults_policy: DefaultsPolicy) -> "KconfigReport":
         """Singleton class to log messages"""
         if cls._instance is None:
             cls._instance = super().__new__(cls)
@@ -468,7 +465,7 @@ class KconfigReport:
     def __init__(
         self,
         kconfig: "Kconfig",
-        defaults_policy: str,
+        defaults_policy: DefaultsPolicy,
     ) -> None:
         if hasattr(self, "_initialized") and self._initialized:
             return
@@ -476,7 +473,7 @@ class KconfigReport:
 
         self.kconfig: "Kconfig" = kconfig
         self.verbosity: str = os.getenv("KCONFIG_REPORT_VERBOSITY", VERBOSITY_DEFAULT)
-        self.defaults_policy: str = defaults_policy
+        self.defaults_policy: DefaultsPolicy = defaults_policy
 
         # Ignores
         self.lines_with_ignores: List[str] = list()
@@ -561,7 +558,7 @@ class KconfigReport:
         if self.verbosity == VERBOSITY_VERBOSE:
             header_table.add_row(f"Symbols parsed: {len(self.kconfig.unique_defined_syms)}")
 
-        header_table.add_row(f"Defaults policy: {self.defaults_policy}")
+        header_table.add_row(f"Defaults policy: {self.defaults_policy.value}")
         status = self.status
         if status == STATUS_OK:
             header_table.add_row("Status: Finished successfully", style="green")
@@ -630,7 +627,7 @@ class KconfigReport:
         report_json["header"]["verbosity"] = self.verbosity
         report_json["header"]["status"] = Area.severity_to_str(self.status)
         report_json["header"]["unique_defined_syms"] = len(self.kconfig.unique_defined_syms)
-        report_json["header"]["defaults_policy"] = self.defaults_policy
+        report_json["header"]["defaults_policy"] = self.defaults_policy.value
 
         report_json["areas"] = list()
         for area in self.areas:

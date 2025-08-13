@@ -31,6 +31,8 @@ from esp_kconfiglib.report import KconfigReport
 from esp_kconfiglib.report import MiscArea
 from esp_kconfiglib.report import MultipleDefinitionArea
 
+from .constants import DefaultsPolicy
+
 ANSI_BOLD = "\033[1m"
 ANSI_END = "\033[0m"
 
@@ -433,10 +435,6 @@ Preferably, user-defined functions should be stateless.
 # Public classes
 #
 
-POLICY_USE_SDKCONFIG = "sdkconfig"
-POLICY_INTERACTIVE = "interactive"
-POLICY_USE_KCONFIG = "kconfig"
-
 
 class Kconfig(object):
     """
@@ -732,10 +730,12 @@ class Kconfig(object):
             Determines how to resolve conflicts in default values between sdkconfig and Kconfig
             for configuration options.
         """
-        self.defaults_policy = os.environ.get("KCONFIG_DEFAULTS_POLICY", POLICY_USE_SDKCONFIG)
-        if self.defaults_policy not in (POLICY_USE_SDKCONFIG, POLICY_INTERACTIVE, POLICY_USE_KCONFIG):
+        defaults_policy_str = os.environ.get("KCONFIG_DEFAULTS_POLICY", DefaultsPolicy.USE_SDKCONFIG.value)
+        try:
+            self.defaults_policy = DefaultsPolicy(defaults_policy_str)
+        except ValueError:
             self._warn("Malformed KCONFIG_DEFAULTS_POLICY environment variable. Using default policy.")
-            self.defaults_policy = POLICY_USE_SDKCONFIG
+            self.defaults_policy = DefaultsPolicy.USE_SDKCONFIG
 
         """
         report:
@@ -1389,7 +1389,7 @@ class Kconfig(object):
                             "according to Kconfig."
                         )
                     )
-                    if self.defaults_policy == POLICY_USE_SDKCONFIG:  # Use default value from sdkconfig
+                    if self.defaults_policy == DefaultsPolicy.USE_SDKCONFIG:  # Use default value from sdkconfig
                         if _inject_default_value(sym, val):
                             self._info(
                                 "Using default value from sdkconfig "
@@ -1404,14 +1404,14 @@ class Kconfig(object):
                                 linenr,
                             )
                             unchanged_symbols[sym.name] = val
-                    elif self.defaults_policy == POLICY_USE_KCONFIG:  # Use default value from Kconfig
+                    elif self.defaults_policy == DefaultsPolicy.USE_KCONFIG:  # Use default value from Kconfig
                         self._info(
                             "Using default value from Kconfig "
                             f"({ANSI_BOLD}{self._quote_value(sym.str_value, sym.orig_type)}{ANSI_END}).",
                             suppress_info_prefix=True,
                         )
                         symbols_with_changed_defaults[sym.name] = (sym.str_value, val)
-                    elif self.defaults_policy == POLICY_INTERACTIVE:
+                    elif self.defaults_policy == DefaultsPolicy.INTERACTIVE:
                         preferred_source = None
                         while preferred_source not in ("s", "k"):
                             preferred_source = input(
@@ -1583,9 +1583,9 @@ class Kconfig(object):
                         sdkconfig_selection=sdkconfig_selection.name,
                         record_type="choice",
                     )
-                    if self.defaults_policy == POLICY_USE_SDKCONFIG:
+                    if self.defaults_policy == DefaultsPolicy.USE_SDKCONFIG:
                         _inject_default_value_for_choice(choice, sdkconfig_selection)
-                    elif self.defaults_policy == POLICY_INTERACTIVE:
+                    elif self.defaults_policy == DefaultsPolicy.INTERACTIVE:
                         changed_diff, unchanged_diff = _handle_interactive_choice(choice)
                         changed_symbols.update(changed_diff)
                         unchanged_symbols.update(unchanged_diff)
