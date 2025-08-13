@@ -26,6 +26,15 @@ class TestDefaultsBase:
         # Clean up after the test
         del os.environ["KCONFIG_PARSER_VERSION"]
 
+    @pytest.fixture(scope="class")
+    def policy(self, request):
+        # Set the KCONFIG_DEFAULTS_POLICY environment variable
+        policy = request.param
+        os.environ["KCONFIG_DEFAULTS_POLICY"] = policy
+        yield
+        # Clean up after the test
+        del os.environ["KCONFIG_DEFAULTS_POLICY"]
+
 
 @pytest.mark.parametrize("version", ["1", "2"], indirect=True)
 class TestValidDefaultValue(TestDefaultsBase):
@@ -94,3 +103,53 @@ class TestLoadingDefaults(TestDefaultsBase):
         assert "CONFIG_PROMPTLESS_N" not in out_sdkconfig, (
             "Promptless symbols should not be present in the output sdkconfig"
         )
+
+
+@pytest.mark.parametrize("version", ["2"], indirect=True)
+class TestLoadingChoicesWithDefaults(TestDefaultsBase):
+    """
+    Checking whether choices with default values are loaded correctly.
+    """
+
+    @pytest.mark.parametrize("policy", ["sdkconfig", "kconfig"], indirect=True)
+    def test_loading_choice_with_different_default(self, policy: pytest.FixtureDef) -> None:
+        """
+        Test loading a choice with different default values in sdkconfig and Kconfig.
+        Checking JSON report for information.
+        """
+        kconfig = Kconfig(os.path.join(KCONFIG_PATH, "Kconfig.choices"))
+        kconfig.load_config(os.path.join(SDKCONFIGS_PATH, "sdkconfig.choice.different_default"))
+        output_sdkconfig = kconfig._config_contents(header=None)
+        report_json = kconfig.report._return_json()
+        changed_choices = [area for area in report_json["areas"] if area["title"] == "Default Value Mismatch"][0][
+            "data"
+        ]["changed_choices"]
+
+        assert "Info" in report_json["header"]["status"]
+        assert "CHOICE" in (changed_choice["name"] for changed_choice in changed_choices)
+        assert (
+            "FIRST"
+            == [
+                changed_choice["kconfig_selection"]
+                for changed_choice in changed_choices
+                if changed_choice["name"] == "CHOICE"
+            ][0]
+        )
+        assert (
+            "SECOND"
+            == [
+                changed_choice["sdkconfig_selection"]
+                for changed_choice in changed_choices
+                if changed_choice["name"] == "CHOICE"
+            ][0]
+        )
+
+        if os.environ["KCONFIG_DEFAULTS_POLICY"] == "kconfig":
+            assert "kconfig" in report_json["header"]["defaults_policy"]
+            assert "CONFIG_FIRST=y" in output_sdkconfig
+            assert "CONFIG_SECOND is not set" in output_sdkconfig
+        elif os.environ["KCONFIG_DEFAULTS_POLICY"] == "sdkconfig":
+            assert "CONFIG_FIRST is not set" in output_sdkconfig
+            assert "CONFIG_SECOND=y" in output_sdkconfig
+
+        assert "CONFIG_THIRD is not set" in output_sdkconfig

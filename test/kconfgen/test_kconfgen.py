@@ -10,8 +10,7 @@ from typing import Optional
 
 import pytest
 
-from esp_kconfiglib import POLICY_USE_KCONFIG
-from esp_kconfiglib import POLICY_USE_SDKCONFIG
+from esp_kconfiglib import DefaultsPolicy
 
 KCONFIG_PARSER_VERSIONS = ["1", "2"]
 
@@ -539,10 +538,10 @@ class TestChooseDefaultValue(KconfgenBaseTestCase):
         self.args = Args(output="config", config=sdk)
 
     def test_default(self, runner):
-        self.args.env = f"KCONFIG_DEFAULTS_POLICY={POLICY_USE_SDKCONFIG}"
+        self.args.env = f"KCONFIG_DEFAULTS_POLICY={DefaultsPolicy.USE_SDKCONFIG.value}"
         out = runner(self.args, TestChooseDefaultValue.input, "# CONFIG_FOO is not set")
         assert "# CONFIG_FOO is not set\n" in out.splitlines(True)
 
     def test_ignore_sdkconfig(self, runner):
-        self.args.env = f"KCONFIG_DEFAULTS_POLICY={POLICY_USE_KCONFIG}"
+        self.args.env = f"KCONFIG_DEFAULTS_POLICY={DefaultsPolicy.USE_KCONFIG.value}"
         runner(self.args, TestChooseDefaultValue.input, "CONFIG_FOO=y")
