@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: Apache-2.0
 import os
 import subprocess
-import sys
 import tempfile
 from pathlib import Path
 
@@ -35,7 +34,8 @@ class TestKconfigVersions:
 class BaseKconfigTest:
     def call_kconfig(self, path: str, input_file_name: str, output_file_name: str) -> subprocess.CompletedProcess:
         kconfgen_cmd = [
-            sys.executable,
+            "coverage",
+            "run",
             "-m",
             "kconfgen",
             "--kconfig",
@@ -46,7 +46,14 @@ class BaseKconfigTest:
             "--env",
             "KCONFIG_REPORT_VERBOSITY=default",
         ]
-        result = subprocess.run(kconfgen_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        result = subprocess.run(
+            kconfgen_cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            env=os.environ.copy(),
+            cwd=os.getcwd(),
+        )
         return result
 
     def check_output(self, path: str, actual_output_file: Path, expected_output_file: Path) -> None:

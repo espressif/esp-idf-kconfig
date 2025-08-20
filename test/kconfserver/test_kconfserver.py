@@ -38,14 +38,20 @@ def send_request(p, req):
 
 def spawn_kconfserver(sdkconfig_path, kconfigs_src, kconfig_projbuilds_src):
     cmd = (
-        f"python -u -m kconfserver "
+        f"coverage run -m kconfserver "
         f"--env COMPONENT_KCONFIGS_SOURCE_FILE={kconfigs_src} "
         f"--env COMPONENT_KCONFIGS_PROJBUILD_SOURCE_FILE={kconfig_projbuilds_src} "
         f"--env COMPONENT_KCONFIGS= --env COMPONENT_KCONFIGS_PROJBUILD= "
         f"--kconfig Kconfig --config {sdkconfig_path}"
     )
     # Use spawnu for unicode support
-    return pexpect.spawnu(re.sub(r" +", " ", cmd), timeout=30, echo=False, use_poll=True)
+    return pexpect.spawnu(
+        re.sub(r" +", " ", cmd),
+        timeout=30,
+        echo=False,
+        use_poll=True,
+        env=os.environ.copy(),
+    )
 
 
 @pytest.fixture
@@ -86,7 +92,9 @@ def server(request, temp_files):
     yield p, sdkconfig_path
 
     # Teardown
-    p.terminate()
+    p.sendeof()
+    p.expect(pexpect.EOF)
+    p.close()
 
 
 # Parametrize parser_version for all tests that need the server fixture

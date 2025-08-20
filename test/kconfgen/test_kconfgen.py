@@ -56,7 +56,7 @@ class KconfgenBaseTestCase:
             out_path = os.path.join(str(tmp_path), "output")
             # build command
             cmd = (
-                ["python", "-m", "kconfgen"]
+                ["coverage", "run", "-m", "kconfgen"]
                 + args.to_cli()
                 + ["--output", args.output, out_path, "--kconfig", kconfig_path]
             )
