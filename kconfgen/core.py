@@ -25,6 +25,7 @@ from typing import List
 from typing import Optional
 from typing import Set
 from typing import Tuple
+from typing import Union
 
 import esp_idf_kconfig.gen_kconfig_doc as gen_kconfig_doc
 import esp_kconfiglib.core as kconfiglib
@@ -458,8 +459,8 @@ def get_json_values(config: kconfiglib.Kconfig) -> dict:
             return
 
         if sym.config_string:
-            val = sym.str_value
-            if not val and sym.type in (
+            candidate_val: str = sym.str_value
+            if not candidate_val and sym.type in (
                 kconfiglib.INT,
                 kconfiglib.HEX,
             ):
@@ -467,13 +468,15 @@ def get_json_values(config: kconfiglib.Kconfig) -> dict:
                     f"warning: {sym.name} has no value set in the configuration."
                     " This can be caused e.g. by missing default value for the current chip version."
                 )
-                val = None
+                val: Optional[Union[str, bool, int]] = None
             elif sym.type == kconfiglib.BOOL:
-                val = val != "n"
+                val = candidate_val != "n"
             elif sym.type == kconfiglib.HEX:
-                val = int(val, 16)
+                val = int(candidate_val, 16)
             elif sym.type == kconfiglib.INT:
-                val = int(val)
+                val = int(candidate_val)
+            else:
+                val = candidate_val
             config_dict[sym.name] = val
 
     for n in config.node_iter(False):
@@ -749,8 +752,6 @@ def main():
             and len(args.defaults) == 0  # if defaults are loaded, report will be printed after that
         ),
     )
-    config.warn_assign_redun = False
-    config.warn_assign_override = False
 
     sdkconfig_renames_sep = ";" if args.list_separator == "semicolon" else " "
     sdkconfig_renames = [args.sdkconfig_rename] if args.sdkconfig_rename else []

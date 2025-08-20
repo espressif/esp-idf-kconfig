@@ -685,20 +685,20 @@ class Kconfig(object):
             different values (e.g. CONFIG_FOO=n followed by CONFIG_FOO=y, where the
             last value would get used).
 
-            This variable is True by default. Disabling it might be useful when
-            merging configurations.
+            Switched to False by default in esp-idf-kconfig - merging configurations
+            is much more common in current use cases.
         """
-        self.warn_assign_override = True
+        self.warn_assign_override = False
 
         """
         warn_assign_redun:
             Like warn_assign_override, but for multiple assignments setting a symbol
             to the same value.
 
-            This variable is True by default. Disabling it might be useful when
-            merging configurations.
+            Switched to False by default in esp-idf-kconfig - merging configurations
+            is much more common in current use cases.
         """
-        self.warn_assign_redun = True
+        self.warn_assign_redun = False
         self._warn_assign_no_prompt = True
 
         """
