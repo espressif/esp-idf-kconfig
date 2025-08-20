@@ -1,0 +1,75 @@
+mainmenu "Test if config options and choices set multiple times are loaded correctly"
+
+    config CONTROL
+        int "Control symbol set only once"
+        default 1
+
+    config MULTIPLE_DEFAULT
+        string "Symbol with multiple default values"
+        default "d1"
+
+    config MULTIPLE_COMMON
+        string "Symbol with multiple values, both user-set and default"
+        default "c1"
+
+    choice CHOICE_CONTROL
+        prompt "Control choice"
+
+        config ALPHA_CONTROL
+            bool "alpha control"
+        config BETA_CONTROL
+            bool "beta control"
+        config GAMMA_CONTROL
+            bool "gamma control"
+
+    endchoice
+
+    choice CHOICE_DEFAULT
+        prompt "Some choice symbols will have multiple default assignments"
+
+        config ALPHA_DEFAULT
+            bool "alpha default"
+        config BETA_DEFAULT
+            bool "beta default"
+        config GAMMA_DEFAULT
+            bool "gamma default"
+
+    endchoice
+
+
+    choice CHOICE_COMMON
+        prompt "Some choice symbols will have multiple value assignments (both default and user-set)"
+
+        config ALPHA_COMMON
+            bool "alpha common"
+        config BETA_COMMON
+            bool "beta common"
+        config GAMMA_COMMON
+            bool "gamma common"
+
+    endchoice
+
+
+    choice CHOICE_SECOND_DEFAULT
+        prompt "Similar to CHOICE_DEFAULT, but different assignment placement in sdkconfig"
+
+        config ALPHA_SECOND_DEFAULT
+            bool "alpha second default"
+        config BETA_SECOND_DEFAULT
+            bool "beta second default"
+        config GAMMA_SECOND_DEFAULT
+            bool "gamma second default"
+
+    endchoice
+
+    choice CHOICE_SECOND_COMMON
+        prompt "Similar to CHOICE_COMMON, but different assignment placement in sdkconfig"
+
+        config ALPHA_SECOND_COMMON
+            bool "alpha second common"
+        config BETA_SECOND_COMMON
+            bool "beta second common"
+        config GAMMA_SECOND_COMMON
+            bool "gamma second common"
+
+    endchoice

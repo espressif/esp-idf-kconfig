@@ -1,0 +1,45 @@
+# default:
+CONFIG_ALPHA_CONTROL=y
+# default:
+# CONFIG_BETA_CONTROL is not set
+# default:
+# CONFIG_GAMMA_CONTROL is not set
+
+# default:
+CONFIG_ALPHA_DEFAULT=y
+# default:
+# CONFIG_BETA_DEFAULT is not set
+# default:
+# CONFIG_GAMMA_DEFAULT is not set
+# Some assignments are in the end of the file
+
+# default:
+CONFIG_ALPHA_COMMON=y
+# default:
+# CONFIG_BETA_COMMON is not set
+# default:
+# CONFIG_GAMMA_COMMON is not set
+# the rest of the assignments is in the end of the file
+
+# default:
+CONFIG_ALPHA_SECOND_DEFAULT=y
+# default:
+# CONFIG_BETA_SECOND_DEFAULT is not set
+# default:
+CONFIG_GAMMA_SECOND_DEFAULT=y # this one should be used
+
+# default:
+CONFIG_ALPHA_SECOND_COMMON=y
+# default:
+# CONFIG_BETA_SECOND_COMMON is not set
+CONFIG_GAMMA_SECOND_COMMON=y
+CONFIG_BETA_SECOND_COMMON=y
+CONFIG_GAMMA_SECOND_COMMON=y # this one should be used
+
+# default:
+# CONFIG_BETA_DEFAULT is not set
+# default:
+CONFIG_GAMMA_DEFAULT=y # this one should be used
+
+CONFIG_GAMMA_COMMON=y
+CONFIG_BETA_COMMON=y # this one should be used

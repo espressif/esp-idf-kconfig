@@ -10,6 +10,7 @@ the messages and print them at the end of the parsing process as one report.
 
 import json
 import textwrap
+from collections import defaultdict
 from typing import TYPE_CHECKING
 from typing import Dict
 from typing import List
@@ -121,6 +122,13 @@ class Area(ABC):
         ret_json["title"] = self.title
         ret_json["severity"] = self.severity_to_str(self.report_severity())
         return ret_json
+
+    @abstractmethod
+    def reset(self) -> None:
+        """
+        Reset the area to its initial state, clearing all records and data.
+        """
+        pass
 
     @staticmethod
     def severity_to_str(severity: int) -> str:
@@ -303,11 +311,19 @@ class DefaultValuesArea(Area):
 
         return ret_json
 
+    def reset(self) -> None:
+        """
+        Reset the area to its initial state, clearing all records and data.
+        """
+        self.changed_defaults.clear()
+        self.changed_values_promptless.clear()
+        self.changed_choices.clear()
+
 
 class MultipleDefinitionArea(Area):
     """
     Multiple definition: having two or more definitions of the Symbol/Choice with the same name.
-    NOTE: Currently, MutliplyDefinitionArea cause only info instead of warning. This will be changed in the future.
+    NOTE: Currently, MultipleDefinitionArea cause only info instead of warning. This will be changed in the future.
     """
 
     def __init__(self):
@@ -389,6 +405,12 @@ class MultipleDefinitionArea(Area):
                 ret_json["data"][sym_or_choice_name].append(definition)
         return ret_json
 
+    def reset(self) -> None:
+        """
+        Reset the area to its initial state, clearing all records and data.
+        """
+        self.multiple_definitions.clear()
+
 
 class MiscArea(Area):
     """
@@ -440,6 +462,118 @@ class MiscArea(Area):
         ret_json["data"] = list(self.messages)
         return ret_json
 
+    def reset(self) -> None:
+        """
+        Reset the area to its initial state, clearing all records and data.
+        """
+        self.messages.clear()
+
+
+class MultipleAssignmentArea(Area):
+    """
+    This area reports multiple assignments to the same symbol within a single file.
+    """
+
+    def __init__(self):
+        super().__init__(
+            title="Multiple Assignments",
+            ignore_codes=set(),
+            info_string=(
+                "Under normal circumstances, there should be only one (or none) assignment per config option. "
+                "Multiple assignments mean somebody manually altered the sdkconfig file. "
+                "If you edited the sdkconfig file intentionally, this area can be ignored."
+            ),
+        )
+
+        # CONFIG_NAME: [(val, is_default?), (val, is_default?), ...]
+        self.multiple_assignments_sym: Dict[Symbol, List[Tuple[str, bool]]] = defaultdict(list)
+        # CHOICE_NAME: [(val, is_default?), (val, is_default?), ...]
+        self.multiple_assignments_choice: Dict[Choice, List[Tuple[str, bool]]] = defaultdict(list)
+
+    def add_record(self, sym_or_choice, **kwargs):
+        """
+        kwargs:
+            new_value: str
+            is_default: bool
+        """
+        if "new_value" not in kwargs.keys() or "is_default" not in kwargs.keys():
+            raise AttributeError("New value and is_default must be specified for MultipleAssignmentArea.")
+        if sym_or_choice.__class__.__name__ == "Symbol":
+            if not self.multiple_assignments_sym[sym_or_choice]:
+                # If this is the first time we are logging the data, we also need to log the first value
+                self.multiple_assignments_sym[sym_or_choice] = [
+                    (sym_or_choice.str_value, sym_or_choice._user_value is None)
+                ]
+            self.multiple_assignments_sym[sym_or_choice].append((kwargs["new_value"], kwargs["is_default"]))
+        elif sym_or_choice.__class__.__name__ == "Choice":
+            if not self.multiple_assignments_choice[sym_or_choice]:
+                # If this is the first time we are logging the data, we also need to log the first selection
+                self.multiple_assignments_choice[sym_or_choice] = [
+                    (sym_or_choice.selection.name, sym_or_choice._user_selection is None)
+                ]
+            self.multiple_assignments_choice[sym_or_choice].append((kwargs["new_value"], kwargs["is_default"]))
+
+    def add_ignore(self, sym_or_choice: "Union[Symbol, Choice]") -> None:
+        raise AttributeError("MultipleAssignmentArea does not support ignore codes")
+
+    def report_severity(self) -> int:
+        return STATUS_OK_WITH_INFO if (self.multiple_assignments_sym or self.multiple_assignments_choice) else STATUS_OK
+
+    def print(self, verbosity: str) -> Optional[Table]:
+        if self.report_severity() is STATUS_OK:
+            return None
+
+        table = Table(title=self.title, title_justify="left", show_header=False, title_style=AREA_TITLE_STYLE)
+        table.box = HORIZONTALS
+        table.add_column("", justify="left", no_wrap=False)
+
+        if verbosity == VERBOSITY_VERBOSE:
+            table.add_row(self.info_string, style=INFO_STRING_STYLE)
+
+        for sym in self.multiple_assignments_sym:
+            msg = f"Symbol {sym.name}: "
+            for val, is_default in self.multiple_assignments_sym[sym]:
+                msg += f"\n{_INDENT}{val}{' (default value)' if is_default else ' (user-set value)'}"
+            msg += f"\n{_INDENT}-> using {sym.str_value}"
+            table.add_row(msg)
+        for choice in self.multiple_assignments_choice:
+            msg = f"Choice {choice.name}: "
+            for val, is_default in self.multiple_assignments_choice[choice]:
+                msg += f"\n{_INDENT}{val}{' (default selection)' if is_default else ' (user-set selection)'}"
+            msg += f"\n{_INDENT}-> using {choice.selection.name}"
+            table.add_row(msg)
+
+        return table
+
+    def return_json(self) -> Optional[dict]:
+        if not self.multiple_assignments_sym and not self.multiple_assignments_choice:
+            return None
+        ret_json = super().return_json()
+        if not ret_json:
+            ret_json = dict()
+        ret_json["data"] = dict()
+        ret_json["data"]["symbols"] = dict()
+        ret_json["data"]["choices"] = defaultdict(list)
+
+        for sym in self.multiple_assignments_sym:
+            ret_json["data"]["symbols"][sym.name] = {"values": dict(), "final_value": sym.str_value}
+            for val, is_default in self.multiple_assignments_sym[sym]:
+                ret_json["data"]["symbols"][sym.name]["values"][val] = "default" if is_default else "user-set"
+
+        for choice in self.multiple_assignments_choice:
+            ret_json["data"]["choices"][choice.name] = {"values": dict(), "final_value": choice.selection.name}
+            for val, is_default in self.multiple_assignments_choice[choice]:
+                ret_json["data"]["choices"][choice.name]["values"][val] = "default" if is_default else "user-set"
+
+        return ret_json
+
+    def reset(self) -> None:
+        """
+        Reset the area to its initial state, clearing all records and data.
+        """
+        self.multiple_assignments_sym.clear()
+        self.multiple_assignments_choice.clear()
+
 
 class KconfigReport:
     """
@@ -479,7 +613,12 @@ class KconfigReport:
         self.lines_with_ignores: List[str] = list()
 
         # Areas
-        self.areas = (MultipleDefinitionArea(), MiscArea(), DefaultValuesArea(defaults_policy))
+        self.areas = (
+            MultipleDefinitionArea(),
+            MiscArea(),
+            DefaultValuesArea(defaults_policy),
+            MultipleAssignmentArea(),
+        )
 
         # Mapping dictionaries
         """
@@ -511,6 +650,15 @@ class KconfigReport:
         self._status = max(area.report_severity() for area in self.areas) or STATUS_OK
 
         return self._status
+
+    def reset(self) -> None:
+        """
+        Reset the report to its initial state.
+        """
+        self.lines_with_ignores.clear()
+        for area in self.areas:
+            area.reset()
+        self._status = STATUS_NONE
 
     def add_ignore_line(self, line: str) -> None:
         """

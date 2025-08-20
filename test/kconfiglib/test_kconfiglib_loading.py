@@ -11,12 +11,7 @@ KCONFIG_PATH = os.path.join(TEST_FILES_PATH, "kconfigs")
 SDKCONFIGS_PATH = os.path.join(TEST_FILES_PATH, "sdkconfigs")
 
 
-class TestDefaultsBase:
-    """
-    Base class for tests that check default values in Kconfig.
-    It sets the KCONFIG_PARSER_VERSION environment variable based on the test parameter.
-    """
-
+class TestBase:
     @pytest.fixture(scope="class", autouse=True)
     def version(self, request):
         # Set the KCONFIG_PARSER_VERSION environment variable
@@ -25,6 +20,13 @@ class TestDefaultsBase:
         yield
         # Clean up after the test
         del os.environ["KCONFIG_PARSER_VERSION"]
+
+
+class TestDefaultsBase(TestBase):
+    """
+    Base class for tests that check default values in Kconfig.
+    It sets the KCONFIG_PARSER_VERSION environment variable based on the test parameter.
+    """
 
     @pytest.fixture(scope="class")
     def policy(self, request):
@@ -179,3 +181,131 @@ class TestLoadingChoicesWithDefaults(TestDefaultsBase):
         elif os.environ["KCONFIG_DEFAULTS_POLICY"] == "sdkconfig":
             assert "CONFIG_FIRST=y" in output_sdkconfig
             assert "CONFIG_SECOND is not set" in output_sdkconfig
+
+
+@pytest.mark.parametrize("version", ["1", "2"], indirect=True)
+class TestMultipleValueSet(TestBase):
+    """
+    Test cases test what happens if one config option is set multiple times.
+
+    If the symbol/choice is set in multiple files (sdkconfig.defaults and sdkconfig),
+    the last value should be used and no warning should be produced.
+
+    If the symbol/choice is set multiple times in the same file, expected behavior follows:
+    Symbol:
+        * Last user-set value is used (even if default values follow)
+        * If no user-set values are provided, last default value is used
+    If there is more than one value (no matter whether user-set, default or a mix) a warning is printed.
+
+    Choice:
+        * Last choice symbol user-set to y is considered choice selection
+        * If no choice symbol user-set to y is provided, last choice symbol with default value is used
+
+    NOTE: After every test, we need to run kconfig.report.reset(). KconfigReport is a singleton,
+    which is normally OK (we do not use multiple Kconfig instances in one script). However, tests are
+    an exception, so we need to make sure the singleton is clear after each test.
+    """
+
+    def test_symbols(self):
+        kconfig = Kconfig(os.path.join(KCONFIG_PATH, "Kconfig.multiple_value_set"))
+        kconfig.load_config(os.path.join(SDKCONFIGS_PATH, "sdkconfig.multiset_symbols"))
+
+        output_sdkconfig = kconfig._config_contents(header=None)
+        json_report = kconfig.report._return_json()
+        multiple_assignments = [area for area in json_report["areas"] if area["title"] == "Multiple Assignments"][0]
+
+        assert "CONFIG_CONTROL=1" in output_sdkconfig
+        assert 'CONFIG_MULTIPLE_DEFAULT="d3"' in output_sdkconfig
+        assert 'CONFIG_MULTIPLE_COMMON="c3"' in output_sdkconfig
+
+        assert "CONTROL" not in multiple_assignments["data"]["symbols"]
+        assert "MULTIPLE_DEFAULT" in multiple_assignments["data"]["symbols"]
+        assert "MULTIPLE_COMMON" in multiple_assignments["data"]["symbols"]
+
+        kconfig.report.reset()
+
+    def test_choices(self):
+        """
+        Test that last user-set value is used for choices.
+        """
+        kconfig = Kconfig(os.path.join(KCONFIG_PATH, "Kconfig.multiple_value_set"))
+        kconfig.load_config(os.path.join(SDKCONFIGS_PATH, "sdkconfig.multiset_choices"))
+        output_sdkconfig = kconfig._config_contents(header=None)
+        json_report = kconfig.report._return_json()
+
+        multiple_assignments = [area for area in json_report["areas"] if area["title"] == "Multiple Assignments"][0]
+
+        # Control choice
+        ################
+        assert "CONFIG_ALPHA_CONTROL=y" in output_sdkconfig
+        assert "CONFIG_BETA_CONTROL is not set" in output_sdkconfig
+        assert "CONFIG_GAMMA_CONTROL is not set" in output_sdkconfig
+        assert "CHOICE_CONTROL" not in multiple_assignments["data"]["choices"]
+
+        # Multiple default values, out of order
+        #######################################
+        assert "CONFIG_ALPHA_DEFAULT is not set" in output_sdkconfig
+        assert "CONFIG_BETA_DEFAULT is not set" in output_sdkconfig
+        assert "CONFIG_GAMMA_DEFAULT=y" in output_sdkconfig
+        assert "CHOICE_DEFAULT" in multiple_assignments["data"]["choices"]
+
+        # Multiple default and user-set values, out of order
+        ####################################################
+        assert "CONFIG_ALPHA_COMMON is not set" in output_sdkconfig
+        assert "CONFIG_BETA_COMMON=y" in output_sdkconfig
+        assert "CONFIG_GAMMA_COMMON is not set" in output_sdkconfig
+        assert "CHOICE_COMMON" in multiple_assignments["data"]["choices"]
+
+        # Multiple default values, in order
+        ###################################
+        assert "CONFIG_ALPHA_SECOND_DEFAULT is not set" in output_sdkconfig
+        assert "CONFIG_BETA_SECOND_DEFAULT is not set" in output_sdkconfig
+        assert "CONFIG_GAMMA_SECOND_DEFAULT=y" in output_sdkconfig
+        assert "CHOICE_SECOND_DEFAULT" in multiple_assignments["data"]["choices"]
+
+        # Multiple default and user-set values, in order
+        ################################################
+        assert "CONFIG_ALPHA_SECOND_COMMON is not set" in output_sdkconfig
+        assert "CONFIG_BETA_SECOND_COMMON is not set" in output_sdkconfig
+        assert "CONFIG_GAMMA_SECOND_COMMON=y" in output_sdkconfig
+        assert "CHOICE_SECOND_COMMON" in multiple_assignments["data"]["choices"]
+
+        kconfig.report.reset()
+
+    def test_echo_into_sdkconfig(self):
+        """
+        This test ensures special case user often do works:
+        1) Generate sdkconfig from Kconfig
+        2) echo "CONFIG_FOO=y" >> sdkconfig
+        3) Run Kconfig again
+        Expected result: FOO should be set to y, no matter if it is a config option or a choice option.
+        In case of choice, the rest should be set to n and user-set.
+        """
+        SDKCONFIG_TMP = "sdkconfig.tmp"
+
+        kconfig = Kconfig(os.path.join(KCONFIG_PATH, "Kconfig.multiple_value_set"))
+        kconfig.write_config(os.path.join(SDKCONFIGS_PATH, SDKCONFIG_TMP))
+
+        config_contents = kconfig._config_contents(header=None)
+        assert "CONFIG_CONTROL=1" in config_contents
+        assert "CONFIG_ALPHA_CONTROL=y" in config_contents
+        assert "CONFIG_BETA_CONTROL is not set" in config_contents
+        assert "CONFIG_GAMMA_CONTROL is not set" in config_contents
+
+        # equivalent to:
+        # $ echo "CONFIG_CONTROL=42" >> sdkconfig.tmp && echo "CONFIG_BETA_CONTROL=y" >> sdkconfig.tmp
+        with open(os.path.join(SDKCONFIGS_PATH, SDKCONFIG_TMP), "a") as f:
+            f.write("CONFIG_CONTROL=42\n")
+            f.write("CONFIG_BETA_CONTROL=y\n")
+
+        kconfig.load_config(os.path.join(SDKCONFIGS_PATH, SDKCONFIG_TMP))
+        new_config_contents = kconfig._config_contents(header=None)
+        assert "CONFIG_CONTROL=42" in new_config_contents
+        assert "CONFIG_CONTROL=1" not in new_config_contents
+
+        assert "CONFIG_ALPHA_CONTROL is not set" in new_config_contents
+        assert "CONFIG_BETA_CONTROL=y" in new_config_contents
+        assert "CONFIG_GAMMA_CONTROL is not set" in new_config_contents
+
+        os.remove(os.path.join(SDKCONFIGS_PATH, SDKCONFIG_TMP))
+        kconfig.report.reset()

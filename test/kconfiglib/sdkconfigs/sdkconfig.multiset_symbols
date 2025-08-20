@@ -1,0 +1,20 @@
+
+# default:
+CONFIG_CONTROL=1
+
+# default:
+CONFIG_MULTIPLE_DEFAULT="d1"
+# default:
+CONFIG_MULTIPLE_DEFAULT="d2"
+# the last value assignment is at the end of the file
+
+# default:
+CONFIG_MULTIPLE_COMMON="c1"
+CONFIG_MULTIPLE_COMMON="c2"
+# the rest of value assignments is at the end of the file
+
+# default:
+CONFIG_MULTIPLE_DEFAULT="d3"
+CONFIG_MULTIPLE_COMMON="c3"
+# default:
+CONFIG_MULTIPLE_COMMON="c4" # should be ignored (it is default)
