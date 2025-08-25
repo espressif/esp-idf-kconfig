@@ -80,6 +80,13 @@ class TestSourceChecker(ApplyLine):
         self.expect_success('source "/tmp/Kconfig.in"')
         self.expect_error('source"Kconfig.in"', expect='source "Kconfig.in"')
         self.expect_success('source "/tmp/Kconfig.in"  # comment')
+        self.expect_error('source "$ENV_VAR/unsupported_name"', expect='source "$ENV_VAR/Kconfig.unsupported_name"')
+        self.expect_error('source "$ENV_VAR"', expect='source "$ENV_VAR/Kconfig.<suffix>"')
+        # special envvars that are ok even if they are not specifying Kconfig file name explicitly
+        self.expect_success('source "$COMPONENT_KCONFIGS_SOURCE_FILE"')
+        self.expect_success('source "$COMPONENT_KCONFIGS_PROJBUILD_SOURCE_FILE"')
+        self.expect_success('source "$COMPONENT_KCONFIGS_EXCLUDED_SOURCE_FILE"')
+        self.expect_success('source "$COMPONENT_KCONFIGS_PROJBUILD_EXCLUDED_SOURCE_FILE"')
 
 
 class TestIndentAndNameChecker(ApplyLine):

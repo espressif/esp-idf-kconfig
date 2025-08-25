@@ -384,6 +384,10 @@ Example:
         rsource "./Kconfig.core_crew"
         orsource "./Kconfig.optional_crew"
 
+.. note::
+
+   The sourced file must be named as ``Kconfig.<suffix>``. Suffix is up to the user to define, but must be present.
+
 .. _Options:
 
 Options
