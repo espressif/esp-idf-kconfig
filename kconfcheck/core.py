@@ -91,6 +91,8 @@ class SourceChecker(BaseChecker):
             if path in [
                 "$COMPONENT_KCONFIGS_SOURCE_FILE",
                 "$COMPONENT_KCONFIGS_PROJBUILD_SOURCE_FILE",
+                "$COMPONENT_KCONFIGS_EXCLUDED_SOURCE_FILE",
+                "$COMPONENT_KCONFIGS_PROJBUILD_EXCLUDED_SOURCE_FILE",
             ]:
                 pass
             elif not filename.startswith("Kconfig."):
