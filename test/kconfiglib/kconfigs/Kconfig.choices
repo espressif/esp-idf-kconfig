@@ -13,3 +13,22 @@ choice CHOICE
         bool "THIRD"
 
 endchoice
+
+
+# Use case below tests a situation when choice is deselected by its dependency
+
+config DEPENDEE
+    bool "Symbol enables/disables DEPENDENT_CHOICE"
+    default n
+
+choice DEPENDENT_CHOICE
+    prompt "This choice is dependent on DEPENDEE symbol"
+    depends on DEPENDEE
+
+    config DEPENDENT_FIRST
+        bool "DEPENDENT_FIRST"
+
+    config DEPENDENT_SECOND
+        bool "DEPENDENT_SECOND"
+
+endchoice
