@@ -180,7 +180,7 @@ class DefaultValuesArea(Area):
         else:  # Choice
             record = (
                 str(sym_or_choice.name or "nameless" + sym_or_choice.name_and_loc),
-                str(sym_or_choice.selection.name),  # type: ignore
+                str(sym_or_choice.selection.name if sym_or_choice.selection else "choice deselected"),  # type: ignore
                 str(kwargs.get("sdkconfig_selection", False)),
             )
             self.changed_choices.add(record)

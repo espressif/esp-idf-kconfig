@@ -153,3 +153,29 @@ class TestLoadingChoicesWithDefaults(TestDefaultsBase):
             assert "CONFIG_SECOND=y" in output_sdkconfig
 
         assert "CONFIG_THIRD is not set" in output_sdkconfig
+
+    def test_loading_choice_dependent_on_symbol(self) -> None:
+        kconfig = Kconfig(os.path.join(KCONFIG_PATH, "Kconfig.choices"))
+        kconfig.load_config(os.path.join(SDKCONFIGS_PATH, "sdkconfig.dependent_choice"))
+        output_sdkconfig = kconfig._config_contents(header=None)
+        report_json = kconfig.report._return_json()
+        changed_choices = [area for area in report_json["areas"] if area["title"] == "Default Value Mismatch"][0][
+            "data"
+        ]["changed_choices"]
+
+        assert "Info" in report_json["header"]["status"]
+
+        dependent_choice = next(
+            (changed_choice for changed_choice in changed_choices if changed_choice["name"] == "DEPENDENT_CHOICE"), None
+        )
+        assert dependent_choice is not None
+        assert "choice deselected" == dependent_choice["kconfig_selection"]
+        assert "DEPENDENT_FIRST" == dependent_choice["sdkconfig_selection"]
+
+        if os.environ["KCONFIG_DEFAULTS_POLICY"] == "kconfig":
+            assert "kconfig" in report_json["header"]["defaults_policy"]
+            assert "CONFIG_DEPENDENT_FIRST" not in output_sdkconfig
+            assert "CONFIG_DEPENDENT_SECOND" not in output_sdkconfig
+        elif os.environ["KCONFIG_DEFAULTS_POLICY"] == "sdkconfig":
+            assert "CONFIG_FIRST=y" in output_sdkconfig
+            assert "CONFIG_SECOND is not set" in output_sdkconfig

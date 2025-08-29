@@ -1,0 +1,14 @@
+# default:
+CONFIG_FIRST=y
+# default:
+# CONFIG_SECOND is not set
+# default:
+# CONFIG_THIRD is not set
+
+# Compared to the Kconfig, DEPENDENT_CHOICE is selected here
+# default:
+CONFIG_DEPENDEE=y
+# default:
+CONFIG_DEPENDENT_FIRST=y
+# default:
+# CONFIG_DEPENDENT_SECOND is not set
