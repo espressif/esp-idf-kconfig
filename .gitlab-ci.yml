@@ -38,6 +38,7 @@ workflow:
     RUN_TESTS: "coverage run -m pytest -vv"
     COVERAGE_PROCESS_START: "${CI_PROJECT_DIR}/pyproject.toml"
     COVERAGE_RCFILE: "${CI_PROJECT_DIR}/pyproject.toml"
+    COVERAGE_FILE: "$CI_PROJECT_DIR/.coverage.${CI_JOB_NAME}-${CI_NODE_INDEX:-0}"
     PYTHONUNBUFFERED: "1"
   artifacts:
     when: always # get artifacts no matter what test results are
@@ -176,10 +177,13 @@ merge_coverage:
   tags:
     - build
     - internet
+  variables:
+    COVERAGE_RCFILE: "$CI_PROJECT_DIR/pyproject.toml"
   artifacts:
     when: always
     paths:
       - coverage-merged.xml
+      - html_report
     reports:
       coverage_report:
         coverage_format: cobertura
@@ -187,23 +191,12 @@ merge_coverage:
   coverage: '/TOTAL.*? (100(?:\.0+)?\%|[1-9]?\d(?:\.\d+)?\%)$/'
   script:
     - pip install -e .[dev] --prefer-binary
-    - find . -name ".coverage.*" -type f -exec cp {} . \;
-    - cd test
-    - |
-      for d in */; do
-        [ -d "$d" ] || continue
-        cd "$d"
-        echo "Coverage for $d"
-        echo "---------------"
-        coverage combine -q
-        coverage report --show-missing
-        echo "---------------"
-        cd ..
-      done
-    - cd ..
-    - ls -la .coverage.* || echo "No coverage files found"
-    - coverage combine .coverage.*
-    - coverage xml -o coverage-merged.xml
+
+    # Combine ALL raw data files exactly once (from repo root)
+    - coverage combine
+
+    # Generate reports from the merged data
+    - coverage xml -o coverage-merged.xml -i
     - coverage report --precision=2
     - coverage html -d html_report --precision=2
 
