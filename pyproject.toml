@@ -134,13 +134,8 @@ write-changes = true
 
 [tool.coverage.run]
 parallel = true
-source = [
-    "esp_idf_kconfig",
-    "esp_kconfiglib",
-    "esp_menuconfig",
-    "kconfcheck",
-    "kconfgen",
-    "kconfiglib",
-    "kconfserver",
-    "menuconfig"
-]
+relative_files = false
+omit = ["*/test/*/**"]
+
+[tool.coverage.paths]
+source = ["esp-idf-kconfig", "."]
