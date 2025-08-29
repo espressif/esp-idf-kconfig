@@ -4,15 +4,14 @@
 
 Install pexpect (`pip install pexpect`).
 
-Then run the tests manually like this:
+Then run the tests manually:
 
 ```
-./test_kconfserver.py --logfile tests.log
+cd <folder with kconfserver tests>
+pytest
 ```
 
-If a weird error message comes up from the test, check the log file (`tests.log`) which has the full interaction session (input and output) from kconfserver.py - sometimes the test suite misinterprets some JSON-like content in a Python error message as JSON content.
-
-Note: kconfserver.py prints its error messages on stderr, to avoid overlap with JSON content on stdout. However pexpect uses a pty (virtual terminal) which can't distinguish stderr and stdout.
+Note: ``kconfserver.py`` prints its error messages on stderr, to avoid overlap with JSON content on stdout. However pexpect uses a pty (virtual terminal) which can't distinguish stderr and stdout.
 
 Test cases apply to `Kconfig` config schema. Cases are listed in `testcases.txt` and are each of this form:
 
@@ -24,7 +23,7 @@ Test cases apply to `Kconfig` config schema. Cases are listed in `testcases.txt`
 ```
 
 * First line (`*`) is description
-* Second line (`>`) is changes to send
+* Second line (`>`) is changes to send. For version 3, there can be a (`>R`) leading string, which denotes that the following JSON snippet should be used with the `reset` command.
 * Third line (`<`) is response to expect back
 * (Blank line between cases)
 

@@ -8,7 +8,7 @@ import tempfile
 import pexpect
 import pytest
 
-PROTOCOL_VERSIONS = [1, 2]
+PROTOCOL_VERSIONS = [1, 2, 3]
 KCONFIG_PARSER_VERSIONS = [1, 2]
 
 
@@ -20,9 +20,17 @@ def parse_testcases(version):
     for i in range(0, len(cases), 3):
         desc, send, expect_line = cases[i : i + 3]
         assert desc.startswith("* "), f"Unexpected description at line {i + 1}: '{desc}'"
-        assert send.startswith("> "), f"Unexpected send at line {i + 2}: '{send}'"
+        if version < 3:
+            assert send.startswith("> "), f"Unexpected send at line {i + 2}: '{send}'"
+        else:
+            assert send.startswith(">R ") or send.startswith("> "), f"Unexpected send at line {i + 2}: '{send}'"
         assert expect_line.startswith("< "), f"Unexpected expect at line {i + 3}: '{expect_line}'"
-        yield (desc[2:].strip(), json.loads(send[2:].strip()), json.loads(expect_line[2:].strip()))
+        yield (
+            desc[2:].strip(),
+            json.loads(send[2:].strip() if send.startswith("> ") else send[3:]),
+            json.loads(expect_line[2:].strip()),
+            "set" if send.startswith("> ") else "reset",
+        )
 
 
 def expect_json(p):
@@ -98,8 +106,10 @@ def server(request, temp_files):
 
 
 # Parametrize parser_version for all tests that need the server fixture
-@pytest.mark.parametrize("server", KCONFIG_PARSER_VERSIONS, indirect=True, ids=["parser-v1", "parser-v2"])
-@pytest.mark.parametrize("protocol_version", PROTOCOL_VERSIONS)
+@pytest.mark.parametrize(
+    "server", KCONFIG_PARSER_VERSIONS, indirect=True, ids=[f"parser-v{v}" for v in KCONFIG_PARSER_VERSIONS]
+)
+@pytest.mark.parametrize("protocol_version", PROTOCOL_VERSIONS, ids=[f"protocol-v{v}" for v in PROTOCOL_VERSIONS])
 def test_protocol_versions(server, protocol_version):
     p, _ = server
 
@@ -107,41 +117,45 @@ def test_protocol_versions(server, protocol_version):
     send_request(p, {"version": protocol_version, "load": None})
 
     # Protocol-specific testcases
-    for desc, send, expected in parse_testcases(protocol_version):
-        resp = send_request(p, {"version": protocol_version, "set": send})
+    for desc, send, expected, command in parse_testcases(protocol_version):
+        resp = send_request(p, {"version": protocol_version, f"{command}": send})
         assert resp.get("version") == protocol_version
         for key, val in expected.items():
             assert resp[key] == val, f"Mismatch in {key}: expected {val}, got {resp[key]}"
 
 
-@pytest.mark.parametrize("server", KCONFIG_PARSER_VERSIONS, indirect=True)
-def test_load_save(server):
+@pytest.mark.parametrize(
+    "server", KCONFIG_PARSER_VERSIONS, indirect=True, ids=[f"parser-v{v}" for v in KCONFIG_PARSER_VERSIONS]
+)
+@pytest.mark.parametrize("protocol_version", PROTOCOL_VERSIONS, ids=[f"protocol-v{v}" for v in PROTOCOL_VERSIONS])
+def test_load_save(server, protocol_version):
     p, sdkconfig_path = server
 
     before = os.stat(sdkconfig_path).st_mtime
-    save_resp = send_request(p, {"version": 2, "save": sdkconfig_path})
+    save_resp = send_request(p, {"version": protocol_version, "save": sdkconfig_path})
     assert "error" not in save_resp
     assert not save_resp["values"]
     assert not save_resp["ranges"]
     assert os.stat(sdkconfig_path).st_mtime > before
 
-    # Test loading in both versions
-    load_resp = send_request(p, {"version": 2, "load": sdkconfig_path})
+    load_resp = send_request(p, {"version": protocol_version, "load": sdkconfig_path})
     assert "error" not in load_resp
-    assert not load_resp["values"]
-    assert not load_resp["ranges"]
+    if protocol_version > 1:
+        assert not load_resp["values"]
+        assert not load_resp["ranges"]
+    else:
+        assert load_resp["values"]
+        assert load_resp["ranges"]
 
-    load_resp = send_request(p, {"version": 1, "load": sdkconfig_path})
-    assert "error" not in load_resp
-    assert load_resp["values"]
-    assert load_resp["ranges"]
 
-
-@pytest.mark.parametrize("server", KCONFIG_PARSER_VERSIONS, indirect=True)
-def test_invalid_json(server):
+@pytest.mark.parametrize(
+    "server", KCONFIG_PARSER_VERSIONS, indirect=True, ids=[f"parser-v{v}" for v in KCONFIG_PARSER_VERSIONS]
+)
+@pytest.mark.parametrize("protocol_version", PROTOCOL_VERSIONS, ids=[f"protocol-v{v}" for v in PROTOCOL_VERSIONS])
+def test_invalid_json(server, protocol_version):
     p, _ = server
 
-    bad = r'{ "version": 2, "load": "c:\\some\\path\\not\\escaped\\as\\json" }'
+    bad = rf'{{ "version": {protocol_version}, "load": "c:\\some\\path\\not\\escaped\\as\\json" }}'
     p.sendline(bad)
     resp = expect_json(p)
     assert "json" in resp.get("error", [""])[0].lower()
