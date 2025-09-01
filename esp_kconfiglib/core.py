@@ -29,6 +29,7 @@ from esp_kconfiglib.report import STATUS_ERROR as REPORT_STATUS_ERROR
 from esp_kconfiglib.report import DefaultValuesArea
 from esp_kconfiglib.report import KconfigReport
 from esp_kconfiglib.report import MiscArea
+from esp_kconfiglib.report import MultipleAssignmentArea
 from esp_kconfiglib.report import MultipleDefinitionArea
 
 from .constants import DefaultsPolicy
@@ -680,25 +681,34 @@ class Kconfig(object):
 
         """
         warn_assign_override:
-            Set this variable to True to generate warnings for multiple assignments
-            to the same symbol in configuration files, where the assignments set
-            different values (e.g. CONFIG_FOO=n followed by CONFIG_FOO=y, where the
-            last value would get used).
+            If this variable is True, Kconfig will report situations, where there are
+            multiple assignments to the same symbol in sdkconfig[.default] files
+            and different values are assigned. Example sdkconfig snippet:
 
-            This variable is True by default. Disabling it might be useful when
-            merging configurations.
+            CONFIG_FOO=1
+            (...)
+            CONFIG_FOO=42 # warning printed that value is changed from 1 to 42
+            (...)
+            CONFIG_FOO=0 # warning printed that value is changed from 42 to 0
+
+            NOTE: assignments do not need to be in the same file; if e.g. "CONFIG_FOO=1"
+            is in sdkconfig.default file and "CONFIG_FOO=42" in the sdkconfig file,
+            Kconfig will still report the change.
+
+            False by default in esp-idf-kconfig - loading multiple files
+            and overriding values happens often.
         """
-        self.warn_assign_override = True
+        self.warn_assign_override = False
 
         """
         warn_assign_redun:
             Like warn_assign_override, but for multiple assignments setting a symbol
             to the same value.
 
-            This variable is True by default. Disabling it might be useful when
-            merging configurations.
+            False by default in esp-idf-kconfig - loading multiple files
+            and overriding values happens often.
         """
-        self.warn_assign_redun = True
+        self.warn_assign_redun = False
         self._warn_assign_no_prompt = True
 
         """
@@ -1250,6 +1260,15 @@ class Kconfig(object):
                 for choice in self.unique_choices:
                     choice._was_set = False
 
+            # In order to detect config options which are set multiple times in a single file,
+            # we must reset the present_in_current_sdkconfig flag for all symbols and choices
+            # every time we are loading the file.
+            for sym in self.unique_defined_syms:
+                sym.present_in_current_sdkconfig = False
+
+            for choice in self.unique_choices:
+                choice.present_in_current_sdkconfig = False
+
             # Small optimizations
             set_match = self._set_match
             unset_match = self._unset_match
@@ -1274,6 +1293,27 @@ class Kconfig(object):
                         self._undef_assign(name, val, filename, linenr)
                         value_is_default = False
                         continue
+                    else:
+                        if sym.present_in_current_sdkconfig or (
+                            sym.choice and sym.choice.present_in_current_sdkconfig and val != "n"
+                        ):
+                            if sym.choice:
+                                self.report.add_record(
+                                    MultipleAssignmentArea,
+                                    sym_or_choice=sym.choice,
+                                    new_value=sym.name,
+                                    is_default=value_is_default,
+                                )
+                            else:
+                                self.report.add_record(
+                                    MultipleAssignmentArea,
+                                    sym_or_choice=sym,
+                                    new_value=unescape(_conf_string_match(val).group(1))
+                                    if sym.orig_type == STRING
+                                    else val,
+                                    is_default=value_is_default,
+                                )
+                        sym.present_in_current_sdkconfig = True
 
                     if sym.orig_type == BOOL:
                         # The C implementation only checks the first character
@@ -1339,8 +1379,15 @@ class Kconfig(object):
                     if not sym or not sym.nodes:
                         self._undef_assign(name, "n", filename, linenr)
                         continue
+                    else:
+                        if sym.present_in_current_sdkconfig and not sym.choice:
+                            self.report.add_record(
+                                MultipleAssignmentArea, sym_or_choice=sym, new_value="n", is_default=value_is_default
+                            )
+                        sym.present_in_current_sdkconfig = True
 
                     if sym.orig_type != BOOL:
+                        value_is_default = False
                         continue
 
                     val = "n"
@@ -1557,7 +1604,15 @@ class Kconfig(object):
                 choices_with_default_value[sym.choice].append(sym)
 
         for choice in choices_with_default_value:
-            # NOTE: there are only symbols with default value; if e.g. somebody tampered the sdkconfig and made some
+            # if choice has a user selection but some of its symbols have default value,
+            # "user-set" those symbols manually.
+            # As the choice will become fully user-set, we will skip the rest of the "default value" logic.
+            if choice._user_selection is not None:
+                for sym in choice.syms:
+                    sym.set_value(sym.bool_value)
+                continue
+
+            # NOTE: there are only symbols with default values; if e.g. somebody tampered the sdkconfig and made some
             # choice symbols user-set, they will not end up in here.
             default_choice_syms_from_sdkconfig = choices_with_default_value[choice]
             y_syms_from_sdkconfig = [
@@ -1573,9 +1628,12 @@ class Kconfig(object):
                 diff = [
                     sym
                     for sym in choice.syms
-                    if sym.str_value != sym._sdkconfig_value and sym._sdkconfig_value is not None
+                    if sym.str_value != sym._sdkconfig_value
+                    and sym._sdkconfig_value is not None
+                    and sym._loaded_as_default
                 ]
-                if len(diff) > 0:  # some symbols have different default values between sdkconfig and Kconfig
+                # some symbols with default value have their default values different between sdkconfig and Kconfig
+                if len(diff) > 0:
                     sdkconfig_selection: Symbol = y_syms_from_sdkconfig[0]
                     self.report.add_record(
                         DefaultValuesArea,
@@ -1589,8 +1647,24 @@ class Kconfig(object):
                         changed_diff, unchanged_diff = _handle_interactive_choice(choice)
                         changed_symbols.update(changed_diff)
                         unchanged_symbols.update(unchanged_diff)
-            # Situation where there is none or multiple y-symbols in sdkconfig is handled silently,
-            # same as it would happen when the values would be user-set in sdkconfig.
+            elif len(y_syms_from_sdkconfig) > 1:
+                # More than one choice symbol is set to y. We will use the last one
+                # (general rule of thumb is to take the last one - it is done like that with user-set values as well).
+                selection = y_syms_from_sdkconfig[-1]
+                if self.defaults_policy == DefaultsPolicy.USE_SDKCONFIG:
+                    _inject_default_value_for_choice(choice, selection)
+                elif self.defaults_policy == DefaultsPolicy.INTERACTIVE:
+                    changed_diff, unchanged_diff = _handle_interactive_choice(choice)
+                    changed_symbols.update(changed_diff)
+                    unchanged_symbols.update(unchanged_diff)
+            else:
+                self.report.add_record(
+                    MiscArea,
+                    message=(
+                        f"Choice {choice.name} has no selections set to y. "
+                        f"Will use Kconfig default selection {choice.selection.name}."
+                    ),
+                )
         return changed_symbols, unchanged_symbols
 
     def _undef_assign(self, name, val, filename, linenr):
@@ -3895,6 +3969,7 @@ class Symbol:
         "_dependents",
         "_visited",
         "_was_set",
+        "_present_in_current_sdkconfig",
         "_write_to_conf",
         "_has_active_indirect_set",
         "choice",
@@ -4176,10 +4251,33 @@ class Symbol:
         TODO: Do we use this?
         """
         self.is_allnoconfig_y = False
+
+        """
+        was_set:
+            Multipurpose internal flag indicating whether the symbol was:
+            * set e.g. in Kconfig.load_config() or Symbol.set_value()
+            * or visited during tree traversing, dependency loop detection...
+        """
         self._was_set = False
+
+        """
+        present_in_current_sdkconfig:
+            Flag indicating whether the symbol is present in the current sdkconfig.
+        """
+        self._present_in_current_sdkconfig = False
 
         # See Kconfig._build_dep()
         self._dependents = set()
+
+    @property
+    def present_in_current_sdkconfig(self):
+        return self._present_in_current_sdkconfig
+
+    @present_in_current_sdkconfig.setter
+    def present_in_current_sdkconfig(self, value: bool) -> None:
+        self._present_in_current_sdkconfig = value
+        if self.choice:
+            self.choice.present_in_current_sdkconfig = value
 
     @property
     def type(self):
@@ -5025,6 +5123,7 @@ class Choice:
         "_dependents",
         "_visited",
         "_was_set",
+        "_present_in_current_sdkconfig",
         "defaults",
         "direct_dep",
         "is_constant",
@@ -5110,6 +5209,20 @@ class Choice:
         """
         self._user_selection = None
 
+        """
+        was_set:
+            Multipurpose internal flag indicating whether the choice was:
+            * set e.g. in Kconfig.load_config() or choice being set via its symbol
+            * or visited during tree traversing, dependency loop detection...
+        """
+        self._was_set = False
+
+        """
+        _present_in_current_sdkconfig:
+            Flag indicating whether the choice is present in the current sdkconfig.
+        """
+        self._present_in_current_sdkconfig = False
+
         # Internal attributes
         self._visited = UNKNOWN
         self._cached_vis = None
@@ -5122,6 +5235,14 @@ class Choice:
 
         # See Kconfig._build_dep()
         self._dependents = set()  # type: ignore
+
+    @property
+    def present_in_current_sdkconfig(self):
+        return self._present_in_current_sdkconfig
+
+    @present_in_current_sdkconfig.setter
+    def present_in_current_sdkconfig(self, value: bool) -> None:
+        self._present_in_current_sdkconfig = value
 
     @property
     def type(self):
