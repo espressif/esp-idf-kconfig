@@ -156,6 +156,8 @@ class TestLoadingChoicesWithDefaults(TestDefaultsBase):
 
         assert "CONFIG_THIRD is not set" in output_sdkconfig
 
+        kconfig.report.reset()
+
     def test_loading_choice_dependent_on_symbol(self) -> None:
         kconfig = Kconfig(os.path.join(KCONFIG_PATH, "Kconfig.choices"))
         kconfig.load_config(os.path.join(SDKCONFIGS_PATH, "sdkconfig.dependent_choice"))
@@ -181,6 +183,24 @@ class TestLoadingChoicesWithDefaults(TestDefaultsBase):
         elif os.environ["KCONFIG_DEFAULTS_POLICY"] == "sdkconfig":
             assert "CONFIG_FIRST=y" in output_sdkconfig
             assert "CONFIG_SECOND is not set" in output_sdkconfig
+
+        kconfig.report.reset()
+
+    def test_choice_having_non_first_default_value(self) -> None:
+        kconfig = Kconfig(os.path.join(KCONFIG_PATH, "Kconfig.choice_non_first_default"))
+        kconfig.load_config(os.path.join(SDKCONFIGS_PATH, "sdkconfig.choice_non_first_default"))
+        output_sdkconfig = kconfig._config_contents(header=None)
+        report_json = kconfig.report._return_json()
+
+        # Nothing should be reported
+        assert "OK" in report_json["header"]["status"]
+
+        # Nothing should be changed
+        assert "CONFIG_ALPHA is not set" in output_sdkconfig
+        assert "CONFIG_BETA=y" in output_sdkconfig
+        assert "CONFIG_GAMMA is not set" in output_sdkconfig
+
+        kconfig.report.reset()
 
 
 @pytest.mark.parametrize("version", ["1", "2"], indirect=True)

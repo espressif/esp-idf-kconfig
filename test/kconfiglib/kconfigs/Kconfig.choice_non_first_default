@@ -1,0 +1,16 @@
+mainmenu "Test if choice having non first config default is parsed correctly"
+
+    choice DEFAULT_SELECTION_NOT_FIRST
+        prompt "Choice which has its default selection different from the first symbol"
+        default BETA
+
+        config ALPHA
+            bool "Alpha"
+
+        config BETA
+            bool "Beta"
+
+        config GAMMA
+            bool "Gamma"
+
+    endchoice

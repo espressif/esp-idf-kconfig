@@ -4276,7 +4276,10 @@ class Symbol:
     @present_in_current_sdkconfig.setter
     def present_in_current_sdkconfig(self, value: bool) -> None:
         self._present_in_current_sdkconfig = value
-        if self.choice:
+        # NOTE: If the choice symbol is set to n, do not set the choice's present_in_current_sdkconfig flag;
+        #       choice is selected by its y-set symbol, n-set symbols are just "the rest" of choice symbols
+        #       and are present in sdkconfig just for completeness.
+        if self.choice and self.bool_value != STR_TO_BOOL["n"]:
             self.choice.present_in_current_sdkconfig = value
 
     @property
