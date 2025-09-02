@@ -20,3 +20,11 @@ class DefaultsPolicy(Enum):
             return "Using Kconfig default values"
         else:
             return "Unknown policy"
+
+
+# Start and end comment for deprecated options written into sdkconfig
+DEP_OP_BEGIN = "# Deprecated options for backward compatibility"
+DEP_OP_END = "# End of deprecated options"
+
+# This pragma marks config options that have default value in sdkconfig file:
+SDKCONFIG_DEFAULT_PRAGMA = "# default:"

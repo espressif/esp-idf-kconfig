@@ -30,14 +30,15 @@ from typing import Union
 import esp_idf_kconfig.gen_kconfig_doc as gen_kconfig_doc
 import esp_kconfiglib.core as kconfiglib
 from esp_idf_kconfig import __version__
+from esp_kconfiglib.constants import DEP_OP_BEGIN
+from esp_kconfiglib.constants import DEP_OP_END
+from esp_kconfiglib.constants import SDKCONFIG_DEFAULT_PRAGMA
 
 
 class DeprecatedOptions(object):
     _RENAME_FILE_NAME = "sdkconfig.rename"
-    _DEP_OP_BEGIN = "# Deprecated options for backward compatibility"
-    _DEP_OP_END = "# End of deprecated options"
-    _RE_DEP_OP_BEGIN = re.compile(_DEP_OP_BEGIN)
-    _RE_DEP_OP_END = re.compile(_DEP_OP_END)
+    _RE_DEP_OP_BEGIN = re.compile(DEP_OP_BEGIN)
+    _RE_DEP_OP_END = re.compile(DEP_OP_END)
 
     def __init__(self, config_prefix: str, path_rename_files: List[str] = []):
         self.config_prefix = config_prefix
@@ -160,6 +161,13 @@ class DeprecatedOptions(object):
         to_replace = depr_opt if depr_to_new else new_opt
         replace_with = new_opt if depr_to_new else depr_opt
 
+        # NOTE: We want deprecated options to be treated as user-set: they are not part
+        #       of the normal menu tree/menuconfig TUI etc. and even direct change in sdkconfig
+        #       will take no effect. For that reason, skipping the default value assignment
+        #       machinery makes the process easier without any drawbacks.
+        if line.startswith(SDKCONFIG_DEFAULT_PRAGMA):
+            line = line[len(SDKCONFIG_DEFAULT_PRAGMA) + 1 :]
+
         if depr_name in self.inversions:
             if any(substring in line for substring in ("is not set", "=n")):
                 line = f"{replace_with}=y\n"
@@ -245,9 +253,9 @@ class DeprecatedOptions(object):
 
         if len(tmp_list) > 0:
             with open(path_output, "a") as f_o:
-                f_o.write("\n{}\n".format(self._DEP_OP_BEGIN))
+                f_o.write("\n{}\n".format(DEP_OP_BEGIN))
                 f_o.writelines(tmp_list)
-                f_o.write("{}\n".format(self._DEP_OP_END))
+                f_o.write("{}\n".format(DEP_OP_END))
 
     def append_header(self, config: kconfiglib.Kconfig, path_output: str) -> None:
         def _opt_defined(opt):

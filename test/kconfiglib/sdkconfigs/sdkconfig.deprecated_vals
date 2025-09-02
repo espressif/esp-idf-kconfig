@@ -1,0 +1,19 @@
+# default:
+CONFIG_NEW_BOOL=y
+# default:
+CONFIG_NEW_STRING="test"
+# default:
+CONFIG_NEW_HEX=0xbeef
+# default:
+CONFIG_NEW_INT=42
+# default:
+CONFIG_NEW_BOOL_INVERTED=y
+
+
+# Deprecated options for backward compatibility
+CONFIG_OLD_BOOL=y
+CONFIG_OLD_STRING="test"
+CONFIG_OLD_HEX=0xbeef
+CONFIG_OLD_INT=42
+CONFIG_OLD_BOOL_INVERTED=n
+# End of deprecated options
