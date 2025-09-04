@@ -88,11 +88,26 @@ class SourceChecker(BaseChecker):
                 )
             path = m.group(2)
             filename = os.path.basename(path)
-            if path in [
+            allowed_envvars = [
                 "$COMPONENT_KCONFIGS_SOURCE_FILE",
                 "$COMPONENT_KCONFIGS_PROJBUILD_SOURCE_FILE",
-            ]:
-                pass
+                "$COMPONENT_KCONFIGS_EXCLUDED_SOURCE_FILE",
+                "$COMPONENT_KCONFIGS_PROJBUILD_EXCLUDED_SOURCE_FILE",
+            ]
+            # skip the rest of the checks for variables that do not need to explicitly specify file name
+            if path in allowed_envvars:
+                return
+            # path == filename means path is only an env_var, without file name explicitly mentioned
+            if path.startswith("$") and path == filename:
+                raise InputError(
+                    self.path_in_idf,
+                    line_number,
+                    (
+                        "environment variables cannot specify the filename in sourced files, only the path. "
+                        'Specify the filename explicitly ("$ENV_VAR/Kconfig.<suffix>").'
+                    ),
+                    line.replace(path, os.path.join(path, "Kconfig.<suffix>")),
+                )
             elif not filename.startswith("Kconfig."):
                 raise InputError(
                     self.path_in_idf,

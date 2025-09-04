@@ -21,6 +21,11 @@ Format rules for Kconfig files are as follows:
 - The maximum length of lines is 120 characters.
 - The name of a config option must be uppercase.
 
+Format rules for ``source`` statements are as follows:
+
+- Environment variables can specify path to the sourced file, but not its name; file name must be specified explicitly.
+- The sourced file must be named as ``Kconfig.<suffix>``. Suffix is up to the user to define, but must be present.
+
 How to Use the ``kconfcheck`` Tool
 ----------------------------------
 
