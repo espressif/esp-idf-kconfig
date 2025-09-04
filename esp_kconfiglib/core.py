@@ -24,6 +24,10 @@ from typing import Set
 from typing import Tuple
 from typing import Union
 
+from esp_kconfiglib.constants import DEP_OP_BEGIN
+from esp_kconfiglib.constants import DEP_OP_END
+from esp_kconfiglib.constants import SDKCONFIG_DEFAULT_PRAGMA
+from esp_kconfiglib.constants import DefaultsPolicy
 from esp_kconfiglib.report import PRAGMA_PREFIX
 from esp_kconfiglib.report import STATUS_ERROR as REPORT_STATUS_ERROR
 from esp_kconfiglib.report import DefaultValuesArea
@@ -31,8 +35,6 @@ from esp_kconfiglib.report import KconfigReport
 from esp_kconfiglib.report import MiscArea
 from esp_kconfiglib.report import MultipleAssignmentArea
 from esp_kconfiglib.report import MultipleDefinitionArea
-
-from .constants import DefaultsPolicy
 
 ANSI_BOLD = "\033[1m"
 ANSI_END = "\033[0m"
@@ -760,7 +762,7 @@ class Kconfig(object):
             lines with config option set to default value are preceded by the comment
             specified by self.comment_default_value.
         """
-        self.comment_default_value = "# default:"
+        self.comment_default_value = SDKCONFIG_DEFAULT_PRAGMA
 
         # Regular expressions for parsing .config files
         self._set_match = re.compile(self.config_prefix + r"([^=]+)=(.*)", re.ASCII).match
@@ -1092,7 +1094,9 @@ class Kconfig(object):
 
         return None
 
-    def load_config(self, filename=None, replace=True, verbose=None, print_report=False):
+    def load_config(
+        self, filename=None, replace=True, verbose=None, print_report=False, load_deprecated=False, **kwargs
+    ):
         """
         Loads symbol values from a file in the .config format. Equivalent to
         calling Symbol.set_value() to set each of the values.
@@ -1149,6 +1153,15 @@ class Kconfig(object):
 
           Will probably be removed in some future version.
 
+        print_report (default: False):
+          If true, kconfig report will be produced after successful loading.
+
+        load_deprecated (default: False):
+          If True, deprecated symbols (obtained from sdkconfig's "Deprecated options" section)
+          will be included in the report.
+          Important NOTE: Deprecated symbols are not a part of the menu tree (they do not appear in menuconfig),
+          but are still used during e.g. expression evaluation.
+
         Returns a string with a message saying which file got loaded (or
         possibly that no file got loaded, when 'filename' is None). This is
         meant to reduce boilerplate in tools, which can do e.g.
@@ -1178,7 +1191,7 @@ class Kconfig(object):
 
         # This stub only exists to make sure _warn_assign_no_prompt gets re-enabled
         try:
-            self._load_config(filename, replace)
+            self._load_config(filename, replace, load_deprecated)
             if print_report:
                 self.report.print_report()
         except UnicodeDecodeError as e:
@@ -1192,7 +1205,7 @@ class Kconfig(object):
     def _quote_value(val: str, sym_type: str) -> str:
         return val if (val in ("y", "n") or sym_type == INT) else f'"{val}"'
 
-    def _load_config(self, filename, replace):
+    def _load_config(self, filename, replace, load_deprecated):
         def _inject_default_value(sym: Symbol, val: Any) -> bool:
             """
             When using default values from sdkconfig, we need to temporarily inject the default value of the symbol
@@ -1230,6 +1243,62 @@ class Kconfig(object):
             self._parsing_kconfigs = parsing_kconfigs
 
             return True
+
+        def _create_new_deprecated_symbol(name, val):
+            """
+            When load_deprecated=True, Kconfig also loads deprecated symbols from the sdkconfig file.
+            These symbols are not part of the menu tree, cannot be changed (or even seen) in menuconfig,
+            but are used in e.g. expression evaluation.
+            General idea:
+            1) Create a new Symbol object and add it into kconfig.syms (but not to e.g. unique_defined_syms).
+               This is because we want deprecated symbols to participate in expression evaluation (in some cases),
+               but nothing else.
+            2) Infer the type of the symbol. This is the most uncertain part. Once we move the logic regarding
+               deprecated values into Kconfig, we should inherit the type of the new symbol.
+               Currently, we cannot get this information and must rely on the properties of the value.
+               FIXME: Once we handle deprecated values directly in kconfiglib instead of kconfgen, we will
+                      be able to inherit the type from the new symbol.
+            3) Prepare a MenuNode without any connection to the rest of the tree and use it as this symbol's MenuNode.
+               This is necessary as some of the symbol's properties are stored in the MenuNode (e.g. prompt, which is
+               used to calculate visibility). We do not want deprecated values to be part of the original menu tree,
+               so these MenuNodes are not connected to it in any way.
+            4) Set the symbol's value.
+            """
+            if not currently_loading_deprecated:
+                return
+
+            parsing_kconfigs = self._parsing_kconfigs
+            self._parsing_kconfigs = True
+            sym = self._lookup_sym(name)
+            self._parsing_kconfigs = parsing_kconfigs
+
+            sym._is_deprecated = True
+            sym._loaded_as_default = False
+
+            if val in ("y", "n"):
+                sym.orig_type = BOOL
+            elif val.startswith(("0x", "0X")):
+                sym.orig_type = HEX
+            elif val.lstrip("-").isdigit():
+                sym.orig_type = INT
+            else:
+                sym.orig_type = STRING
+
+            sym.nodes.append(
+                MenuNode(
+                    kconfig=self,
+                    item=sym,
+                    is_menuconfig=True,
+                    prompt=("Deprecated option", self.y),
+                    filename="<undefined>",
+                    linenr=0,
+                )
+            )
+
+            sym.set_value(val if val[0] not in ("'", '"') else val[1:-1])
+            return sym
+
+        currently_loading_deprecated = False
 
         # We need to first load symbols with user-set value, but those can be anywhere in sdkconfig.
         # We cache symbols with default values and set them additionally.
@@ -1279,16 +1348,25 @@ class Kconfig(object):
             for linenr, line in enumerate(f, 1):
                 # The C tools ignore trailing whitespace
                 line = line.rstrip()
-
                 # If "# default:" is present, the assignment on the next line will be considered a default value
                 if line and line.strip() == self.comment_default_value:
                     value_is_default = True
+                    continue
+
+                if line and line.strip() == DEP_OP_BEGIN:
+                    currently_loading_deprecated = load_deprecated
+                    continue
+                elif line and line.strip() == DEP_OP_END:
+                    currently_loading_deprecated = False
                     continue
 
                 match = set_match(line)
                 if match:
                     name, val = match.groups()
                     sym = get_sym(name)
+                    if not sym and currently_loading_deprecated:
+                        sym = _create_new_deprecated_symbol(name, val)
+                        continue
                     if not sym or not sym.nodes:
                         self._undef_assign(name, val, filename, linenr)
                         value_is_default = False
@@ -1376,6 +1454,9 @@ class Kconfig(object):
 
                     name = match.group(1)
                     sym = get_sym(name)
+                    if not sym and currently_loading_deprecated:
+                        sym = _create_new_deprecated_symbol(name, "n")
+
                     if not sym or not sym.nodes:
                         self._undef_assign(name, "n", filename, linenr)
                         continue
@@ -3972,6 +4053,7 @@ class Symbol:
         "_present_in_current_sdkconfig",
         "_write_to_conf",
         "_has_active_indirect_set",
+        "_is_deprecated",
         "choice",
         "defaults",
         "direct_dep",
@@ -4014,6 +4096,8 @@ class Symbol:
     rev_values: List[Tuple]  # List of (value, condition, source symbol) tuples for values set by other symbols
     # List of (value, condition, source symbol) tuples for values set by other symbols via 'set default'
     weak_rev_values: List[Tuple]
+    _is_deprecated: bool
+    nodes: List["MenuNode"]
 
     #
     # Public interface
@@ -4231,6 +4315,13 @@ class Symbol:
         """
         self._loaded_as_default = False
 
+        """
+        is_deprecated:
+            Whether the symbol is deprecated (obtained from sdkconfig's "Deprecated options" section).
+            Deprecated symbols are not written out, but are used when e.g. expressions are evaluated
+        """
+        self._is_deprecated = False
+
         # Internal attributes
         self._cached_str_val: Optional[str] = None
         self._cached_bool_val = None
@@ -4276,7 +4367,10 @@ class Symbol:
     @present_in_current_sdkconfig.setter
     def present_in_current_sdkconfig(self, value: bool) -> None:
         self._present_in_current_sdkconfig = value
-        if self.choice:
+        # NOTE: If the choice symbol is set to n, do not set the choice's present_in_current_sdkconfig flag;
+        #       choice is selected by its y-set symbol, n-set symbols are just "the rest" of choice symbols
+        #       and are present in sdkconfig just for completeness.
+        if self.choice and self.bool_value != STR_TO_BOOL["n"]:
             self.choice.present_in_current_sdkconfig = value
 
     @property

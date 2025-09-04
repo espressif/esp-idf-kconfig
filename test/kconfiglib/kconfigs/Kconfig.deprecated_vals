@@ -1,0 +1,21 @@
+mainmenu "Test if deprecated configs are loaded correctly"
+
+    config NEW_BOOL
+        bool "New boolean option"
+        default y
+
+    config NEW_STRING
+        string "New string option"
+        default "test"
+
+    config NEW_HEX
+        hex "New hex option"
+        default 0xbeef
+
+    config NEW_INT
+        int "New int option"
+        default 42
+
+    config NEW_BOOL_INVERTED
+        bool "New boolean inverted option (old should be inverted)"
+        default y

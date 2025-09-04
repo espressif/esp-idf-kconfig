@@ -509,7 +509,10 @@ class MultipleAssignmentArea(Area):
             if not self.multiple_assignments_choice[sym_or_choice]:
                 # If this is the first time we are logging the data, we also need to log the first selection
                 self.multiple_assignments_choice[sym_or_choice] = [
-                    (sym_or_choice.selection.name, sym_or_choice._user_selection is None)
+                    (
+                        sym_or_choice.selection.name if sym_or_choice.selection else "choice deselected",
+                        sym_or_choice._user_selection is None,
+                    )
                 ]
             self.multiple_assignments_choice[sym_or_choice].append((kwargs["new_value"], kwargs["is_default"]))
 
