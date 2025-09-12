@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# SPDX-FileCopyrightText: 2024 Espressif Systems (Shanghai) CO LTD
+# SPDX-FileCopyrightText: 2024-2025 Espressif Systems (Shanghai) CO LTD
 # SPDX-License-Identifier: Apache-2.0
 #
 # Long-running server process uses stdin & stdout to communicate JSON
@@ -11,6 +11,8 @@ import os
 import sys
 import tempfile
 from json import JSONDecodeError
+from typing import Dict
+from typing import List
 
 import esp_kconfiglib.core as kconfiglib
 import kconfgen.core as kconfgen
@@ -18,7 +20,7 @@ from esp_idf_kconfig import __version__
 
 # Min/Max supported protocol versions
 MIN_PROTOCOL_VERSION = 1
-MAX_PROTOCOL_VERSION = 2
+MAX_PROTOCOL_VERSION = 3
 
 
 def main():
@@ -111,6 +113,8 @@ def run_server(kconfig, sdkconfig, sdkconfig_rename, default_version=MAX_PROTOCO
     config_dict = kconfgen.get_json_values(config)
     ranges_dict = get_ranges(config)
     visible_dict = get_visible(config)
+    if default_version >= 3:
+        defaults_dict = get_sym_default_value_dict(config)
 
     if default_version == 1:
         # V1: no 'visibility' key, send value None for any invisible item
@@ -118,13 +122,19 @@ def run_server(kconfig, sdkconfig, sdkconfig_rename, default_version=MAX_PROTOCO
         json.dump({"version": 1, "values": values_dict, "ranges": ranges_dict}, sys.stdout)
     else:
         # V2 onwards: separate visibility from version
+        resp = {
+            "version": default_version,
+            "values": config_dict,
+            "ranges": ranges_dict,
+            "visible": visible_dict,
+        }
+
+        # V3 onwards: send which values have default values
+        if default_version >= 3:
+            resp["defaults"] = defaults_dict
+
         json.dump(
-            {
-                "version": default_version,
-                "values": config_dict,
-                "ranges": ranges_dict,
-                "visible": visible_dict,
-            },
+            resp,
             sys.stdout,
         )
     print("\n")
@@ -148,6 +158,9 @@ def run_server(kconfig, sdkconfig, sdkconfig_rename, default_version=MAX_PROTOCO
         before = kconfgen.get_json_values(config)
         before_ranges = get_ranges(config)
         before_visible = get_visible(config)
+
+        if req["version"] >= 3:
+            before_defaults = get_sym_default_value_dict(config)
 
         if "load" in req:  # load a new sdkconfig
             if req.get("version", default_version) == 1:
@@ -174,10 +187,15 @@ def run_server(kconfig, sdkconfig, sdkconfig_rename, default_version=MAX_PROTOCO
         after = kconfgen.get_json_values(config)
         after_ranges = get_ranges(config)
         after_visible = get_visible(config)
+        if req["version"] >= 3:
+            after_defaults = get_sym_default_value_dict(config)
 
         values_diff = diff(before, after)
         ranges_diff = diff(before_ranges, after_ranges)
         visible_diff = diff(before_visible, after_visible)
+        if req["version"] >= 3:
+            defaults_diff = diff(before_defaults, after_defaults)
+
         if req["version"] == 1:
             # V1 response, invisible items have value None
             for k in (k for (k, v) in visible_diff.items() if not v):
@@ -191,13 +209,27 @@ def run_server(kconfig, sdkconfig, sdkconfig_rename, default_version=MAX_PROTOCO
                 "ranges": ranges_diff,
                 "visible": visible_diff,
             }
+            if req["version"] >= 3:
+                # V3 onwards: send which values have default values
+                response["defaults"] = defaults_diff
+
         if error:
             for err in error:
-                print("Error: %s" % err, file=sys.stderr)
+                print(f"Error: {err}", file=sys.stderr)
             response["error"] = error
         json.dump(response, sys.stdout)
         print("\n")
         sys.stdout.flush()
+
+
+def get_sym_default_value_dict(config: kconfiglib.Kconfig) -> Dict[str, bool]:
+    """
+    Returns a dict with <config symbol>:<has active default value?> pairs.
+    """
+    defaults = dict()
+    for sym in config.syms.values():
+        defaults[sym.name] = sym.has_active_default_value()
+    return defaults
 
 
 def handle_request(deprecated_options, config, req):
@@ -222,6 +254,12 @@ def handle_request(deprecated_options, config, req):
     if "set" in req:
         handle_set(config, error, req["set"])
 
+    if "reset" in req:
+        if req["version"] >= 3:
+            handle_reset(config, error, req["reset"])
+        else:
+            error += [f"Resetting config symbols is not supported in protocol version {req['version']}"]
+
     if "save" in req:
         try:
             print("Saving config to %s..." % req["save"], file=sys.stderr)
@@ -230,6 +268,56 @@ def handle_request(deprecated_options, config, req):
             error += ["Failed to save to %s: %s" % (req["save"], e)]
 
     return error
+
+
+def handle_reset(config: kconfiglib.Kconfig, error: List[str], to_reset: List[str]) -> None:
+    """
+    Reset the config symbols to their default values.
+    If a symbol is not found, add an error message to the error list.
+
+    Special name "all" can be used to reset all symbols at once.
+    """
+    # Reset the whole configuration to default values
+    if "all" in to_reset:
+        if kconfiglib._recursively_perform_action(config.top_node, kconfiglib._restore_default):
+            print("Reset the whole configuration to default values")
+        else:
+            error.append("Failed to reset the whole configuration to default values")
+        return
+
+    # Theoretically, both menu ID and config symbol names can be uppercase, but "-" will always be in menu IDs
+    # and never in config symbol names; in symbol name, it is forbidden by the grammar. And menu ID has a signature of
+    # <parent-menu-names>-<menu-name>-<filename>-<linenr> => at least one dash (between filename and linenr) will always
+    # be present.
+    sym_names_to_reset = set(sym_name for sym_name in to_reset if "-" not in sym_name)
+    menu_ids_to_reset = set(menu_name for menu_name in to_reset if "-" in menu_name)
+    remainder = set(to_reset) - sym_names_to_reset - menu_ids_to_reset
+    if remainder:
+        error.append(f"Some items to reset were not symbols nor menus: {','.join(remainder)}")
+
+    missing_syms = [sym_name for sym_name in sym_names_to_reset if sym_name not in config.syms]
+    missing_menus = [menu_name for menu_name in menu_ids_to_reset if menu_name not in config.menu_ids]
+
+    if missing_syms:
+        error.append(f"The following config symbol(s) were not found: {', '.join(missing_syms)}")
+    if missing_menus:
+        error.append(f"The following menu(s) were not found: {', '.join(missing_menus)}")
+
+    # replace name keys with the full config symbol for each key:
+    syms = list(config.syms[sym] for sym in sym_names_to_reset if sym not in missing_syms)
+    menus = list(config.menu_ids[menu] for menu in menu_ids_to_reset if menu not in missing_menus)
+
+    for sym in syms:
+        if kconfiglib._restore_default(sym.nodes[0]):
+            print(f"Reset {sym.name} to default value")
+        else:
+            error.append(f"Failed to reset {sym.name} to default value")
+
+    for menu in menus:
+        if kconfiglib._recursively_perform_action(menu, kconfiglib._restore_default):
+            print(f"Reset menu {menu.id} to default values")
+        else:
+            error.append(f"Failed to reset menu {menu.id} to default values")
 
 
 def handle_set(config, error, to_set):
@@ -351,6 +439,6 @@ def get_visible(config):
         result[m] = any(v for (n, v) in result.items() if n.parent == m)
 
     # return a dict mapping the node ID to its visibility.
-    result = dict((kconfgen.get_menu_node_id(n), v) for (n, v) in result.items())
+    result = dict((n.id, v) for (n, v) in result.items())
 
     return result

@@ -143,10 +143,10 @@ class TestChoicesDefault(MenuconfigTestBase):
     def test_unchanged_choice_default(self) -> None:
         kconfig = Kconfig(os.path.join(KCONFIGS_PATH, "Kconfig.choice_default"))
         menuconfig(kconfig, headless=True)
-        assert kconfig.syms["FOO"].has_default_value() is True
-        assert kconfig.syms["BAR"].has_default_value() is True
-        assert kconfig.syms["QUX"].has_default_value() is True
-        assert kconfig.syms["BAZ"].has_default_value() is True
+        assert kconfig.syms["FOO"].has_active_default_value() is True
+        assert kconfig.syms["BAR"].has_active_default_value() is True
+        assert kconfig.syms["QUX"].has_active_default_value() is True
+        assert kconfig.syms["BAZ"].has_active_default_value() is True
 
         assert kconfig.syms["FOO"].str_value == "y"
         assert kconfig.syms["BAR"].str_value == "n"
@@ -178,8 +178,8 @@ class TestChoicesDefault(MenuconfigTestBase):
         self._change_node_monkeypatch(sym)
 
         # Check if the value was changed correctly
-        assert kconfig.syms["BAZ"].has_default_value() is False
-        assert kconfig.syms["QUX"].has_default_value() is False
+        assert kconfig.syms["BAZ"].has_active_default_value() is False
+        assert kconfig.syms["QUX"].has_active_default_value() is False
         assert kconfig.syms["BAZ"].str_value == "n", (
             f"Value for choice symbol BAZ should be 'n', but is {kconfig.syms['BAZ'].str_value}."
         )
@@ -203,10 +203,10 @@ class TestChoicesDefault(MenuconfigTestBase):
         kconfig = Kconfig(os.path.join(KCONFIGS_PATH, "Kconfig.choice_default"))
         kconfig.load_config(os.path.join(SDKCONFIGS_CHOICE_DEFAULT_PATH, "sdkconfig.not_defaults"))
 
-        assert kconfig.syms["FOO"].has_default_value() is False
-        assert kconfig.syms["BAR"].has_default_value() is False
-        assert kconfig.syms["BAZ"].has_default_value() is False
-        assert kconfig.syms["QUX"].has_default_value() is False
+        assert kconfig.syms["FOO"].has_active_default_value() is False
+        assert kconfig.syms["BAR"].has_active_default_value() is False
+        assert kconfig.syms["BAZ"].has_active_default_value() is False
+        assert kconfig.syms["QUX"].has_active_default_value() is False
 
         assert kconfig.syms["FOO"].str_value == "n"
         assert kconfig.syms["BAR"].str_value == "y"

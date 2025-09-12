@@ -501,29 +501,6 @@ def write_json(_: DeprecatedOptions, config: kconfiglib.Kconfig, filename: str) 
         json.dump(config_dict, f, indent=4, sort_keys=True)
 
 
-def get_menu_node_id(node: kconfiglib.MenuNode) -> str:
-    """Given a menu node, return a unique id
-    which can be used to identify it in the menu structure
-
-    Will either be the config symbol name, or a menu identifier
-    'slug'
-
-    """
-    try:
-        if not isinstance(node.item, kconfiglib.Choice):
-            return str(node.item.name)  # type: ignore
-    except AttributeError:
-        pass
-
-    result = []
-    while node.parent is not None and node.prompt:
-        slug = re.sub(r"\W+", "-", node.prompt[0]).lower()
-        result.append(slug)
-        node = node.parent
-
-    return "-".join(reversed(result))
-
-
 def write_json_menus(_: DeprecatedOptions, config: kconfiglib.Kconfig, filename: str) -> None:
     existing_ids: Set[str] = set()
     result: List = []  # root level items
@@ -608,14 +585,13 @@ def write_json_menus(_: DeprecatedOptions, config: kconfiglib.Kconfig, filename:
             }
 
         if new_json:
-            node_id = get_menu_node_id(node)
-            if node_id in existing_ids:
+            if node.id in existing_ids:
                 raise RuntimeError(
                     "Config file contains two items with the same id: "
-                    f" {node_id} ({node.prompt[0] if node.prompt else ''}). "
+                    f" {node.id} ({node.prompt[0] if node.prompt else ''}). "
                     "Please rename one of these items to avoid ambiguity."
                 )
-            new_json["id"] = node_id
+            new_json["id"] = node.id
 
             json_parent.append(new_json)
             node_lookup[node] = new_json

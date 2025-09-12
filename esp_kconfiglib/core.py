@@ -472,6 +472,7 @@ class Kconfig(object):
         "header_header",
         "kconfig_filenames",
         "menus",
+        "menu_ids",
         "missing_syms",
         "n",
         "named_choices",
@@ -515,6 +516,7 @@ class Kconfig(object):
     choices: List["Choice"]
     unique_choices: List["Choice"]
     menus: List["MenuNode"]
+    menu_ids: Dict[str, "MenuNode"]
     comments: List["MenuNode"]
     variables: Dict[str, "Variable"]
     env_vars: set
@@ -849,6 +851,12 @@ class Kconfig(object):
         self.menus = []
 
         """
+        menu_ids:
+            A dictionary mapping menu IDs to MenuNode instances.
+        """
+        self.menu_ids = {}
+
+        """
         comments:
             A list with all comments, in the same order as they appear in the Kconfig
             files.
@@ -1027,6 +1035,9 @@ class Kconfig(object):
             multiple definition locations.
         """
         self.unique_choices = _ordered_unique(self.choices)
+
+        # While everything is parsed, we can build the menu_ids dictionary.
+        self.menu_ids = {menu.id: menu for menu in self.menus}
 
         # Do sanity checks. Some of these depend on everything being finalized.
         self._check_sym_sanity()
@@ -4755,7 +4766,7 @@ class Symbol:
         # hidden function call due to property magic.
         val = self.str_value
 
-        pragma_default_comment = f"{self.kconfig.comment_default_value}\n" if self.has_default_value() else ""
+        pragma_default_comment = f"{self.kconfig.comment_default_value}\n" if self.has_active_default_value() else ""
         if not self._write_to_conf:
             return ""
 
@@ -4784,7 +4795,7 @@ class Symbol:
         """
         return self.name + " " + _locs(self)
 
-    def has_default_value(self) -> bool:
+    def has_active_default_value(self) -> bool:
         """
         Symbol has default value if:
         - user value is None or has an active indirectly set value (and symbol is defined, thus has orig_type)
@@ -5657,6 +5668,7 @@ class MenuNode:
     """
 
     __slots__ = (
+        "_id",
         "dep",
         "filename",
         "help",
@@ -5711,6 +5723,14 @@ class MenuNode:
         # only applies to these, in case a symbol is defined in multiple
         # locations.
         self.kconfig = kconfig
+
+        """
+        _id:
+            A unique ID to identify menu e.g. in kconfserver.
+            See MenuNode.id() for the implementation details.
+            NOTE: Do not access this directly, use MenuNode.id() instead!
+        """
+        self._id = ""
 
         """
         item:
@@ -5880,6 +5900,42 @@ class MenuNode:
             Like MenuNode.sets, but their values respect user-set values.
         """
         self.weak_sets = []
+
+    @property
+    def id(self) -> str:
+        """
+        Returns a unique ID which can be used to identify this MenuNode.
+
+        Will either be the name of self.item if self.item is a config option,
+        or a menu identifier; we will merge all the prompts from the root to this node
+        and append the filename and line number to ensure uniqueness.
+
+        NOTE: The ID is deterministic and guaranteed to be unique, but only for given project location.
+        If e.g. kconfig_menus.json will be under version control, the ID will be different across different machines.
+        """
+        if self._id:
+            return self._id
+
+        if isinstance(self.item, Symbol):
+            self._id = str(self.item.name)
+            return self._id
+
+        result = []
+        node = self
+        while node.parent is not None and node.prompt:
+            slug = re.sub(r"\W+", "-", node.prompt[0]).lower()
+            result.append(slug)
+            node = node.parent
+        path_with_dashes = self.filename.replace("/", "-").replace("\\", "-") if self.filename else "unknown-file"
+
+        self._id = (
+            "-".join(reversed(result))
+            + ("-" if not path_with_dashes.startswith("-") else "")
+            + path_with_dashes
+            + "-"
+            + str(self.linenr)
+        )
+        return self._id
 
     @property
     def orig_prompt(self):
@@ -6540,6 +6596,35 @@ def standard_config_filename():
 #
 
 
+def _restore_default(node):
+    """
+    Restores the default value of the Symbol/Choice item of the menu node 'node'.
+    """
+
+    def invalidate_choice(choice):
+        choice._user_selection = None
+        choice._rec_invalidate()
+        # When invalidating a choice, also their symbols need to be invalidated.
+        for sym in choice.syms:
+            invalidate_symbol(sym)
+
+    def invalidate_symbol(sym):
+        sym._user_value = None
+        sym._rec_invalidate()
+
+    sc = node.item
+    if isinstance(sc, Symbol):
+        invalidate_symbol(sc)
+        if sc.choice is not None:
+            invalidate_choice(sc.choice)
+    elif isinstance(sc, Choice):
+        invalidate_choice(sc)
+    else:
+        return False
+
+    return True
+
+
 def _visibility(sc: Union[Symbol, Choice]) -> int:
     # Symbols and Choices have a "visibility" that acts as an upper bound on
     # the values a user can set for them, corresponding to the visibility in
@@ -7093,6 +7178,31 @@ except AttributeError:
     _T_UNEQUAL,
     _T_VISIBLE,
 ) = range(1, 51)
+
+
+def _recursively_perform_action(start_node, action, exclude_items=[_T_MENU, _T_COMMENT]):
+    """
+    Recursively performs 'action' on all nodes which are children of 'start_node'.
+    The 'action' argument is a function that itself takes a single argument of type MenuNode and returns a bool:
+    action(node) -> bool
+
+    The 'exclude_items' argument is a list of item types (e.g. _T_MENU, _T_COMMENT) that should not be acted upon.
+    """
+
+    def rec(node):
+        if node.item not in exclude_items:
+            action_ok = action(node)
+        else:
+            action_ok = True
+        if node.list:
+            action_ok = rec(node.list) and action_ok
+        if node.next and node != start_node:
+            # Don't recurse into the start_node.next, as it is not a child of start_node, but rather a sibling.
+            action_ok = rec(node.next) and action_ok
+        return action_ok
+
+    return rec(start_node)
+
 
 # Keyword to token map, with the get() method assigned directly as a small
 # optimization
