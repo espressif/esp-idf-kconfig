@@ -1,0 +1,7 @@
+# For correct changing of a choice's selection, second line is sufficient, Kconfig will take care of the rest.
+# First line would deselect the choice, which is not allowed (and never was).
+# The behavior is that the first line alone has no effect.
+# Kconfig will issue a notification about this situation, but everything should work in the end of the day,
+# meaning choice should switch from THIS_IS_SELECTED to THIS_IS_SELECTED_IN_SDKCONFIG.
+CONFIG_THIS_IS_SELECTED_BY_DEFAULT=n
+CONFIG_THIS_IS_SELECTED_IN_SDKCONFIG=y

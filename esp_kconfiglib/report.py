@@ -150,7 +150,7 @@ class DefaultValuesArea(Area):
       This is normally not a problem, but a feature. However, devs may want to know about it.
     """
 
-    def __init__(self, defaults_policy: DefaultsPolicy):
+    def __init__(self, defaults_policy: DefaultsPolicy, verbosity: str):
         super().__init__(
             title="Default Value Mismatch",
             ignore_codes=set(),
@@ -162,6 +162,7 @@ class DefaultValuesArea(Area):
             ),
         )
         self.defaults_policy: DefaultsPolicy = defaults_policy
+        self.verbosity: str = verbosity
 
         self.changed_defaults: Set[Tuple[str, str, str]] = set()
         # Changed configs without prompts should not be reported as it's not something user should care about.
@@ -197,9 +198,17 @@ class DefaultValuesArea(Area):
         pass
 
     def report_severity(self) -> int:
-        if not self.changed_defaults and not self.changed_values_promptless and not self.changed_choices:
+        if (
+            not self.changed_defaults
+            and not (self.changed_values_promptless and self.verbosity == VERBOSITY_VERBOSE)
+            and not self.changed_choices
+        ):
             return STATUS_OK
-        if self.changed_defaults or self.changed_values_promptless or self.changed_choices:
+        if (
+            self.changed_defaults
+            or (self.changed_values_promptless and self.verbosity == VERBOSITY_VERBOSE)
+            or self.changed_choices
+        ):
             return STATUS_OK_WITH_INFO
         else:  # This should not happen, but just in case
             return STATUS_ERROR
@@ -619,7 +628,7 @@ class KconfigReport:
         self.areas = (
             MultipleDefinitionArea(),
             MiscArea(),
-            DefaultValuesArea(defaults_policy),
+            DefaultValuesArea(defaults_policy, verbosity=self.verbosity),
             MultipleAssignmentArea(),
         )
 

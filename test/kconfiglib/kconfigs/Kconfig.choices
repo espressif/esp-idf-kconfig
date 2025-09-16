@@ -32,3 +32,16 @@ choice DEPENDENT_CHOICE
         bool "DEPENDENT_SECOND"
 
 endchoice
+
+# This choice's selection will be improperly changed in sdkconfig.unselect_selected_symbol
+
+choice SELECTING_SYMBOL
+    bool "choice testing improper change of selected symbol"
+
+    config THIS_IS_SELECTED_BY_DEFAULT
+        bool "This symbol is selected by default"
+
+    config THIS_IS_SELECTED_IN_SDKCONFIG
+        bool "This symbol will be selected in sdkconfig"
+
+endchoice
