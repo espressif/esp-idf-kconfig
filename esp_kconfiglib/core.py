@@ -1402,7 +1402,6 @@ class Kconfig(object):
                                     else val,
                                     is_default=value_is_default,
                                 )
-                        sym.present_in_current_sdkconfig = True
 
                     if sym.orig_type == BOOL:
                         # The C implementation only checks the first character
@@ -1476,7 +1475,6 @@ class Kconfig(object):
                             self.report.add_record(
                                 MultipleAssignmentArea, sym_or_choice=sym, new_value="n", is_default=value_is_default
                             )
-                        sym.present_in_current_sdkconfig = True
 
                     if sym.orig_type != BOOL:
                         value_is_default = False
@@ -1494,11 +1492,13 @@ class Kconfig(object):
                         # sdkconfig value is set only if set_value succeeded (e.g. no malformed value in sdkconfig)
                         sym._sdkconfig_value = val
                         sym._loaded_as_default = False
+                        sym.present_in_current_sdkconfig = True
                         if all(node.prompt is None for node in sym.nodes):
                             # User-set value assignment to promptless symbol
                             self.report.add_record(DefaultValuesArea, sym_or_choice=sym, promptless=True)
                 # If value is supposed to be a default and symbol has a prompt, save it for later
                 elif any(node.prompt is not None for node in sym.nodes):
+                    sym.present_in_current_sdkconfig = True
                     if not sym.choice:
                         symbols_with_default_values[sym] = val
                     else:
@@ -4381,8 +4381,18 @@ class Symbol:
         # NOTE: If the choice symbol is set to n, do not set the choice's present_in_current_sdkconfig flag;
         #       choice is selected by its y-set symbol, n-set symbols are just "the rest" of choice symbols
         #       and are present in sdkconfig just for completeness.
-        if self.choice and self.bool_value != STR_TO_BOOL["n"]:
+        # WARNING: If users mistreat choice and set its y-selected symbol to n, it will take no effect.
+        #          (correct approach is to set the symbol choice should select to "y" and leave the rest to Kconfig).
+        if self.choice and (
+            self.bool_value == STR_TO_BOOL["y"]  # still can be y even if user set it to n...
+            and
+            # ...so we ensure it is not that case.
+            not (self._user_value == STR_TO_BOOL["n"] and self.choice.selection == self)
+        ):
             self.choice.present_in_current_sdkconfig = value
+            # Because of our lookup to choice.selection, we need to invalidate choice's cached values
+            # (we can be in the middle of _load_config() and values can change).
+            self.choice._invalidate()
 
     @property
     def type(self):
@@ -4866,6 +4876,19 @@ class Symbol:
         currently in range and would actually be reflected in the value
         of the symbol. For other symbol types, check whether the visibility is non-n.
         """
+
+        if self.choice and self.choice.selection == self and value != "y":
+            # If user tries to disable choice symbol currently selected,
+            # it will have no effect. Report it.
+            self.kconfig.report.add_record(
+                MiscArea,
+                message=(
+                    f"Trying to set symbol {self.name} to n, but it is currently selected "
+                    f"by choice {self.choice.name}. For setting it to n, set another choice symbol to y instead."
+                ),
+            )
+            return False
+
         if self.orig_type == BOOL and value in STR_TO_BOOL:
             value = STR_TO_BOOL[value]
 

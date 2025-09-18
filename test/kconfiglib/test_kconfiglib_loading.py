@@ -204,6 +204,37 @@ class TestLoadingChoicesWithDefaults(TestDefaultsBase):
 
         kconfig.report.reset()
 
+    def test_improper_choice_selection_change(self) -> None:
+        """
+        In order to properly change a choice selection, it is sufficient to set the newly selected symbol to y.
+        Kconfig will take care of the rest (deselecting the previous selection etc).
+        Explicit deselection of the previous selection is not necessary and has no effect.
+        It would bring the choice to a state where no symbol is selected, which is illegal.
+        """
+        kconfig = Kconfig(os.path.join(KCONFIG_PATH, "Kconfig.choices"))
+        kconfig.load_config(os.path.join(SDKCONFIGS_PATH, "sdkconfig.unselect_selected_symbol"))
+        output_sdkconfig = kconfig._config_contents(header=None)
+        report_json = kconfig.report._return_json()
+
+        # Output should be correct even if sdkconfig had an unnecessary deselection of the previously selected symbol
+        assert "CONFIG_THIS_IS_SELECTED_BY_DEFAULT is not set" in output_sdkconfig
+        assert "CONFIG_THIS_IS_SELECTED_IN_SDKCONFIG=y" in output_sdkconfig
+
+        # Report should include a notification in a MiscArea
+        misc_area = next((area for area in report_json["areas"] if area["title"] == "Miscellaneous"), None)
+
+        assert misc_area is not None
+        assert any(
+            (
+                "Trying to set symbol THIS_IS_SELECTED_BY_DEFAULT to n, but it is currently "
+                "selected by choice SELECTING_SYMBOL"
+            )
+            in note
+            for note in misc_area["data"]
+        )
+
+        kconfig.report.reset()
+
 
 @pytest.mark.parametrize("version", ["1", "2"], indirect=True)
 class TestMultipleValueSet(TestBase):
