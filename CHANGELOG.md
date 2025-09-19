@@ -1,3 +1,22 @@
+## v3.2.0 (2025-09-19)
+
+### New Features
+
+- new version of kconfserver
+- support deprecated values in expression evaluation
+
+### Bug Fixes
+
+- fix choice related issues during report and sdkconfig loading
+- add macro as a valid entry in sourced Kconfig files
+- enforce utf-8 encoding in kconfgen
+- enhance error message if envvar is misused in source option
+- allow internal ESP-IDF envvars to pass kconfcheck
+- add a correction of how choice symbols are handled
+- use latest value with user-set priority when loading sdkconfig
+- support deselected choices in report
+- correct handling of choices with default values
+
 ## v3.1.1 (2025-08-04)
 
 ### Bug Fixes
