@@ -21,3 +21,7 @@ extensions += ["esp_docs.esp_extensions.dummy_build_system"]
 project_slug = "esp-idf-kconfig"
 
 versions_url = "./_static/esp_idf_kconfig_versions.js"
+
+
+def conf_setup(app, config):
+    config.html_baseurl = f"https://docs.espressif.com/projects/esp-idf-kconfig/{config.language}/stable/"
