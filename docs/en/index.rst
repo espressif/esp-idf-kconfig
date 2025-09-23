@@ -1,6 +1,10 @@
 Documentation of ``esp-idf-kconfig``
 ====================================
 
+ .. important::
+
+    This documentation describes esp-idf-kconfig version 2.x, which is used in ESP-IDF 5.x. For documentation of esp-idf-kconfig version 3.x, which is used in ESP-IDF 6.x, see the `esp-idf-kconfig v3.x documentation <https://docs.espressif.com/projects/esp-idf-kconfig/en/stable/>`_ or pick from the dropdown in the upper left corner.
+
 This is the documentation for the ``esp-idf-kconfig`` project. The ``esp-idf-kconfig`` package is a Python library for working with :ref:`Kconfig <kconfiglib-index>` configuration files. It is designed to be used with the `Espressif IoT Development Framework (ESP-IDF) <https://docs.espressif.com/projects/esp-idf/en/latest/index.html>`_, although it can be used as a standalone package as well. Core kconfiglib and menuconfig functionality has been copied from the original `kconfiglib <https://github.com/ulfalizer/Kconfiglib>`_ repository.
 
 The ``esp-idf-kconfig`` package is used for compile-time project configuration. For the detailed description of the Kconfig language, see the :ref:`Kconfig <kconfiglib-index>` section. Contributions are welcome. Before contributing please make sure that you have read the :ref:`Developer and Contributor Guide <developer-guide>`.

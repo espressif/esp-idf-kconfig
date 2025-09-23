@@ -186,7 +186,7 @@ deploy_docs_preview:
   extends:
     - .deploy_docs_template
   rules:
-    - if: $CI_COMMIT_REF_NAME == "master"
+    - if: $CI_COMMIT_REF_NAME == "release/v2"
       when: never
     - changes:
         - "docs/**/*"
@@ -203,7 +203,7 @@ deploy_docs_production:
   extends:
     - .deploy_docs_template
   rules:
-    - if: $CI_COMMIT_REF_NAME == "master"
+    - if: $CI_COMMIT_REF_NAME == "release/v2"
       changes:
       - "docs/**/*"
   variables:
