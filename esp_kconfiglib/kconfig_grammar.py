@@ -228,21 +228,31 @@ class KconfigOptionBlock(KconfigBlock):
         def prompt_from_token_list(tokens: List[str]) -> Tuple[str, int]:
             """
             Get prompt (i.e. quoted string) from the list of tokens. Start and end are determined by the quotes.
+            Support nested quotes, e.g. "hello 'world'" or 'hello "world"'.
             """
-            prompt_tokens = []
-            current_token_idx = 1
-            well_formed_prompt = False
+            # Determine the quote type - single or double quote
+            quote_type = tokens[0][0]
+            if quote_type not in ('"', "'"):
+                raise ParseException(instring, loc, "Error parsing option block: prompt missing leading quote.", self)
+            current_token_idx = 0
             for token in tokens:
-                prompt_tokens.append(token)
-                current_token_idx += 1
-                if token.endswith(('"', "'")):
-                    well_formed_prompt = True
+                if not token.endswith(quote_type):
+                    current_token_idx += 1
+                else:
                     break
-            if not well_formed_prompt:
+
+            if not tokens[current_token_idx].endswith(quote_type):
                 raise ParseException(
-                    instring, current_loc, "Error parsing option block: prompt must be a quoted string.", self
+                    instring,
+                    current_loc,
+                    (
+                        "Error parsing option block: prompt either missing ending quote "
+                        "or is ended with a different quote than started with."
+                    ),
+                    self,
                 )
-            return " ".join(prompt_tokens)[1:-1], current_token_idx
+
+            return " ".join(tokens[: current_token_idx + 1])[1:-1], current_token_idx + 1
 
         # Unfortunately, pyparsing sometimes points KconfigOptionBlock to the end of the previous line,
         # sometimes directly to the start of current line,
