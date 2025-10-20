@@ -25,6 +25,7 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Operating System :: POSIX",
     "Operating System :: Microsoft :: Windows",
     "Operating System :: MacOS :: MacOS X",
@@ -49,7 +50,7 @@ dev = [
     "coverage[toml]",
 ]
 docs = [
-    "esp-docs~=1.5"
+    "esp-docs"
 ]
 
 [tool.setuptools.packages]

@@ -1,3 +1,6 @@
+variables:
+  DEFAULT_IMAGE: "python:3.14-bookworm"
+
 stages:
   - codecheck
   - test
@@ -33,7 +36,7 @@ workflow:
     - internet
   parallel:
     matrix:
-      - PYTHON_VERSION: ["3.8", "3.13"]
+      - PYTHON_VERSION: ["3.8", "3.14"]
   variables:
     RUN_TESTS: "coverage run -m pytest -vv"
     COVERAGE_PROCESS_START: "${CI_PROJECT_DIR}/pyproject.toml"
@@ -173,7 +176,7 @@ test_kconfcheck_venv:
 # -----------------------------------------------------------------------------------------------------
 merge_coverage:
   stage: coverage
-  image: python:3.13-bookworm
+  image: $DEFAULT_IMAGE
   tags:
     - build
     - internet
@@ -207,7 +210,7 @@ merge_coverage:
 # ------------------------------------------------------------------------------------------------------
 build_docs:
   stage: build_docs
-  image: python:3.12-bookworm
+  image: $DEFAULT_IMAGE
   tags:
     - build_docs
   rules:
@@ -227,7 +230,7 @@ build_docs:
 
 .deploy_docs_template:
   stage: deploy_docs
-  image: python:3.12-bookworm
+  image: $DEFAULT_IMAGE
   tags:
     - deploy
   needs:
