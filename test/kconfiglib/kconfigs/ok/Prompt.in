@@ -33,3 +33,12 @@ mainmenu "Main menu"
     config SPECIAL_CHARS
         bool "Special characters: _ {}"
         default y
+
+    config NESTED_PROMPT
+        bool
+        prompt "Nested 'prompt'"
+        default y
+
+    config NESTED_PROMPT_2
+        bool "Odd 'number' of quotes in symbol's prompt"
+        default y
