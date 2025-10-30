@@ -4069,6 +4069,7 @@ class Symbol:
         "defaults",
         "direct_dep",
         "implies",
+        "_invalidating",
         "is_allnoconfig_y",
         "is_constant",
         "kconfig",
@@ -4109,6 +4110,7 @@ class Symbol:
     weak_rev_values: List[Tuple]
     _is_deprecated: bool
     nodes: List["MenuNode"]
+    _invalidating: bool
 
     #
     # Public interface
@@ -4340,6 +4342,7 @@ class Symbol:
         self._cached_assignable = None
         # - _visited is used during tree iteration and dep. loop detection
         self._visited = UNKNOWN
+        self._invalidating = False
 
         # _write_to_conf is calculated along with the value. If True, the
         # Symbol gets a .config entry.
@@ -4369,7 +4372,7 @@ class Symbol:
         self._present_in_current_sdkconfig = False
 
         # See Kconfig._build_dep()
-        self._dependents = set()
+        self._dependents: Set[Union[Symbol, Choice]] = set()
 
     @property
     def present_in_current_sdkconfig(self):
@@ -5124,29 +5127,15 @@ class Symbol:
     def _rec_invalidate(self):
         # Invalidates the symbol and all items that (possibly) depend on it
 
-        self._invalidate()
+        if self._invalidating:
+            return
+        self._invalidating = True
 
+        self._invalidate()
         for item in self._dependents:
-            # _cached_vis doubles as a flag that tells us whether 'item'
-            # has cached values, because it's calculated as a side effect
-            # of calculating all other (non-constant) cached values.
-            #
-            # If item._cached_vis is None, it means there can't be cached
-            # values on other items that depend on 'item', because if there
-            # were, some value on 'item' would have been calculated and
-            # item._cached_vis set as a side effect. It's therefore safe to
-            # stop the invalidation at symbols with _cached_vis None.
-            #
-            # This approach massively speeds up scripts that set a lot of
-            # values, vs simply invalidating all possibly dependent symbols
-            # (even when you already have a list of all the dependent
-            # symbols, because some symbols get huge dependency trees).
-            #
-            # This gracefully handles dependency loops too, which is nice
-            # for choices, where the choice depends on the choice symbols
-            # and vice versa.
-            if item._cached_vis is not None:
-                item._rec_invalidate()
+            item._rec_invalidate()
+
+        self._invalidating = False
 
     def _rec_invalidate_if_has_prompt(self):
         # Invalidates the symbol and its dependent symbols, but only if the
@@ -5252,6 +5241,7 @@ class Choice:
         "_visited",
         "_was_set",
         "_present_in_current_sdkconfig",
+        "_invalidating",
         "defaults",
         "direct_dep",
         "is_constant",
@@ -5268,6 +5258,7 @@ class Choice:
     nodes: List["MenuNode"]
     syms: List[Symbol]
     defaults: List[Tuple[Any, Any]]  # Tuple[condition, expression], both can be pretty complicated
+    _invalidating: bool
 
     def __init__(self, kconfig: Kconfig, name: Optional[str] = None, direct_dep: Optional[Symbol] = None):
         self.kconfig = kconfig
@@ -5356,13 +5347,13 @@ class Choice:
         self._cached_vis = None
         self._cached_assignable = None
         self._cached_selection = _NO_CACHED_SELECTION
-
+        self._invalidating = False
         # is_constant is checked by _depend_on(). Just set it to avoid having
         # to special-case choices.
         self.is_constant = False
 
         # See Kconfig._build_dep()
-        self._dependents = set()  # type: ignore
+        self._dependents: Set[Union[Symbol, Choice]] = set()
 
     @property
     def present_in_current_sdkconfig(self):
@@ -5664,11 +5655,15 @@ class Choice:
     def _rec_invalidate(self):
         # See Symbol._rec_invalidate()
 
-        self._invalidate()
+        if self._invalidating:
+            return
+        self._invalidating = True
 
+        self._invalidate()
         for item in self._dependents:
-            if item._cached_vis is not None:
-                item._rec_invalidate()
+            item._rec_invalidate()
+
+        self._invalidating = False
 
 
 class MenuNode:
