@@ -1,3 +1,14 @@
+## v3.3.0 (2025-11-03)
+
+### New Features
+
+- add support for Python 3.14
+
+### Bug Fixes
+
+- fix recursive invalidation logic
+- allow nested quotes in prompt string
+
 ## v3.2.0 (2025-09-19)
 
 ### New Features
