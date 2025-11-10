@@ -1665,6 +1665,29 @@ def _change_node(node):
 
     sc: Union[Symbol, Choice] = node.item
 
+    # Take the "warning" flag into account only if the symbol
+    # * is not a choice symbol
+    # * does not have a user value (i)
+    if sc.__class__ == Symbol and sc.warning and not sc.choice and sc.has_active_default_value():
+        c = None
+        while c is None or c not in ("y", "n"):
+            c = _key_dialog(
+                "Set dangerous option?",
+                textwrap.dedent(
+                    f"""
+                    This symbol has a following warning:
+
+                    {sc.warning}
+
+                     Are you sure you want to change the value of this symbol?
+
+                                             (Y)es  (N)o
+                    """
+                ),
+                "yn",
+            )
+        if c == "n":
+            return True
     if sc.orig_type in (INT, HEX, STRING):
         s = sc.str_value
 
@@ -1674,7 +1697,6 @@ def _change_node(node):
                 s,
                 _range_info(sc),
             )
-
             if s is None:
                 break
 
@@ -2630,6 +2652,10 @@ def _draw_info_dialog(node, lines, scroll, top_line_win, text_win, bot_sep_win, 
     top_line_win.noutrefresh()
 
 
+def _warning_info(sym):
+    return f"This symbol has a 'warning' with the following reason: {sym.warning}\n" if sym.warning else ""
+
+
 def _info_str(node):
     # Returns information about the menu node 'node' as a string.
     #
@@ -2644,6 +2670,7 @@ def _info_str(node):
             + _prompt_info(sym)
             + f"Type: {TYPE_TO_STR[sym.type]}\n"
             + _value_info(sym)
+            + _warning_info(sym)
             + _help_info(sym)
             + _direct_dep_info(sym)
             + _defaults_info(sym)

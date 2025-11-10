@@ -1,0 +1,21 @@
+mainmenu "Test if risk option is parsed correctly"
+
+    config RISKY_BOOL
+        bool "Risky boolean option"
+        warning "Risky bool!"
+        default y
+
+    config RISKY_STRING
+        string "Risky string option"
+        warning "Risky string!"
+        default "default"
+
+    config RISKY_HEX
+        hex "Risky hex option"
+        warning "Risky hex!"
+        default 0x0
+
+    config RISKY_INT
+        int "Risky int option"
+        warning "Risky int!"
+        default 0

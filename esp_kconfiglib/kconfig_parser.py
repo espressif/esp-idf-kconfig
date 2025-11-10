@@ -18,6 +18,7 @@ from pyparsing import line as pyparsing_line
 from pyparsing import lineno
 
 from esp_kconfiglib.kconfig_grammar import KconfigGrammar
+from esp_kconfiglib.report import MiscArea
 
 from .core import AND
 from .core import BOOL
@@ -502,6 +503,39 @@ class Parser:
                     self.file_stack[-1],
                     node.linenr,
                 )
+
+        if config_options["warning"]:
+            if node.item.__class__ is Symbol:
+                if len(config_options["warning"]) > 1:
+                    self.kconfig.report.add_record(
+                        MiscArea,
+                        message=(
+                            node.item.name_and_loc  # type: ignore[union-attr]
+                            + " has several prompts for warning option in one location. Using the last one."
+                        ),
+                    )
+                else:
+                    prompt_str = config_options["warning"][-1]
+                    if prompt_str != prompt_str.strip():
+                        self.kconfig.report.add_record(
+                            MiscArea,
+                            message=(
+                                f"{node.item.name_and_loc if node.item.name_and_loc else node.item}"  # type: ignore[union-attr]
+                                + " has leading or trailing whitespace in its warning prompt"
+                            ),
+                        )
+                        prompt_str = prompt_str.strip()
+                    node.warning = prompt_str  # type: ignore[union-attr]
+            elif node.item.__class__ is Choice:
+                self.kconfig.report.add_record(
+                    MiscArea,
+                    message=(
+                        f"Choice {node.item.name} (defined at {self.file_stack[-1]}:{node.linenr}) "  # type: ignore[union-attr]
+                        "has 'warning' option, which is only supported for symbols. Option ignored."
+                    ),
+                )
+
+        # ignore anything else, should not happen
 
     # mypy cannot recognize "if parsed_expr.__class__" as handling certain types complains in the rest of the function
     @no_type_check

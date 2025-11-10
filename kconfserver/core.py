@@ -115,6 +115,7 @@ def run_server(kconfig, sdkconfig, sdkconfig_rename, default_version=MAX_PROTOCO
     visible_dict = get_visible(config)
     if default_version >= 3:
         defaults_dict = get_sym_default_value_dict(config)
+        warnings = {sym.name: sym.warning for sym in config.unique_defined_syms if sym.warning}
 
     if default_version == 1:
         # V1: no 'visibility' key, send value None for any invisible item
@@ -132,6 +133,7 @@ def run_server(kconfig, sdkconfig, sdkconfig_rename, default_version=MAX_PROTOCO
         # V3 onwards: send which values have default values
         if default_version >= 3:
             resp["defaults"] = defaults_dict
+            resp["warnings"] = warnings
 
         json.dump(
             resp,

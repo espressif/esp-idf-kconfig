@@ -95,9 +95,9 @@ def server(request, temp_files):
 
     # Consume banner and initial state
     p.expect(r"Server running.+\r?\n")
-    _ = expect_json(p)
+    initial_resp = expect_json(p)
 
-    yield p, sdkconfig_path
+    yield p, sdkconfig_path, initial_resp
 
     # Teardown
     p.sendeof()
@@ -111,7 +111,7 @@ def server(request, temp_files):
 )
 @pytest.mark.parametrize("protocol_version", PROTOCOL_VERSIONS, ids=[f"protocol-v{v}" for v in PROTOCOL_VERSIONS])
 def test_protocol_versions(server, protocol_version):
-    p, _ = server
+    p, _, _ = server
 
     # Load initial state
     send_request(p, {"version": protocol_version, "load": None})
@@ -129,7 +129,7 @@ def test_protocol_versions(server, protocol_version):
 )
 @pytest.mark.parametrize("protocol_version", PROTOCOL_VERSIONS, ids=[f"protocol-v{v}" for v in PROTOCOL_VERSIONS])
 def test_load_save(server, protocol_version):
-    p, sdkconfig_path = server
+    p, sdkconfig_path, _ = server
 
     before = os.stat(sdkconfig_path).st_mtime
     save_resp = send_request(p, {"version": protocol_version, "save": sdkconfig_path})
@@ -153,7 +153,7 @@ def test_load_save(server, protocol_version):
 )
 @pytest.mark.parametrize("protocol_version", PROTOCOL_VERSIONS, ids=[f"protocol-v{v}" for v in PROTOCOL_VERSIONS])
 def test_invalid_json(server, protocol_version):
-    p, _ = server
+    p, _, _ = server
 
     bad = rf'{{ "version": {protocol_version}, "load": "c:\\some\\path\\not\\escaped\\as\\json" }}'
     p.sendline(bad)
@@ -163,3 +163,18 @@ def test_invalid_json(server, protocol_version):
     p.sendline("Hello world!!")
     resp = expect_json(p)
     assert "json" in resp.get("error", [""])[0].lower()
+
+
+@pytest.mark.parametrize(
+    "server", KCONFIG_PARSER_VERSIONS, indirect=True, ids=[f"parser-v{v}" for v in KCONFIG_PARSER_VERSIONS]
+)
+def test_warnings(server):
+    """
+    The "warnings" key is returned only in the initial response,
+    which is not checked in other tests, thus standalone test case.
+    """
+    _, _, initial_resp = server
+    assert "warnings" in initial_resp
+    warnings = initial_resp["warnings"]
+    assert "DANGEROUS_OPTION" in warnings, print(warnings)
+    assert warnings["DANGEROUS_OPTION"] == "This is a warning for DANGEROUS_OPTION"

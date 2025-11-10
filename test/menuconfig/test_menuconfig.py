@@ -3,6 +3,8 @@
 import os
 import sys
 from typing import TYPE_CHECKING
+from typing import Any
+from typing import Dict
 from typing import Union
 
 import pytest
@@ -274,3 +276,83 @@ class TestIndirectlySetValues(MenuconfigTestBase):
         )
 
         menuconfig(kconfig, headless=True)
+
+
+class TestSetRiskyConfig:
+    """
+    Test if menuconfig correctly handles 'warning' option for symbols: key_dialog should be called
+    to confirm changing the value of a risky symbol, but only if the symbol is not already user-set.
+    """
+
+    @pytest.fixture
+    def monkeypatch_menuconfig(self):
+        """
+        Fixture to monkeypatch menuconfig core functions for testing.
+        Provides mock implementations for key_dialog, input_dialog, and update_menu.
+        """
+        import esp_menuconfig.core
+
+        # Store original functions
+        original_key_dialog = esp_menuconfig.core._key_dialog
+        original_input_dialog = esp_menuconfig.core._input_dialog
+        original_update_menu = esp_menuconfig.core._update_menu
+
+        # Track if key_dialog was called
+        mock_state = {"key_dialog_called": False}
+
+        def mock_key_dialog(title, text, keys):
+            mock_state["key_dialog_called"] = True
+            assert title == "Set dangerous option?"
+            assert keys == "yn"
+            assert "This symbol has a following warning:" in text
+            return "y"
+
+        def mock_input_dialog(title, initial_text, info_text=None):
+            return "999"  # New, "user-set" value for the int symbol
+
+        def reset_key_dialog_called():
+            mock_state["key_dialog_called"] = False
+
+        # Apply monkeypatches
+        esp_menuconfig.core._key_dialog = mock_key_dialog
+        esp_menuconfig.core._input_dialog = mock_input_dialog
+        esp_menuconfig.core._update_menu = lambda: None  # Disable menu updates in tests
+
+        # Yield the mock state tracker
+        yield {
+            "key_dialog_called": lambda: mock_state["key_dialog_called"],
+            "reset_key_dialog_called": reset_key_dialog_called,
+        }
+
+        # Restore original functions
+        esp_menuconfig.core._key_dialog = original_key_dialog
+        esp_menuconfig.core._input_dialog = original_input_dialog
+        esp_menuconfig.core._update_menu = original_update_menu
+
+    @pytest.mark.parametrize("parser_version", (1, 2))
+    def test_set_risky_config(self, monkeypatch_menuconfig: Dict[str, Any], parser_version: int) -> None:
+        kconfig = Kconfig(os.path.join(KCONFIGS_PATH, "Kconfig.warning"), parser_version=parser_version)
+        kconfig.load_config(os.path.join(SDKCONFIGS_PATH, "test_warning", "sdkconfig.warning"))
+
+        # key = symbol name, value = (key_dialog should be printed, new value after changing)
+        sym_names = {
+            "RISKY_BOOL": (True, "y"),
+            "RISKY_INT": (True, "999"),
+            "ALREADY_USER_SET_RISKY_INT": (False, "999"),
+        }
+
+        for sym_name in sym_names:
+            assert kconfig.syms[sym_name].warning != "", f"Symbol {sym_name} should be marked as risky, but is not."
+
+        for sym_name, (should_call_key_dialog, new_value) in sym_names.items():
+            sym = kconfig.syms[sym_name]
+            monkeypatch_menuconfig["reset_key_dialog_called"]()
+            assert _change_node(sym.nodes[0]) is True, f"Changing value of symbol {sym_name} should be allowed."
+            assert sym.str_value == new_value, (
+                f"Value of symbol {sym_name} should be changed to {new_value}, but is {sym.str_value}."
+            )
+            assert monkeypatch_menuconfig["key_dialog_called"]() is should_call_key_dialog, (
+                f"key_dialog should {'be' if should_call_key_dialog else 'not be'} called when changing "
+                f"the value of symbol {sym_name}, but it was"
+                f"{' not' if not monkeypatch_menuconfig['key_dialog_called']() else ''}."
+            )

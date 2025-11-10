@@ -1,0 +1,5 @@
+# default:
+# CONFIG_RISKY_BOOL is not set
+# default:
+CONFIG_RISKY_INT=0
+CONFIG_ALREADY_USER_SET_RISKY_INT=342

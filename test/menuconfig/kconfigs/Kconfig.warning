@@ -1,0 +1,22 @@
+mainmenu "Kconfig serving for testing the warning option"
+
+    config RISKY_BOOL
+        bool "User setting this bool is risky"
+        default n
+        warning "Risky bool!"
+
+    config RISKY_INT
+        int "User setting this string is risky"
+        default 0
+        warning "Risky int!"
+
+    config ALREADY_USER_SET_RISKY_INT
+        int "This risky config is already user-set"
+        default 0
+        warning "This symbol will be already set!"
+        help
+            This config option is user-set in sdkconfig.warning.
+            Because of that, further editing by the user should NOT produce
+            the warning about setting risky feature.
+            However, after resetting the value by R-key, the dialog should be printed
+            again.

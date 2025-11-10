@@ -1,0 +1,12 @@
+#
+# Automatically generated file. DO NOT EDIT.
+# Espressif IoT Development Framework (ESP-IDF)  Project Configuration
+#
+# default:
+CONFIG_RISKY_BOOL=y
+# default:
+CONFIG_RISKY_STRING="default"
+# default:
+CONFIG_RISKY_HEX=0x0
+# default:
+CONFIG_RISKY_INT=0

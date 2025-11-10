@@ -77,3 +77,10 @@ mainmenu "Testing kconfserver"
             default y
 
     endmenu  # Test config
+
+    config DANGEROUS_OPTION
+        bool "Dangerous option"
+        warning "This is a warning for DANGEROUS_OPTION"
+        default y
+        help
+            This option serves to test "warning" option.

@@ -44,7 +44,8 @@ Then it will print a JSON dictionary on stdout, representing the initial state o
     "values": { "TEST_CONFIG": 1,
                 "CHOICE_A": true },
     "defaults": {"TEST_CONFIG": true,
-                "CHOICE_A": true }
+                "CHOICE_A": true },
+    "warnings": {"DANGEROUS_OPTION": "Warning message for DANGEROUS_OPTION"}
     }
 
 * ``version`` key is the protocol version in use.
@@ -52,6 +53,7 @@ Then it will print a JSON dictionary on stdout, representing the initial state o
 * ``visible`` holds a dictionary showing initial visibility status of config symbols (identified by the config symbol name) and menus (which don't represent a symbol but are represented as an id "slug"). Both these names (symbol name and menu slug) correspond to the ``id`` key in ``kconfig_menus.json``.
 * ``values`` holds a dictionary showing initial values of all config symbols. Invisible symbols are not included here.
 * ``defaults`` holds a dictionary indicating if the config symbols have default value or not. This key is supported only in protocol version 3 and later. More information about default values can be found in the :ref:`defaults` section.
+* ``warnings`` holds a dictionary with config symbol names as keys and their warning messages as values. If given (menu)config has no ``warning`` option, it is not included. For more information about a ``warning`` option, see :ref:`warning-option`. This key is supported only in protocol version 3 and later.
 
 .. note::
 
