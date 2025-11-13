@@ -25,7 +25,7 @@ Below, a context-free grammar describing the Kconfig language is presented. This
 
     # (menu)config and choice options
     config_options ::= (config_type | config_and_prompt)
-                       + (default* | help_option | depends_on* | range_entry* | prompt | select* | imply* | option* | set * | set_default *)*
+                       + (default* | help_option | depends_on* | range_entry* | prompt | select* | imply* | option* | set * | set_default * | warning)*
 
     config_type ::= "bool" | "int" | "hex" | "string"
     config_and_prompt ::= config_type + noname_prompt
@@ -42,6 +42,7 @@ Below, a context-free grammar describing the Kconfig language is presented. This
     set_default ::= "set default" + assignment [+ "if" + expression ]
     option ::= "option env=" + STRING
     visible_if ::= "visible if" + expression
+    warning ::= "warning" + noname_prompt
 
     assignment ::= symbol + "=" +  ( value | symbol )
 

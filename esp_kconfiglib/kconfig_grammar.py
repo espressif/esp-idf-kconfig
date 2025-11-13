@@ -215,6 +215,7 @@ class KconfigOptionBlock(KconfigBlock):
             "set": [],
             "weak_set": [],
             "help": None,
+            "warning": [],
         }
 
         def is_line_with_option(tokens: List[str]) -> bool:
@@ -453,9 +454,30 @@ class KconfigOptionBlock(KconfigBlock):
                 option_dict["option"].append(option)
                 current_loc += len(line) + 1  # +1 for \n
 
+            elif tokens[0] == "warning":
+                if len(tokens) > 1:  # inline prompt
+                    if not tokens[1].startswith(('"', "'")):
+                        raise ParseException(
+                            instring, current_loc, "Error parsing option block: prompt must be a quoted string.", self
+                        )
+
+                    prompt_str, current_token_idx = prompt_from_token_list(tokens[1:])
+
+                    option_dict["warning"].append(prompt_str)
+                else:
+                    raise ParseException(
+                        instring,
+                        current_loc,
+                        "Error parsing option block: warning option missing prompt.",
+                        self,
+                    )
+                current_loc += len(line) + 1  # +1 for \n
             else:
                 raise ParseException(
-                    instring, current_loc, f"Error parsing option block: unsupported option at line {line}.", self
+                    instring,
+                    current_loc,
+                    f'Error parsing option block: unsupported option at line {loc}:"{line}".',
+                    self,
                 )
 
         return current_loc, option_dict

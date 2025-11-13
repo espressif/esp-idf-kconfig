@@ -3349,6 +3349,20 @@ class Kconfig(object):
                 if node.item.__class__ is not Choice:
                     self._parse_error('"optional" is only valid for choices')
 
+            elif t0 == _T_WARNING:
+                if self._tokens[1] is None:
+                    self._parse_error("expected warning message")
+                if node.warning:
+                    self.kconfig.report.add_record(
+                        MiscArea,
+                        message=(
+                            node.item.name_and_loc  # type: ignore[union-attr]
+                            + " has several prompts for warning option in one location. Using the last one."
+                        ),
+                    )
+                self._tokens_i = 2
+                node.warning = self._tokens[1]
+
             else:
                 # Reuse the tokens for the non-property line later
                 self._reuse_tokens = True
@@ -3790,6 +3804,12 @@ class Kconfig(object):
         sym.implies += node.implies
         sym.sets += node.sets
         sym.weak_sets += node.weak_sets
+        if sym.warning and node.warning and sym.warning != node.warning:
+            self.report.add_record(
+                MiscArea, message=(f"{sym.name_and_loc} defined with warnings in multiple locations.")
+            )
+
+        sym.warning = node.warning if node.warning else sym.warning
 
         # Modify the reverse dependencies of the selected symbol
         for target, cond in node.selects:
@@ -3847,6 +3867,12 @@ class Kconfig(object):
             return sym.orig_type == type_
 
         for sym in self.unique_defined_syms:
+            if sym.warning and sym.choice:
+                self._warn(
+                    f"Choice symbol {sym.name} (member of {sym.choice.name} choice) is defined with a warning, "
+                    "which has no effect for choice symbols."
+                )
+                sym.warning = ""
             if sym.orig_type == BOOL:
                 # A helper function could be factored out here, but keep it
                 # speedy/straightforward
@@ -4088,6 +4114,7 @@ class Symbol:
         "weak_sets",
         "rev_values",
         "weak_rev_values",
+        "warning",
     )
     name: str
     item: Union["Symbol", "Choice", int]
@@ -4111,6 +4138,7 @@ class Symbol:
     _is_deprecated: bool
     nodes: List["MenuNode"]
     _invalidating: bool
+    warning: str
 
     #
     # Public interface
@@ -4285,6 +4313,12 @@ class Symbol:
             value, so this works out. The C tools work the same way.
         """
         self.ranges = []
+
+        """
+        warning:
+            If the symbol is defined with 'warning' option, the prompt string is stored here.
+        """
+        self.warning = ""
 
         """
         choice:
@@ -5687,6 +5721,7 @@ class MenuNode:
 
     __slots__ = (
         "_id",
+        "warning",
         "dep",
         "filename",
         "help",
@@ -5723,6 +5758,7 @@ class MenuNode:
     list: Optional["MenuNode"]
     sets: List[Tuple]
     weak_sets: List[Tuple]
+    warning: str
 
     def __init__(
         self,
@@ -5918,6 +5954,12 @@ class MenuNode:
             Like MenuNode.sets, but their values respect user-set values.
         """
         self.weak_sets = []
+
+        """
+        warning:
+            If the MenuNode's symbol is defined with 'warning' option, the prompt string is stored here.
+        """
+        self.warning = ""
 
     @property
     def id(self) -> str:
@@ -7195,7 +7237,8 @@ except AttributeError:
     _,
     _T_UNEQUAL,
     _T_VISIBLE,
-) = range(1, 51)
+    _T_WARNING,
+) = range(1, 52)
 
 
 def _recursively_perform_action(start_node, action, exclude_items=[_T_MENU, _T_COMMENT]):
@@ -7261,6 +7304,7 @@ _get_keyword = {
     "source": _T_SOURCE,
     "string": _T_STRING,
     "visible": _T_VISIBLE,
+    "warning": _T_WARNING,
 }.get
 
 # The constants below match the value of the corresponding tokens to remove the
@@ -7338,6 +7382,7 @@ _STRING_LEX = frozenset(
         _T_RSOURCE,
         _T_SOURCE,
         _T_STRING,
+        _T_WARNING,
     }
 )
 

@@ -740,6 +740,34 @@ The ``option`` option is used to define an environment variable for the configur
 
     There is no need to use ``option env=``. Instead, it is possible to directly use ``default "${ENV_VAR_NAME}"``.
 
+.. _warning-option:
+
+The ``warning`` Option
+^^^^^^^^^^^^^^^^^^^^^^
+
+The ``warning`` option is used to mark a config option that brings additional risks if set manually. The exact meaning of the danger depends on the context of the configuration. If the brief danger description is not sufficient, it is recommended to also use the ``help`` option to provide more detailed information about the risks involved.
+
+When the user tries to enable such config option in a GUI configuration tool (e.g. ``idf.py menuconfig``), a warning message with the provided description is shown, asking the user to confirm their decision to change given config option's value.
+
+This option is optional and can be used only in the ``config`` and ``menuconfig`` entries.
+
+The syntax is as follows, where ``noname_prompt`` is a quoted string and it is required:
+
+.. code-block:: bnf
+
+    warning ::= "warning" + noname_prompt
+
+Example:
+
+.. code-block:: kconfig
+
+    config OVERLOAD_CORE
+        bool "Overload reactor core"
+        default n
+        warning "Overloading reactor core can lead to instability!"
+        help
+            Can temporarily boost the power of the reactor core beyond safe limits.
+            Use with caution, as it can lead to core meltdown!
 
 Expressions
 -----------
