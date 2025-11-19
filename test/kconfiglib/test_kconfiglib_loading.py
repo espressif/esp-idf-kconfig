@@ -426,6 +426,8 @@ class TestLoadingDeprecated(TestBase):
             else:  # expressions with deprecated names should always evaluate to "n"
                 assert kconfig.eval_string(expression) == STR_TO_BOOL["n"]
 
+        kconfig.report.reset()
+
     def test_flag_set(self, deprecated_names, expressions):
         """
         Set flag should mean deprecated values are loaded.
@@ -458,3 +460,40 @@ class TestLoadingDeprecated(TestBase):
             except AssertionError:
                 print(f"§OLD_STRING = {kconfig.syms['OLD_STRING'].str_value}")
                 raise
+
+        kconfig.report.reset()
+
+
+@pytest.mark.parametrize("version", ["1", "2"], indirect=True)
+class TestDisabledSymbols(TestBase):
+    """
+    Test ensures disabled symbols/choices with user-set value are reported correctly.
+    """
+
+    def test_disabled_symbols(self):
+        kconfig = Kconfig(os.path.join(KCONFIG_PATH, "Kconfig.disabled_symbols_choices"))
+        kconfig.load_config(os.path.join(SDKCONFIGS_PATH, "sdkconfig.disabled_symbols_choices"))
+        report_json = kconfig.report._return_json()
+        area = next(
+            (area for area in report_json["areas"] if area["title"] == "Disabled Symbols/Choices With User-Set Value"),
+            None,
+        )
+        assert area is not None, "Disabled Symbols/Choices With User-Set Value area not found in report"
+
+        assert "DISABLED_SYMBOL" in area["data"]["symbols"]
+        assert "y" in area["data"]["symbols"]["DISABLED_SYMBOL"]["value"]
+        assert "sdkconfig.disabled_symbols_choices" in area["data"]["symbols"]["DISABLED_SYMBOL"]["source"]
+
+        assert "DISABLED_INT" in area["data"]["symbols"]
+        assert "42" in area["data"]["symbols"]["DISABLED_INT"]["value"]
+        assert "sdkconfig.disabled_symbols_choices" in area["data"]["symbols"]["DISABLED_INT"]["source"]
+
+        assert "INSIDE_MENU" in area["data"]["symbols"]
+        assert "hi" in area["data"]["symbols"]["INSIDE_MENU"]["value"]
+        assert "sdkconfig.disabled_symbols_choices" in area["data"]["symbols"]["INSIDE_MENU"]["source"]
+
+        assert "DISABLED_CHOICE" in area["data"]["choices"]
+        assert "CHOICE_B" in area["data"]["choices"]["DISABLED_CHOICE"]["value"]
+        assert "sdkconfig.disabled_symbols_choices" in area["data"]["choices"]["DISABLED_CHOICE"]["source"]
+
+        kconfig.report.reset()

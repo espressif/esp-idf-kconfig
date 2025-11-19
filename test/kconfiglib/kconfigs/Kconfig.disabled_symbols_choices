@@ -1,0 +1,37 @@
+mainmenu "Disabled Symbols and Choices"
+
+    config ENABLE_FEATURE
+        bool "Enable feature"
+        default n
+
+    config DISABLED_SYMBOL
+        bool "Disabled symbol"
+        depends on ENABLE_FEATURE
+        default n
+
+    config DISABLED_INT
+        int "Disabled integer"
+        depends on ENABLE_FEATURE
+        default 0
+
+    choice DISABLED_CHOICE
+        prompt "Disabled choice"
+        depends on ENABLE_FEATURE
+        default CHOICE_A
+
+        config CHOICE_A
+            bool "Choice A"
+
+        config CHOICE_B
+            bool "Choice B"
+
+    endchoice
+
+    menu "Disabled menu"
+        visible if ENABLE_FEATURE
+
+        config INSIDE_MENU
+            string "String inside disabled menu"
+            default "hello"
+
+    endmenu

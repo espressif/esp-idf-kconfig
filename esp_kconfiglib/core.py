@@ -1216,6 +1216,16 @@ class Kconfig(object):
     def _quote_value(val: str, sym_type: str) -> str:
         return val if (val in ("y", "n") or sym_type == INT) else f'"{val}"'
 
+    def set_value_and_source(self, sym_or_choice: Union["Symbol", "Choice"], val: Any, filename: str) -> bool:
+        """
+        Set the value of the symbol and set the source file of the value.
+        """
+        if not sym_or_choice.set_value(val):
+            return False
+        else:
+            sym_or_choice._user_source = filename
+            return True
+
     def _load_config(self, filename, replace, load_deprecated):
         def _inject_default_value(sym: Symbol, val: Any) -> bool:
             """
@@ -1306,7 +1316,7 @@ class Kconfig(object):
                 )
             )
 
-            sym.set_value(val if val[0] not in ("'", '"') else val[1:-1])
+            self.set_value_and_source(sym, val if val[0] not in ("'", '"') else val[1:-1], filename)
             return sym
 
         currently_loading_deprecated = False
@@ -1432,7 +1442,7 @@ class Kconfig(object):
                                 )
 
                             # Set the choice's mode
-                            sym.choice.set_value(val)
+                            self.set_value_and_source(sym.choice, val, filename)
 
                     elif sym.orig_type == STRING:
                         match = _conf_string_match(val)
@@ -1488,7 +1498,7 @@ class Kconfig(object):
                     self._assigned_twice(sym, val, filename, linenr)
                 # If the value is not set to default, set it
                 if not value_is_default:
-                    if sym.set_value(val):
+                    if self.set_value_and_source(sym, val, filename):
                         # sdkconfig value is set only if set_value succeeded (e.g. no malformed value in sdkconfig)
                         sym._sdkconfig_value = val
                         sym._loaded_as_default = False
@@ -1562,7 +1572,7 @@ class Kconfig(object):
                             # Reason: If we keep it as default, the message about defaults differing between sdkconfig
                             # and Kconfig would still be present because default values between
                             # sdkconfig and Kconfig would still differ.
-                            sym.set_value(val)
+                            self.set_value_and_source(sym, val, filename)
                             unchanged_symbols[sym.name] = val
                         elif preferred_source == "k":
                             symbols_with_changed_defaults[sym.name] = (sym.str_value, val)
@@ -1571,7 +1581,7 @@ class Kconfig(object):
                             f"Unsupported default policy in KCONFIG_DEFAULTS_POLICY envvar: {self.defaults_policy}"
                         )
 
-            changed, unchanged = self._handle_choice_symbols_with_defaults(choice_symbols_with_default_values)
+            changed, unchanged = self._handle_choice_symbols_with_defaults(choice_symbols_with_default_values, filename)
             symbols_with_changed_defaults.update(changed)
             unchanged_symbols.update(unchanged)
 
@@ -1610,7 +1620,7 @@ class Kconfig(object):
             self.report.print_report()
 
     def _handle_choice_symbols_with_defaults(
-        self, choice_symbols_with_default_values: Dict["Symbol", str]
+        self, choice_symbols_with_default_values: Dict["Symbol", str], filename: str
     ) -> Tuple[Dict[str, Tuple[str, str]], Dict[str, str]]:
         """
         General workflow:
@@ -1667,7 +1677,7 @@ class Kconfig(object):
             while True:
                 char = input("Choose a value of the selection you want to choose:")
                 if char in selections:
-                    choice.syms[int(char) - 1].set_value("y")
+                    self.set_value_and_source(choice.syms[int(char) - 1], "y", filename)
                     changed_symbols = {
                         sym.name: (sym._sdkconfig_value or "", sym.str_value)
                         for sym in choice.syms
@@ -1701,7 +1711,7 @@ class Kconfig(object):
             # As the choice will become fully user-set, we will skip the rest of the "default value" logic.
             if choice._user_selection is not None:
                 for sym in choice.syms:
-                    sym.set_value(sym.bool_value)
+                    self.set_value_and_source(sym, sym.bool_value, filename)
                 continue
 
             # NOTE: there are only symbols with default values; if e.g. somebody tampered the sdkconfig and made some
@@ -4091,6 +4101,7 @@ class Symbol:
         "_write_to_conf",
         "_has_active_indirect_set",
         "_is_deprecated",
+        "_user_source",
         "choice",
         "defaults",
         "direct_dep",
@@ -4131,6 +4142,7 @@ class Symbol:
     _loaded_as_default: bool
     _sdkconfig_value: Optional[str]
     _cached_bool_val: Optional[int]
+    _user_source: Optional[str]
     choice: Optional["Choice"]
     rev_values: List[Tuple]  # List of (value, condition, source symbol) tuples for values set by other symbols
     # List of (value, condition, source symbol) tuples for values set by other symbols via 'set default'
@@ -4339,6 +4351,13 @@ class Symbol:
             Symbol.set_value().
         """
         self._user_value = None
+
+        """
+        _user_source:
+            The source file of the user value. None if no user value has been assigned
+            or has been assigned through menuconfig.
+        """
+        self._user_source = None
 
         """
         sdkconfig_value:
@@ -4975,6 +4994,7 @@ class Symbol:
         """
         if self._user_value is not None:
             self._user_value = None
+            self._user_source = None
             self._rec_invalidate_if_has_prompt()
 
     @property
@@ -5286,6 +5306,7 @@ class Choice:
         "syms",
         "_user_selection",
         "_user_value",
+        "_user_source",
     )
     kconfig: Kconfig
     name: Optional[str]
@@ -5293,6 +5314,7 @@ class Choice:
     syms: List[Symbol]
     defaults: List[Tuple[Any, Any]]  # Tuple[condition, expression], both can be pretty complicated
     _invalidating: bool
+    _user_source: Optional[str]
 
     def __init__(self, kconfig: Kconfig, name: Optional[str] = None, direct_dep: Optional[Symbol] = None):
         self.kconfig = kconfig
@@ -5349,6 +5371,13 @@ class Choice:
             Choice.set_value() instead.
         """
         self._user_value = None
+
+        """
+        _user_source:
+            The source file of the user value. None if no user value has been assigned
+            or has been assigned through menuconfig.
+        """
+        self._user_source = None
 
         """
         user_selection:
