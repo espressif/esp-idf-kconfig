@@ -97,3 +97,31 @@ This warning is printed when a promptless configuration option has a value in th
 
 * If the default value is changed in the Kconfig file, it is probably OK to ignore this warning. However, you can check the component's documentation or release notes to ensure this change does not affect your project.
 * If you manually edited the value of a promptless config option in sdkconfig (either changed the value or removed the ``# default:`` comment before the config option), this change will always be ignored and overwritten by the default value from the Kconfig file during the sdkconfig file update. Promptless symbols are not intended to be set by the user (they are only for internal use). It is not possible to externally change the value of promptless symbols.
+
+Disabled Symbols/Choices With User-Set Value
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+This area contains information about symbols/choices that have user-set values, but are not visible. This can happen if the symbol (or choice's selection) is set via the ``sdkconfig.defaults`` file, but the symbol (or choice) is not visible/is disabled by its dependencies. In such a situation, setting the user value has no effect.
+
+Example output in the JSON format:
+
+.. code-block:: json
+
+    {
+        "title": "Disabled Symbols/Choices With User-Set Value",
+        "severity": "Info",
+        "data": {
+            "symbols": {
+                "DISABLED_SYMBOL": {
+                    "value": "y",
+                    "source": "sdkconfig.defaults"
+                }
+            },
+            "choices": {
+                "DISABLED_CHOICE": {
+                    "value": "CHOICE_B",
+                    "source": "sdkconfig.defaults"
+                }
+            }
+        }
+    }

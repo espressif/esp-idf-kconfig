@@ -90,12 +90,12 @@ class Area(ABC):
         """
         pass
 
-    @abstractmethod
     def add_ignore(self, sym_or_choice: "Union[Symbol, Choice]") -> None:
         """
         Add a Symbol/Choice to the ignore list of the area.
+        Raises AttributeError if the area does not support ignore codes.
         """
-        pass
+        raise AttributeError(f"{self.__class__.__name__} does not support ignore codes.")
 
     @abstractmethod
     def report_severity(self) -> int:
@@ -193,9 +193,6 @@ class DefaultValuesArea(Area):
                 str(kwargs.get("sdkconfig_selection", False)),
             )
             self.changed_choices.add(record)
-
-    def add_ignore(self, sym_or_choice: "Union[Symbol, Choice]") -> None:
-        pass
 
     def report_severity(self) -> int:
         if (
@@ -445,9 +442,6 @@ class MiscArea(Area):
             raise AttributeError("Message must be specified for MiscArea.")
         self.messages.add(str(kwargs["message"]))
 
-    def add_ignore(self, sym_or_choice: "Union[Symbol, Choice]") -> None:
-        raise AttributeError("MiscArea does not support ignore codes")
-
     def report_severity(self) -> int:
         return STATUS_OK if not self.messages else STATUS_OK_WITH_INFO
 
@@ -525,9 +519,6 @@ class MultipleAssignmentArea(Area):
                 ]
             self.multiple_assignments_choice[sym_or_choice].append((kwargs["new_value"], kwargs["is_default"]))
 
-    def add_ignore(self, sym_or_choice: "Union[Symbol, Choice]") -> None:
-        raise AttributeError("MultipleAssignmentArea does not support ignore codes")
-
     def report_severity(self) -> int:
         return STATUS_OK_WITH_INFO if (self.multiple_assignments_sym or self.multiple_assignments_choice) else STATUS_OK
 
@@ -587,6 +578,85 @@ class MultipleAssignmentArea(Area):
         self.multiple_assignments_choice.clear()
 
 
+class DisabledSymbolArea(Area):
+    """
+    This area reports symbols that are set via sdkconfig.defaults, but are not visible.
+    """
+
+    def __init__(self):
+        super().__init__(
+            title="Disabled Symbols/Choices With User-Set Value",
+            ignore_codes=set(),
+            info_string=(
+                "Disabled symbols/choices are not written into sdkconfig file. Setting their user value has no effect."
+            ),
+        )
+        self.hidden_symbols: Dict[Symbol, str] = dict()
+        self.hidden_choices: Dict[Choice, Symbol] = dict()
+
+    def add_record(self, sym_or_choice: "Union[Symbol, Choice]", **kwargs: Optional[dict]) -> None:
+        """
+        kwargs:
+            user_value: str
+        """
+        if "user_value" not in kwargs.keys():
+            raise AttributeError("User value must be specified for HiddenSymbolArea.")
+        # Choice symbols are ignored; choice will be reported separately.
+        if sym_or_choice.__class__.__name__ == "Symbol" and not sym_or_choice.choice:  # type: ignore
+            self.hidden_symbols[sym_or_choice] = kwargs["user_value"]  # type: ignore
+        elif sym_or_choice.__class__.__name__ == "Choice":
+            self.hidden_choices[sym_or_choice] = kwargs["user_value"]  # type: ignore
+
+    def report_severity(self) -> int:
+        return STATUS_OK_WITH_INFO if self.hidden_symbols else STATUS_OK
+
+    def print(self, verbosity: str) -> Optional[Table]:
+        if not self.hidden_symbols:
+            return None
+        table = Table(title=self.title, title_justify="left", show_header=False, title_style=AREA_TITLE_STYLE)
+        table.box = HORIZONTALS
+        table.add_column("", justify="left", no_wrap=False, min_width=50)
+        for symbol in self.hidden_symbols:
+            table.add_row(
+                f"* {symbol.name_and_loc} with user-set value {self.hidden_symbols[symbol]} from {symbol._user_source}"
+            )
+        for choice in self.hidden_choices:
+            user_source = choice._user_source or getattr(choice._user_selection, "_user_source", "")
+            table.add_row(
+                f"* {choice.name_and_loc} with user-set symbol {self.hidden_choices[choice].name} from {user_source}"
+            )
+        return table
+
+    def return_json(self) -> Optional[dict]:
+        if not self.hidden_symbols:
+            return None
+        ret_json = super().return_json()
+        if not ret_json:
+            ret_json = dict()
+        ret_json["data"] = dict()
+        ret_json["data"]["symbols"] = dict()
+        ret_json["data"]["choices"] = dict()
+        for symbol in self.hidden_symbols:
+            ret_json["data"]["symbols"][symbol.name] = {
+                "value": self.hidden_symbols[symbol],
+                "source": symbol._user_source,
+            }
+        for choice in self.hidden_choices:
+            ret_json["data"]["choices"][choice.name] = {
+                "value": self.hidden_choices[choice].name,
+                "source": choice._user_source or getattr(choice._user_selection, "_user_source", ""),
+            }
+
+        return ret_json
+
+    def reset(self) -> None:
+        """
+        Reset the area to its initial state, clearing all records and data.
+        """
+        self.hidden_symbols.clear()
+        self.hidden_choices.clear()
+
+
 class KconfigReport:
     """
     By add_record() method, new records are added to the report.
@@ -603,9 +673,9 @@ class KconfigReport:
         """Singleton class to log messages"""
         if cls._instance is None:
             cls._instance = super().__new__(cls)
-            cls._instance.kconfig = kconfig
             cls._instance.defaults_policy = defaults_policy
             cls._instance._initialized = False
+        cls._instance.kconfig = kconfig
         return cls._instance
 
     def __init__(
@@ -630,6 +700,7 @@ class KconfigReport:
             MiscArea(),
             DefaultValuesArea(defaults_policy, verbosity=self.verbosity),
             MultipleAssignmentArea(),
+            DisabledSymbolArea(),
         )
 
         # Mapping dictionaries
@@ -745,7 +816,28 @@ class KconfigReport:
 
         return header_table
 
+    def _finalize_report_data(self) -> None:
+        """
+        Gather information available only after Kconfig files are parsed and sdkconfig files are loaded.
+        NOTE: If possible, log the information on the fly. This method serves only for areas that
+              cannot be logged that way.
+        """
+        # we cannot use BOOL_TO_STR here because it would lead to a circular import
+        bool_to_str = {0: "n", 2: "y"}
+        # Print a notification if symbol/choice has a user value, but is not visible.
+        for sym in self.kconfig.defined_syms:
+            if sym._user_value is not None and sym.visibility == 0:
+                str_value = bool_to_str[sym._user_value] if sym._user_value in bool_to_str else sym._user_value
+                self.add_record(DisabledSymbolArea, sym_or_choice=sym, user_value=str_value)
+        for choice in self.kconfig.unique_choices:
+            if choice._user_selection is not None and choice.visibility == 0:
+                self.add_record(DisabledSymbolArea, sym_or_choice=choice, user_value=choice._user_selection)
+
     def print_report(self, file: Optional[str] = None) -> None:
+        # Some areas (DisabledSymbolArea for instance) need to be finalized after Kconfig
+        # files are parsed and sdkconfig files are loaded.
+        self._finalize_report_data()
+
         if self.verbosity == VERBOSITY_QUIET and self.status in (STATUS_OK, STATUS_OK_WITH_INFO, STATUS_WARNING):
             return
 
@@ -780,6 +872,7 @@ class KconfigReport:
         """
         Return the report in JSON format.
         """
+        self._finalize_report_data()
         report_json: Dict = dict()
         report_json["header"] = dict()
         report_json["header"]["report_type"] = "kconfig"
