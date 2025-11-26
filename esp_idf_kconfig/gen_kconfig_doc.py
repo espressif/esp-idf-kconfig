@@ -22,6 +22,10 @@ HEADING_SYMBOLS = '#*=-^"+'
 # Keep the heading level in sync with api-reference/kconfig.rst
 INITIAL_HEADING_LEVEL = 3
 MAX_HEADING_LEVEL = len(HEADING_SYMBOLS) - 1
+EXCLUDED_MENU_NAMES = [
+    "Configuration for components not included in the build",
+    "Project configuration for components not included in the build",
+]
 
 
 class ConfigTargetVisibility(object):
@@ -303,6 +307,9 @@ def write_menu_item(f, node, visibility):
         name = None
 
     is_menu = node_is_menu(node)
+
+    if is_menu and node.prompt[0] in EXCLUDED_MENU_NAMES:
+        return
 
     # Heading
     if name:
