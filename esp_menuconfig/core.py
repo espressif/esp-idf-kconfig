@@ -2776,7 +2776,8 @@ def _defaults_info(sc):
     if len(sc.defaults) > 1:
         s += "s"
     s += ":\n"
-
+    if isinstance(sc, Symbol) and sc._default_value_injected:
+        s += f"  - {sc.defaults[0][0].name} (injected default value from sdkconfig)\n"
     for val, cond in sc.orig_defaults:
         s += "  - "
         if isinstance(sc, Symbol):
