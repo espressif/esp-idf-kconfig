@@ -1,0 +1,7 @@
+# There was a regression that the default pragma got unintentionally
+# applied over to the next symbol if current symbol (CONFIG_EXCLUDED_SYMBOL in this case)
+# was not part of the configuration (not in any of the loaded Kconfig files)
+# default:
+# CONFIG_EXCLUDED_SYMBOL is not set
+
+CONFIG_PRAGMA_TEST=y

@@ -1376,9 +1376,11 @@ class Kconfig(object):
 
                 if line and line.strip() == DEP_OP_BEGIN:
                     currently_loading_deprecated = load_deprecated
+                    value_is_default = False
                     continue
                 elif line and line.strip() == DEP_OP_END:
                     currently_loading_deprecated = False
+                    value_is_default = False
                     continue
 
                 match = set_match(line)
@@ -1387,6 +1389,7 @@ class Kconfig(object):
                     sym = get_sym(name)
                     if not sym and currently_loading_deprecated:
                         sym = _create_new_deprecated_symbol(name, val)
+                        value_is_default = False
                         continue
                     if not sym or not sym.nodes:
                         self._undef_assign(name, val, filename, linenr)
@@ -1476,9 +1479,11 @@ class Kconfig(object):
                     sym = get_sym(name)
                     if not sym and currently_loading_deprecated:
                         sym = _create_new_deprecated_symbol(name, "n")
+                        value_is_default = False
 
                     if not sym or not sym.nodes:
                         self._undef_assign(name, "n", filename, linenr)
+                        value_is_default = False
                         continue
                     else:
                         if sym.present_in_current_sdkconfig and not sym.choice:
