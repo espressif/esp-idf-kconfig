@@ -4937,8 +4937,10 @@ class Symbol:
         currently in range and would actually be reflected in the value
         of the symbol. For other symbol types, check whether the visibility is non-n.
         """
+        if self.orig_type == BOOL and value in STR_TO_BOOL:
+            value = STR_TO_BOOL[value]
 
-        if self.choice and self.choice.selection == self and value != "y":
+        if self.choice and self.choice.selection == self and value != 2:
             # If user tries to disable choice symbol currently selected,
             # it will have no effect. Report it.
             self.kconfig.report.add_record(
@@ -4949,9 +4951,6 @@ class Symbol:
                 ),
             )
             return False
-
-        if self.orig_type == BOOL and value in STR_TO_BOOL:
-            value = STR_TO_BOOL[value]
 
         # If the new user value matches the old, nothing changes, and we can
         # avoid invalidating cached values.
