@@ -20,6 +20,21 @@
 </div>
 <hr>
 
+## v3.4.0 (2025-12-04)
+
+### ✨ New Features
+
+- report if sdkconfig.defaults tries to set disabled symbol/choice *(Jan Beran - e7c0a56)*
+- add "warning" option to mark dangerous config options *(Jan Beran - 21a3233)*
+
+### 🐛 Bug Fixes
+
+- ensure default values are immediately available after injection *(Jan Beran - a99e064)*
+- use the right bool value form in Symbol.set_value() *(Jan Beran - 1aec9d8)*
+- correctly reset value_is_default flag *(Jan Beran - f121fed)*
+- Omit not included component configuration in .rst docs *(Jan Beran - 6d41ba9)*
+
+
 ## v3.3.0 (2025-11-03)
 
 ### ✨ New Features
