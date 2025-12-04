@@ -428,7 +428,12 @@ def write_menu_item(f, node, visibility):
         child_list = []
         child = node.list
         while child:
-            if not is_choice(child) and child.prompt and visibility.visible(child):
+            if (
+                not is_choice(child)
+                and child.prompt
+                and visibility.visible(child)
+                and child.prompt[0] not in EXCLUDED_MENU_NAMES
+            ):
                 child_list.append((child.prompt[0], get_link_anchor(child)))
             child = child.next
         if len(child_list) > 0:
