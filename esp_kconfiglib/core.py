@@ -1247,21 +1247,25 @@ class Kconfig(object):
             # add new symbols, e.g. new default value is a previously unseen string/number.
             parsing_kconfigs = self._parsing_kconfigs
             self._parsing_kconfigs = True
+            # String literal is a constant symbol
+            if sym.orig_type == STRING:
+                sym_for_val = self._lookup_const_sym(val)
+            else:
+                sym_for_val = self._lookup_const_sym(val) if val in ("y", "n") else self._lookup_sym(val)
+            # Ignore previous symbol's defaults.
+            # They'll be added during finalize_node() for completeness, but won't take any effect;
+            # First one will be used as it has no condition.
+            dependency = self.y
             for node in sym.nodes:
-                # String literal is a constant symbol
-                if sym.orig_type == STRING:
-                    sym_for_val = self._lookup_const_sym(val)
-                else:
-                    sym_for_val = self._lookup_const_sym(val) if val in ("y", "n") else self._lookup_sym(val)
-                node.defaults = [(sym_for_val, self.y)] + node.defaults
+                dependency = self._make_and(dependency, node.dep)
+            sym.defaults = [(sym_for_val, dependency)]
+
             # Invalidate recursively to propagate the change to dependent symbols
             sym._rec_invalidate()
 
-            # sym.defaults need to be recalculated during finalize_node()!
-            sym.defaults = []
-
             # Restore the original value of self._parsing_kconfigs
             self._parsing_kconfigs = parsing_kconfigs
+            sym._default_value_injected = True
 
             return True
 
@@ -1376,9 +1380,11 @@ class Kconfig(object):
 
                 if line and line.strip() == DEP_OP_BEGIN:
                     currently_loading_deprecated = load_deprecated
+                    value_is_default = False
                     continue
                 elif line and line.strip() == DEP_OP_END:
                     currently_loading_deprecated = False
+                    value_is_default = False
                     continue
 
                 match = set_match(line)
@@ -1387,6 +1393,7 @@ class Kconfig(object):
                     sym = get_sym(name)
                     if not sym and currently_loading_deprecated:
                         sym = _create_new_deprecated_symbol(name, val)
+                        value_is_default = False
                         continue
                     if not sym or not sym.nodes:
                         self._undef_assign(name, val, filename, linenr)
@@ -1476,9 +1483,11 @@ class Kconfig(object):
                     sym = get_sym(name)
                     if not sym and currently_loading_deprecated:
                         sym = _create_new_deprecated_symbol(name, "n")
+                        value_is_default = False
 
                     if not sym or not sym.nodes:
                         self._undef_assign(name, "n", filename, linenr)
+                        value_is_default = False
                         continue
                     else:
                         if sym.present_in_current_sdkconfig and not sym.choice:
@@ -1585,15 +1594,12 @@ class Kconfig(object):
             symbols_with_changed_defaults.update(changed)
             unchanged_symbols.update(unchanged)
 
-            # Refresh config tree after all values are set
-            # TODO: In finalize_node(), more values may be changed as a result of changed default values,
-            #       but currently, we cannot easily track these changes and compare them.
-            #       Will be fixed as part of IDF-2971.
-            self._finalize_node(self.top_node, self.top_node.visibility)
-
             # Invalidate all cached values as we edited the configuration
             for sym in self.unique_defined_syms:
                 sym._invalidate()
+
+            for choice in self.unique_choices:
+                choice._invalidate()
 
             if symbols_with_changed_defaults:
                 print("Default values for the following symbols were changed:")
@@ -1649,14 +1655,12 @@ class Kconfig(object):
             # add new symbols, e.g. new default value is a previously unseen string/number.
             parsing_kconfigs = self._parsing_kconfigs
             self._parsing_kconfigs = True
+            dependency = self.y
             for node in choice.nodes:
-                # String literal is a constant symbol
-                node.defaults = [(sym, self.y)] + node.defaults
+                dependency = self._make_and(dependency, node.dep)
+            choice.defaults = [(sym, dependency)]
             # Invalidate recursively to propagate the change to dependent symbols
             choice._rec_invalidate()
-
-            # sym.defaults need to be recalculated during finalize_node()!
-            sym.defaults = []
 
             # Restore the original value of self._parsing_kconfigs
             self._parsing_kconfigs = parsing_kconfigs
@@ -3804,10 +3808,6 @@ class Kconfig(object):
 
         sym.direct_dep = self._make_or(sym.direct_dep, node.dep)
 
-        # TODO: Because finalize_node is called twice, we should compare if head of sym.defaults
-        #       is the same as node defaults. If yes, do not add again.
-        #       Currently, cannot easily compare Symbols, so just add all.
-        #       Symbol comparison will be probably added in IDF-2971.
         sym.defaults += node.defaults
         sym.ranges += node.ranges
         sym.selects += node.selects
@@ -4102,6 +4102,7 @@ class Symbol:
         "_has_active_indirect_set",
         "_is_deprecated",
         "_user_source",
+        "_default_value_injected",
         "choice",
         "defaults",
         "direct_dep",
@@ -4151,6 +4152,7 @@ class Symbol:
     nodes: List["MenuNode"]
     _invalidating: bool
     warning: str
+    _default_value_injected: bool
 
     #
     # Public interface
@@ -4932,8 +4934,10 @@ class Symbol:
         currently in range and would actually be reflected in the value
         of the symbol. For other symbol types, check whether the visibility is non-n.
         """
+        if self.orig_type == BOOL and value in STR_TO_BOOL:
+            value = STR_TO_BOOL[value]
 
-        if self.choice and self.choice.selection == self and value != "y":
+        if self.choice and self.choice.selection == self and value != 2:
             # If user tries to disable choice symbol currently selected,
             # it will have no effect. Report it.
             self.kconfig.report.add_record(
@@ -4944,9 +4948,6 @@ class Symbol:
                 ),
             )
             return False
-
-        if self.orig_type == BOOL and value in STR_TO_BOOL:
-            value = STR_TO_BOOL[value]
 
         # If the new user value matches the old, nothing changes, and we can
         # avoid invalidating cached values.

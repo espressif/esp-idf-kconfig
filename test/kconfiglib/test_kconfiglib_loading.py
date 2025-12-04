@@ -497,3 +497,22 @@ class TestDisabledSymbols(TestBase):
         assert "sdkconfig.disabled_symbols_choices" in area["data"]["choices"]["DISABLED_CHOICE"]["source"]
 
         kconfig.report.reset()
+
+
+@pytest.mark.parametrize("version", ["1", "2"], indirect=True)
+class TestDefaultPragmaRegression(TestBase):
+    """
+    There was a regression that the default pragma got unintentionally
+    applied over to the next symbol if current symbol was not part of the configuration
+    (not in any of the loaded Kconfig files).
+    """
+
+    def test_default_pragma_regression(self):
+        kconfig = Kconfig(os.path.join(KCONFIG_PATH, "Kconfig.default_pragma_regression"))
+        kconfig.load_config(os.path.join(SDKCONFIGS_PATH, "sdkconfig.default_pragma_regression"))
+        tested_symbol = kconfig.syms["PRAGMA_TEST"]
+        assert tested_symbol.str_value == "y"
+        # default pragma should not be transferred to this symbol
+        assert not tested_symbol._loaded_as_default
+        # sdkconfig value correctly loaded
+        assert tested_symbol.str_value == "y"

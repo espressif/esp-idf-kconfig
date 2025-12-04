@@ -1,0 +1,6 @@
+# See sdkconfig.default_pragma_regression for details
+mainmenu "Test default pragma regression"
+
+    config PRAGMA_TEST
+        bool "Pragma test"
+        default n
