@@ -4280,6 +4280,13 @@ class Symbol:
         self.defaults = []
 
         """
+        _default_value_injected:
+            Flag indicating whether the default value has been injected when
+            sdkconfig default value and Kconfig default value are different.
+        """
+        self._default_value_injected = False
+
+        """
         selects:
             List of (symbol, cond) tuples for the symbol's 'select' properties. For
             example, 'select A if B && C' is represented as (A, (AND, B, C)). If no
