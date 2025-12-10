@@ -20,6 +20,13 @@
 </div>
 <hr>
 
+## v3.4.1 (2025-12-10)
+
+### 🐛 Bug Fixes
+
+- init Symbol._default_value_injected to prevent menuconfig crashing *(Jan Beran - b304093)*
+
+
 ## v3.4.0 (2025-12-04)
 
 ### ✨ New Features
