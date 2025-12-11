@@ -4162,14 +4162,22 @@ class Symbol:
         self._user_value = value
         self._was_set = True
 
-        if self.choice and value == 2:
-            # Setting a choice symbol to y makes it the user selection of the
-            # choice. Like for symbol user values, the user selection is not
-            # guaranteed to match the actual selection of the choice, as
-            # dependencies come into play.
-            self.choice._user_selection = self
-            self.choice._was_set = True
-            self.choice._rec_invalidate()
+        if self.choice:
+            if self.choice.selection is self and value != 2:
+                self.kconfig._info(
+                    f"Trying to set symbol {self.name} to n, but it is currently selected "
+                    f"by choice {self.choice.name}. For setting it to n, set another choice symbol to y instead."
+                )
+                return False
+
+            if value == 2:
+                # Setting a choice symbol to y makes it the user selection of the
+                # choice. Like for symbol user values, the user selection is not
+                # guaranteed to match the actual selection of the choice, as
+                # dependencies come into play.
+                self.choice._user_selection = self
+                self.choice._was_set = True
+                self.choice._rec_invalidate()
         else:
             self._rec_invalidate_if_has_prompt()
 
