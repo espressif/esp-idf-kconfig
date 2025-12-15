@@ -1,0 +1,21 @@
+mainmenu "Test ignore pragmas"
+
+    comment "Test multiple-definition/MD ignore pragma"
+
+    config FOO # ignore: multiple-definition
+        int "Foo"
+        default 1 if NOT_DEFINED
+        default 0
+
+    config FOO
+        int "Second Foo"
+        default -1
+
+    config BAR
+        int "Bar"
+        default 2 if NOT_DEFINED
+        default 0
+
+    config BAR # ignore: multiple-definition
+        int "Second Bar"
+        default -2

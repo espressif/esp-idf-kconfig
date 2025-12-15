@@ -71,7 +71,7 @@ class Area(ABC):
 
         """
         ignored_sc:
-            Dictionary of Symbol/Choice objects (not only names!) which should be ignored in the report.
+            Dictionary of Symbol/Choice names which should be ignored in the report.
         """
         self.ignored_sc: Dict[str, Set[str]] = {"configs": set(), "choices": set()}
         """
@@ -87,6 +87,13 @@ class Area(ABC):
         """
         Adding a new record to the area.
         All records relates to the specific Symbol/Choice and may contain additional information in kwargs.
+        """
+        pass
+
+    def _apply_ignores(self) -> None:
+        """
+        Apply ignores to the area. Can be called multiple times.
+        If given area does not support ignore codes, this method does nothing.
         """
         pass
 
@@ -365,10 +372,22 @@ class MultipleDefinitionArea(Area):
         else:
             self.ignored_sc["choices"].add(sym_or_choice.name)
 
+    def _apply_ignores(self) -> None:
+        """
+        Apply ignored symbols and choices to the multiple definitions.
+        Can be called multiple times.
+        """
+        for sc_names in self.ignored_sc.values():
+            for name in sc_names:
+                self.multiple_definitions.pop(name, None)
+
     def report_severity(self) -> int:
+        self._apply_ignores()
         return STATUS_OK if not self.multiple_definitions else STATUS_OK_WITH_INFO
 
     def print(self, verbosity: str) -> Optional[Table]:
+        self._apply_ignores()
+
         if not self.multiple_definitions:
             return None
 
