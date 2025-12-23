@@ -14,6 +14,7 @@ from pyparsing import Keyword
 from pyparsing import LineEnd
 from pyparsing import Literal
 from pyparsing import OneOrMore
+from pyparsing import OpAssoc
 from pyparsing import Opt
 from pyparsing import ParseException
 from pyparsing import ParseResults
@@ -27,7 +28,6 @@ from pyparsing import ZeroOrMore
 from pyparsing import alphanums
 from pyparsing import infix_notation
 from pyparsing import one_of
-from pyparsing import opAssoc
 
 if TYPE_CHECKING:
     from esp_kconfiglib.kconfig_parser import Parser
@@ -148,10 +148,10 @@ symbol_regex = r"""(?<!\S)
 
 symbol = Regex(symbol_regex, re.X)
 operator_with_precedence = [
-    (Literal("!"), 1, opAssoc.RIGHT),
-    (one_of("= != < > <= >="), 2, opAssoc.LEFT),
-    (one_of("&&"), 2, opAssoc.LEFT),
-    (one_of("||"), 2, opAssoc.LEFT),
+    (Literal("!"), 1, OpAssoc.RIGHT),
+    (one_of("= != < > <= >="), 2, OpAssoc.LEFT),
+    (one_of("&&"), 2, OpAssoc.LEFT),
+    (one_of("||"), 2, OpAssoc.LEFT),
 ]
 
 # Expression has operators above and symbols as operands
