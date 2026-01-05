@@ -1,3 +1,11 @@
+## v2.5.1 (2026-01-05)
+
+### Bug Fixes
+
+- inform user when trying to set active choice selection to n
+- ensure the casing of word Kconfig is "Kconfig"
+- **kconfig**: print warning when misusing "visible if" option
+
 ## v2.5.0 (2025-02-17)
 
 ### New Features
