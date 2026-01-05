@@ -59,7 +59,7 @@ version = {attr = "esp_idf_kconfig.__version__"}
 
 [tool.commitizen]
 tag_format = "v$version"
-version = "2.5.0"
+version = "2.5.1"
 changelog_merge_prerelease = true
 annotated_tag = true
 version_files = ["esp_idf_kconfig/__init__.py"]
