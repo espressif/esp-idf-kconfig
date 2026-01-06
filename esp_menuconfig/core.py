@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# SPDX-FileCopyrightText: 2024-2025 Espressif Systems (Shanghai) CO LTD
+# SPDX-FileCopyrightText: 2024-2026 Espressif Systems (Shanghai) CO LTD
 # SPDX-FileCopyrightText: 2018-2019, Nordic Semiconductor ASA and Ulf Magnusson
 # SPDX-License-Identifier: ISC
 # This file is copied from kconfiglib project:
@@ -812,11 +812,11 @@ def _load_config():
 
 
 def _needs_save():
-    # Returns True if a just-loaded .config file is outdated (would get
+    # Returns True if a just-loaded .config/sdkconfig file is outdated (would get
     # modified when saving)
 
     if _kconf.missing_syms:
-        # Assignments to undefined symbols in the .config
+        # Assignments to undefined symbols in the .config/sdkconfig
         return True
 
     for sym in _kconf.unique_defined_syms:
@@ -832,10 +832,10 @@ def _needs_save():
         # May still need to save changed (non-)default state
         else:
             # symbol set back to default value
-            if not sym._loaded_as_default and sym._user_value is None:
+            if not sym._loaded_as_default and sym.has_active_default_value():
                 return True
             # symbol was user-set during menuconfig session
-            elif sym._loaded_as_default and sym._user_value is not None:
+            elif sym._loaded_as_default and not sym.has_active_default_value():
                 return True
 
     # No need to prompt for save

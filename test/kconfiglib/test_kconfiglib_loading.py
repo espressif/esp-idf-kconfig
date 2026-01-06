@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2025 Espressif Systems (Shanghai) CO LTD
+# SPDX-FileCopyrightText: 2025-2026 Espressif Systems (Shanghai) CO LTD
 # SPDX-License-Identifier: Apache-2.0
 import os
 
@@ -204,35 +204,45 @@ class TestLoadingChoicesWithDefaults(TestDefaultsBase):
 
         kconfig.report.reset()
 
-    def test_improper_choice_selection_change(self) -> None:
-        """
-        In order to properly change a choice selection, it is sufficient to set the newly selected symbol to y.
-        Kconfig will take care of the rest (deselecting the previous selection etc).
-        Explicit deselection of the previous selection is not necessary and has no effect.
-        It would bring the choice to a state where no symbol is selected, which is illegal.
-        """
-        kconfig = Kconfig(os.path.join(KCONFIG_PATH, "Kconfig.choices"))
-        kconfig.load_config(os.path.join(SDKCONFIGS_PATH, "sdkconfig.unselect_selected_symbol"))
-        output_sdkconfig = kconfig._config_contents(header=None)
+
+@pytest.mark.parametrize("version", ["1", "2"], indirect=True)
+class TestLoadingUserSetChoice(TestBase):
+    """
+    Test loading user-set choice symbols from sdkconfig.
+    """
+
+    def test_loading_user_set_choice(self):
+        # Reusing Kconfig from another test case to avoid duplication -
+        kconfig = Kconfig(os.path.join(KCONFIG_PATH, "Kconfig.choice_loading"))
+        kconfig.load_config(os.path.join(SDKCONFIGS_PATH, "sdkconfig.choice_non_first_userset"))
+
+        # Report should be empty
         report_json = kconfig.report._return_json()
+        assert "OK" in report_json["header"]["status"]
+        assert report_json["areas"] == []
 
-        # Output should be correct even if sdkconfig had an unnecessary deselection of the previously selected symbol
-        assert "CONFIG_THIS_IS_SELECTED_BY_DEFAULT is not set" in output_sdkconfig
-        assert "CONFIG_THIS_IS_SELECTED_IN_SDKCONFIG=y" in output_sdkconfig
+        # Symbol values should be unchanged
+        assert kconfig.syms["ALPHA"].str_value == "n"
+        assert kconfig.syms["BETA"].str_value == "n"
+        assert kconfig.syms["GAMMA"].str_value == "y"
 
-        # Report should include a notification in a MiscArea
+        kconfig.report.reset()
+
+    def test_loading_choice_all_disabled(self):
+        kconfig = Kconfig(os.path.join(KCONFIG_PATH, "Kconfig.choice_loading"))
+        kconfig.load_config(os.path.join(SDKCONFIGS_PATH, "sdkconfig.choice_all_disabled"))
+        report_json = kconfig.report._return_json()
+        assert "Info" in report_json["header"]["status"]
         misc_area = next((area for area in report_json["areas"] if area["title"] == "Miscellaneous"), None)
-
         assert misc_area is not None
-        assert any(
-            (
-                "Trying to set symbol THIS_IS_SELECTED_BY_DEFAULT to n, but it is currently "
-                "selected by choice SELECTING_SYMBOL"
-            )
-            in note
-            for note in misc_area["data"]
+        assert (
+            "Trying to set symbol ALPHA to n, but it is currently selected by choice TEST_CHOICE. "
+            "For setting it to n, set another choice symbol to y instead." in misc_area["data"]
         )
 
+        assert kconfig.syms["ALPHA"].str_value == "y"
+        assert kconfig.syms["BETA"].str_value == "n"
+        assert kconfig.syms["GAMMA"].str_value == "n"
         kconfig.report.reset()
 
 
@@ -322,6 +332,14 @@ class TestMultipleValueSet(TestBase):
         assert "CONFIG_BETA_SECOND_COMMON is not set" in output_sdkconfig
         assert "CONFIG_GAMMA_SECOND_COMMON=y" in output_sdkconfig
         assert "CHOICE_SECOND_COMMON" in multiple_assignments["data"]["choices"]
+
+        assert "Info" in json_report["header"]["status"]
+        misc_area = next((area for area in json_report["areas"] if area["title"] == "Miscellaneous"), None)
+        assert misc_area is not None
+        assert (
+            "Choice CHOICE_SECOND_COMMON has multiple active selections. "
+            "The last one will be used: GAMMA_SECOND_COMMON ." in misc_area["data"]
+        )
 
         kconfig.report.reset()
 
