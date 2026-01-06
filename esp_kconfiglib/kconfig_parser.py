@@ -43,7 +43,7 @@ from .core import MenuNode
 from .core import Symbol
 from .core import Variable
 
-ParserElement.enablePackrat(cache_size_limit=None)  # Speeds up parsing by caching intermediate results
+ParserElement.enable_packrat(cache_size_limit=None)  # Speeds up parsing by caching intermediate results
 
 
 @dataclass
