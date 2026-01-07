@@ -1,0 +1,3 @@
+CONFIG_ALPHA=y
+# CONFIG_BETA is not set
+CONFIG_GAMMA=y
