@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2024-2025 Espressif Systems (Shanghai) CO LTD
+# SPDX-FileCopyrightText: 2024-2026 Espressif Systems (Shanghai) CO LTD
 # SPDX-License-Identifier: Apache-2.0
 import os
 from dataclasses import dataclass
@@ -138,7 +138,7 @@ class Parser:
         )
 
         sym.nodes.append(node)
-        self.parse_options(node, parsed_config)
+        self.parse_options(node, sym.name, parsed_config["config_opts"])
         if parsed_config["config_opts"]["visible_if"]:
             self.kconfig._warn(
                 f'config {sym.name} (defined at {self.file_stack[-1]}:{node.linenr}) has a "visible if" option, '
@@ -217,11 +217,11 @@ class Parser:
     def parse_choice(self, s: str, loc: int, parsed_choice: ParseResults) -> None:
         self.kconfig.linenr = lineno(loc, s)
         line_number = lineno(loc, s)
-        if parsed_choice.name:
-            choice = self.kconfig.named_choices.get(parsed_choice.name)
+        if parsed_choice.choice_name:  # using the same parse object for config and choice names, thus the name
+            choice = self.kconfig.named_choices.get(parsed_choice.choice_name)
             if not choice:
-                choice = Choice(kconfig=self.kconfig, name=parsed_choice.name, direct_dep=self.kconfig.n)
-                self.kconfig.named_choices[parsed_choice.name] = choice
+                choice = Choice(kconfig=self.kconfig, name=parsed_choice.choice_name, direct_dep=self.kconfig.n)
+                self.kconfig.named_choices[parsed_choice.choice_name] = choice
         else:  # nameless choice
             choice = Choice(kconfig=self.kconfig, name=None, direct_dep=self.kconfig.n)
         self.kconfig.choices.append(choice)
@@ -233,12 +233,16 @@ class Parser:
         )
         choice.nodes.append(node)
 
-        self.parse_options(node, parsed_choice)
+        self.parse_options(
+            node,
+            parsed_choice.choice_name if parsed_choice.choice_name else "unnamed choice",
+            parsed_choice["choice_opts"],
+        )
         if not node.prompt:
             self.kconfig._warn(
                 f"<choice {choice.name}> (defined at {self.file_stack[-1]}:{node.linenr}) defined without a prompt"
             )
-        if parsed_choice["config_opts"]["visible_if"]:
+        if parsed_choice["choice_opts"]["visible_if"]:
             self.kconfig._warn(
                 f'choice {choice.name} (defined at {self.file_stack[-1]}:{node.linenr}) has a "visible if" option, '
                 "which is not supported for choices"
@@ -356,29 +360,28 @@ class Parser:
         kconfigized_expr: Union[str, tuple, Symbol] = self.kconfigize_expr(prefix_expr)  # type: ignore
         return kconfigized_expr
 
-    def parse_options(self, node: MenuNode, parsed_config: ParseResults) -> None:
+    def parse_options(self, node: MenuNode, sym_or_choice_name: str, options: ParseResults) -> None:
         #####################
         # _parse_props() functionality
         #####################
         if node.item.__class__ not in (Symbol, Choice):
             raise RuntimeError("Attempted to parse options for MenuNode item which is neither Symbol nor Choice.")
 
-        config_options = parsed_config.config_opts
-        if not config_options:  # choice can have no options
+        if not options:  # choice can have no options
             return
 
         # set type (and optional prompt)
-        if config_options["type"]:
-            self.kconfig._set_type(node.item, self.str_to_kconfig_type[config_options["type"]])
+        if options["type"]:
+            self.kconfig._set_type(node.item, self.str_to_kconfig_type[options["type"]])
         else:
             if node.item.__class__ != Choice:  # Choices can have implicit type by their first child
                 raise ValueError(
-                    f"Config {parsed_config[1]}, defined in {self.file_stack[-1]}:{node.linenr} has no type."
+                    f"Config {sym_or_choice_name}, defined in {self.file_stack[-1]}:{node.linenr} has no type."
                 )
 
         # parse default
-        if config_options["default"]:
-            for default in config_options["default"]:
+        if options["default"]:
+            for default in options["default"]:
                 # cannot use list() as an argument, because list("abc") is ["a", "b", "c"], not ["abc"]
                 value = self.parse_expression(default[0])
                 if len(default) > 1 and default[1]:
@@ -389,22 +392,22 @@ class Parser:
 
         # set help
         # NOTE: some special characters may not be supported.
-        if config_options["help"]:
-            node.help = config_options["help"]
+        if options["help"]:
+            node.help = options["help"]
 
         # set depends_on
         node.dep = self.kconfig.y  # basic dependency is always true
-        if config_options["depends_on"]:
-            for depend in config_options["depends_on"]:
+        if options["depends_on"]:
+            for depend in options["depends_on"]:
                 expr = self.parse_expression(depend)
                 node.dep = self.kconfig._make_and(node.dep, expr)
 
         # NOTE: mypy does not recognize __class__ is <class> checks, thus many # type: ignore[union-attr]
         #       rather than to sacrifice speed in favor of mypy.
         # parse select
-        if config_options["select"]:
+        if options["select"]:
             if node.item.__class__ is Symbol and node.item.orig_type == BOOL:  # type: ignore[union-attr]
-                for select in config_options["select"]:
+                for select in options["select"]:
                     target_sym = self.kconfigize_expr(select[0])
                     if len(select) > 1 and select[1]:
                         expr = self.parse_expression(select[1])
@@ -421,9 +424,9 @@ class Parser:
                 )
 
         # parse imply
-        if config_options["imply"]:
+        if options["imply"]:
             if node.item.__class__ is Symbol and node.item.orig_type == BOOL:  # type: ignore[union-attr]
-                for imply in config_options["imply"]:
+                for imply in options["imply"]:
                     target_sym = self.kconfigize_expr(imply[0])
                     if len(imply) > 1 and imply[1]:
                         expr = self.infix_to_prefix(imply[1])
@@ -440,12 +443,12 @@ class Parser:
                 )
 
         # parse prompt
-        if config_options["prompt"]:
-            self.parse_prompt(node, config_options["prompt"])
+        if options["prompt"]:
+            self.parse_prompt(node, options["prompt"])
 
         # parse range
-        if config_options["range"]:
-            for range_entry in config_options["range"]:
+        if options["range"]:
+            for range_entry in options["range"]:
                 if len(range_entry) not in (2, 3):
                     raise ValueError("Range must have two values and optional condition")
                 condition: Union["Symbol", Tuple, str] = self.kconfig.y
@@ -456,9 +459,9 @@ class Parser:
                 node.ranges.append((sym0, sym1, condition))
 
         # parse set default (weak indirect value setting)
-        if config_options["weak_set"]:
+        if options["weak_set"]:
             if node.item.__class__ is Symbol and node.item.orig_type == BOOL:  # type: ignore[union-attr]
-                for set_entry in config_options["weak_set"]:
+                for set_entry in options["weak_set"]:
                     target_sym = self.kconfigize_expr(set_entry[0])
                     val = self.kconfigize_expr(set_entry[1])
                     cond = self.kconfig.y if set_entry[2] is None else self.parse_expression(set_entry[2])
@@ -473,9 +476,9 @@ class Parser:
                 )
 
         # parse set (indirect value setting)
-        if config_options["set"]:
+        if options["set"]:
             if node.item.__class__ is Symbol and node.item.orig_type == BOOL:  # type: ignore[union-attr]
-                for set_entry in config_options["set"]:
+                for set_entry in options["set"]:
                     target_sym = self.kconfigize_expr(set_entry[0])
                     val = self.kconfigize_expr(set_entry[1])
                     cond = self.kconfig.y if set_entry[2] is None else self.parse_expression(set_entry[2])
@@ -490,8 +493,8 @@ class Parser:
                 )
 
         # parse option
-        if config_options["option"]:
-            env_var = config_options["option"][0]
+        if options["option"]:
+            env_var = options["option"][0]
             node.item.env_var = env_var  # type: ignore
             if env_var in os.environ:
                 sym_name = os.environ.get(env_var) or ""
@@ -504,9 +507,9 @@ class Parser:
                     node.linenr,
                 )
 
-        if config_options["warning"]:
+        if options["warning"]:
             if node.item.__class__ is Symbol:
-                if len(config_options["warning"]) > 1:
+                if len(options["warning"]) > 1:
                     self.kconfig.report.add_record(
                         MiscArea,
                         message=(
@@ -515,7 +518,7 @@ class Parser:
                         ),
                     )
                 else:
-                    prompt_str = config_options["warning"][-1]
+                    prompt_str = options["warning"][-1]
                     if prompt_str != prompt_str.strip():
                         self.kconfig.report.add_record(
                             MiscArea,

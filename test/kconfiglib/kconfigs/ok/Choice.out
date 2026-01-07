@@ -20,3 +20,11 @@ CONFIG_FOO=y
 CONFIG_BAZ=y
 # default:
 # CONFIG_QUX is not set
+
+#
+# Malformatted choice (missing indentation, but correct otherwise)
+#
+# default:
+CONFIG_X=y
+# default:
+# CONFIG_Y is not set
