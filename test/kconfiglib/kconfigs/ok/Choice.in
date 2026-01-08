@@ -44,3 +44,13 @@ mainmenu "mainmenu"
                 help for qux
 
     endchoice
+
+comment "Malformatted choice (missing indentation, but correct otherwise)"
+choice MALFORMATTED_CHOICE
+prompt "missing indentation"
+
+config X
+    bool "X"
+config Y
+    bool "Y"
+endchoice

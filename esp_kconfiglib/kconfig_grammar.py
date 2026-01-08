@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2024-2025 Espressif Systems (Shanghai) CO LTD
+# SPDX-FileCopyrightText: 2024-2026 Espressif Systems (Shanghai) CO LTD
 # SPDX-License-Identifier: Apache-2.0
 import re
 from typing import TYPE_CHECKING
@@ -9,7 +9,6 @@ from typing import Tuple
 
 from pyparsing import Forward
 from pyparsing import Group
-from pyparsing import IndentedBlock
 from pyparsing import Keyword
 from pyparsing import LineEnd
 from pyparsing import Literal
@@ -543,8 +542,7 @@ class KconfigGrammar:
 
         symbol_name = Word(alphanums.upper() + "_").set_results_name("config_name", list_all_matches=True)
         config_opts = KconfigOptionBlock().leave_whitespace().set_results_name("config_opts")
-        config = Keyword("config") + symbol_name + config_opts
-        config = config.set_parse_action(parser.parse_config)
+        config = (Keyword("config") + symbol_name + config_opts).set_parse_action(parser.parse_config)
 
         ###########################
         # Comment
@@ -584,13 +582,11 @@ class KconfigGrammar:
         # Choice is a group of configs that can have only one active at a time.
         choice = (
             Keyword("choice")
-            + (
-                Opt(symbol_name).set_results_name("name")
-                + Opt(KconfigOptionBlock().set_results_name("config_opts"))
-                + IndentedBlock(entries).set_results_name("entries")
-            ).set_parse_action(parser.parse_choice)
+            + Opt(symbol_name).set_results_name("choice_name")
+            + Opt(KconfigOptionBlock().leave_whitespace()).set_results_name("choice_opts")
+            + entries
             + Keyword("endchoice")
-        )
+        ).set_parse_action(parser.parse_choice)
 
         ########################
         # Menuconfig
