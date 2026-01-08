@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2025 Espressif Systems (Shanghai) CO LTD
+# SPDX-FileCopyrightText: 2025-2026 Espressif Systems (Shanghai) CO LTD
 # SPDX-License-Identifier: Apache-2.0
 import os
 import sys
@@ -119,6 +119,15 @@ class TestNeedsSave(MenuconfigTestBase):
         kconfig = Kconfig(os.path.join(KCONFIGS_PATH, "Kconfig.default_value_changed"))
         menuconfig(kconfig, headless=True)
         self.assert_and_print_actual(True if defaults_policy == "kconfig" else False, kconfig)
+
+    def test_userset_choice(self) -> None:
+        # User-set choice from sdkconfig should not trigger save.
+        # Reason: IDFGH-16950 (user-set choice with non-first selection triggered save)
+        os.environ["KCONFIG_CONFIG"] = os.path.join(SDKCONFIGS_NEEDS_SAVE_PATH, "sdkconfig.no_change")
+        kconfig = Kconfig(os.path.join(KCONFIGS_PATH, "Kconfig"))
+        kconfig.load_config(os.path.join(SDKCONFIGS_NEEDS_SAVE_PATH, "sdkconfig.userset_choice"))
+        menuconfig(kconfig, headless=True)
+        self.assert_and_print_actual(False, kconfig)
 
 
 @pytest.mark.parametrize("version", ["1", "2"], indirect=True)
