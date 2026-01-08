@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# SPDX-FileCopyrightText: 2024-2025 Espressif Systems (Shanghai) CO LTD
+# SPDX-FileCopyrightText: 2024-2026 Espressif Systems (Shanghai) CO LTD
 # SPDX-FileCopyrightText: 2011-2019, Ulf Magnusson
 # SPDX-License-Identifier: ISC
 # This file is copied from kconfiglib project:
@@ -1128,6 +1128,12 @@ class Kconfig(object):
         return ("Loaded" if replace else "Merged") + msg
 
     def _load_config(self, filename, replace):
+        # CHOICE: (SYMBOL: VAL)*
+        # When setting choice symbols one-by-one, we cannot correctly determine e.g. if the choice
+        # will have any y-set symbols (e.g. first occurred choice symbol is set to n - will there be any y-set symbol?)
+        # So we cache symbols with user-set value and set them additionally.
+        choices_with_user_set_value: Dict[Choice, List[Tuple[Symbol, str]]] = dict()
+
         with self._open_config(filename) as f:
             if replace:
                 self.missing_syms = []
@@ -1176,7 +1182,7 @@ class Kconfig(object):
                         val = val[0]
 
                         if sym.choice and val != "n":
-                            # During .config loading, we infer the mode of the
+                            # During .config/sdkconfig loading, we infer the mode of the
                             # choice from the kind of values that are assigned
                             # to the choice symbols
 
@@ -1230,12 +1236,54 @@ class Kconfig(object):
 
                     val = "n"
 
+                #############################################
                 # Done parsing the assignment. Set the value.
+                #############################################
+
+                if sym.choice:
+                    # NOTE: Order is important here; if multiple choice symbols are set to y at once,
+                    #       the last one will be used.
+                    if sym.choice not in choices_with_user_set_value:
+                        choices_with_user_set_value[sym.choice] = []
+                    choices_with_user_set_value[sym.choice].append((sym, val))
+                    continue
 
                 if sym._was_set:
                     self._assigned_twice(sym, val, filename, linenr)
 
                 sym.set_value(val)
+
+            #############################################
+            # Done setting the values. Set special cases:
+            # 1) Choice symbols
+            #############################################
+
+            for choice in choices_with_user_set_value:
+                # if all symbols are set to n, we need to report that the current choice selection
+                # is attempted to be set to n without setting another choice symbol to y
+                if all(val == "n" for _, val in choices_with_user_set_value[choice]):
+                    # Theoretically, can happen a situation where the choice selection is not set, but
+                    # its symbols are still loaded from the .config/sdkconfig file.
+                    choice_selection = choice.selection
+                    if choice_selection is not None:
+                        self._info(
+                            msg=(
+                                f"Trying to set symbol {choice_selection.name} to n, but it is currently selected "
+                                f"by choice {choice.name}. For setting it to n, set another choice symbol to y instead."
+                            ),
+                        )
+                # if there are multiple active selections, report that the last one will be used
+                if len([val for _, val in choices_with_user_set_value[choice] if val == "y"]) > 1:
+                    active_selections = [sym.name for sym, val in choices_with_user_set_value[choice] if val == "y"]
+                    self._info(
+                        msg=(
+                            f"Choice {choice.name} has multiple active selections. "
+                            f"The last one will be used: {active_selections[-1]} ."
+                        ),
+                    )
+
+                for sym, val in choices_with_user_set_value[choice]:
+                    sym.set_value(val)
 
         if replace:
             # If we're replacing the configuration, unset the symbols that
@@ -3564,6 +3612,7 @@ class Symbol:
     env_var: Optional[str]
     ranges: List[Tuple]
     _cached_bool_val: Optional[int]
+    choice: Optional["Choice"]
 
     #
     # Public interface
@@ -4162,22 +4211,15 @@ class Symbol:
         self._user_value = value
         self._was_set = True
 
-        if self.choice:
-            if self.choice.selection is self and value != 2:
-                self.kconfig._info(
-                    f"Trying to set symbol {self.name} to n, but it is currently selected "
-                    f"by choice {self.choice.name}. For setting it to n, set another choice symbol to y instead."
-                )
-                return False
+        if self.choice and value == 2:
+            # Setting a choice symbol to y makes it the user selection of the
+            # choice. Like for symbol user values, the user selection is not
+            # guaranteed to match the actual selection of the choice, as
+            # dependencies come into play.
+            self.choice._user_selection = self
+            self.choice._was_set = True
+            self.choice._rec_invalidate()
 
-            if value == 2:
-                # Setting a choice symbol to y makes it the user selection of the
-                # choice. Like for symbol user values, the user selection is not
-                # guaranteed to match the actual selection of the choice, as
-                # dependencies come into play.
-                self.choice._user_selection = self
-                self.choice._was_set = True
-                self.choice._rec_invalidate()
         else:
             self._rec_invalidate_if_has_prompt()
 

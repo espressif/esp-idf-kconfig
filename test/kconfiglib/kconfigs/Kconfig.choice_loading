@@ -1,0 +1,16 @@
+mainmenu "Test if choice values are correctly loaded and evaluated in case of problems"
+
+    choice TEST_CHOICE
+        prompt "Choice for load testing"
+        default ALPHA
+
+        config ALPHA
+            bool "Alpha"
+
+        config BETA
+            bool "Beta"
+
+        config GAMMA
+            bool "Gamma"
+
+    endchoice
