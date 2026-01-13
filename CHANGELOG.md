@@ -1,3 +1,11 @@
+## v2.5.2 (2026-01-12)
+
+### Bug Fixes
+
+- enforce utf-8 encoding in kconfgen
+- load symbols at once for each choice
+- update code to comply with pyparsing 3.3.1
+
 ## v2.5.1 (2026-01-05)
 
 ### Bug Fixes
