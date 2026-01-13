@@ -20,6 +20,16 @@
 </div>
 <hr>
 
+## v3.4.2 (2026-01-12)
+
+### 🐛 Bug Fixes
+
+- remove IndetedBlock from the new parser *(Jan Beran - 2ceb8d0)*
+- load user-set symbols at once for each choice *(Jan Beran - 173f999)*
+- update code to comply with pyparsing 3.3.1 *(Jan Beran - f6889fd)*
+- ensure ignore pragmas are working *(Jan Beran - 92d8ff3)*
+
+
 ## v3.4.1 (2025-12-10)
 
 ### 🐛 Bug Fixes
