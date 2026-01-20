@@ -770,7 +770,7 @@ def _wrapper(func):
 
             if stdscr is not None:
                 stdscr.keypad(True)
-                func(stdscr)
+                return func(stdscr)
         finally:
             if stdscr is not None:
                 stdscr.keypad(False)
