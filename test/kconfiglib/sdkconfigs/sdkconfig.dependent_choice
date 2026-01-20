@@ -9,6 +9,6 @@ CONFIG_FIRST=y
 # default:
 CONFIG_DEPENDEE=y
 # default:
-CONFIG_DEPENDENT_FIRST=y
-# default:
 # CONFIG_DEPENDENT_SECOND is not set
+# default:
+CONFIG_DEPENDENT_SECOND=y

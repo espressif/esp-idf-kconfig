@@ -1227,48 +1227,6 @@ class Kconfig(object):
             return True
 
     def _load_config(self, filename, replace, load_deprecated):
-        def _inject_default_value(sym: Symbol, val: Any) -> bool:
-            """
-            When using default values from sdkconfig, we need to temporarily inject the default value of the symbol
-            to the build system.
-            NOTE: Temporarily = for current configuration session/current Kconfig run.
-            """
-            # value_is_valid() accepts only string or 0/2 (corresponding to n/y) values
-            if not sym.value_is_valid(STR_TO_BOOL[val] if val in ("y", "n") else str(val)):
-                self._warn(
-                    f"'{val}' is not a valid value for the {TYPE_TO_STR[sym.orig_type]} symbol "
-                    f"{sym.name_and_loc}. Assignment ignored.",
-                    filename,
-                    self.linenr,
-                )
-                return False
-            # self._parsing_kconfigs originally prevented adding new symbols during expression parsing
-            # However, now, we change the configuration structure even outside the parsing and we want possibly
-            # add new symbols, e.g. new default value is a previously unseen string/number.
-            parsing_kconfigs = self._parsing_kconfigs
-            self._parsing_kconfigs = True
-            # String literal is a constant symbol
-            if sym.orig_type == STRING:
-                sym_for_val = self._lookup_const_sym(val)
-            else:
-                sym_for_val = self._lookup_const_sym(val) if val in ("y", "n") else self._lookup_sym(val)
-            # Ignore previous symbol's defaults.
-            # They'll be added during finalize_node() for completeness, but won't take any effect;
-            # First one will be used as it has no condition.
-            dependency = self.y
-            for node in sym.nodes:
-                dependency = self._make_and(dependency, node.dep)
-            sym.defaults = [(sym_for_val, dependency)]
-
-            # Invalidate recursively to propagate the change to dependent symbols
-            sym._rec_invalidate()
-
-            # Restore the original value of self._parsing_kconfigs
-            self._parsing_kconfigs = parsing_kconfigs
-            sym._default_value_injected = True
-
-            return True
-
         def _create_new_deprecated_symbol(name, val):
             """
             When load_deprecated=True, Kconfig also loads deprecated symbols from the sdkconfig file.
@@ -1329,8 +1287,7 @@ class Kconfig(object):
         # We cache symbols with default values and set them additionally.
         # SYMBOL: VAL_FROM_SDKCONFIG
         symbols_with_default_values: Dict[Symbol, str] = dict()
-        # choice symbols being handled separately as we need to check other things there
-        choice_symbols_with_default_values: Dict[Symbol, str] = dict()
+        choices_with_default_values: Set[Choice] = set()
 
         # CHOICE: (SYMBOL: VAL)*
         # When setting choice symbols one-by-one, we cannot correctly determine e.g. if the choice
@@ -1338,31 +1295,24 @@ class Kconfig(object):
         # So we cache symbols with user-set value and set them additionally.
         choices_with_user_set_value: Dict[Choice, List[Tuple[Symbol, str]]] = dict()
 
-        # (Un)changed refers to the sdkconfig value; unchanged = same default value as in sdkconfig
-        # SYMBOL_NAME: (OLD_VAL, NEW_VAL)
-        symbols_with_changed_defaults: Dict[str, Tuple[str, str]] = dict()
-        # SYMBOL_NAME: VAL
-        unchanged_symbols: Dict[str, str] = dict()
-
         with self._open_config(filename) as f:
             if replace:
                 self.missing_syms = []
 
-                # If we're replacing the configuration, keep track of which
-                # symbols and choices got set so that we can unset the rest
-                # later. This avoids invalidating everything and is faster.
-                # Another benefit is that invalidation must be rock solid for
-                # it to work, making it a good test.
-
+                # _was_set: If we're replacing the configuration, keep track of which
+                #           symbols and choices got set so that we can unset the rest
+                #           later. This avoids invalidating everything and is faster.
+                #           Another benefit is that invalidation must be rock solid for
+                #           it to work, making it a good test.
+                # present_in_current_sdkconfig: In order to detect config options which are set multiple times
+                #           in a single file, we must reset the present_in_current_sdkconfig flag for all symbols
+                #           and choices every time we are loading the file.
                 for sym in self.unique_defined_syms:
                     sym._was_set = False
 
                 for choice in self.unique_choices:
                     choice._was_set = False
 
-            # In order to detect config options which are set multiple times in a single file,
-            # we must reset the present_in_current_sdkconfig flag for all symbols and choices
-            # every time we are loading the file.
             for sym in self.unique_defined_syms:
                 sym.present_in_current_sdkconfig = False
 
@@ -1531,10 +1481,12 @@ class Kconfig(object):
                 # If value is supposed to be a default and symbol has a prompt, save it for later
                 elif any(node.prompt is not None for node in sym.nodes):
                     sym.present_in_current_sdkconfig = True
+                    sym._sdkconfig_value = val
+                    sym._loaded_as_default = True
                     if not sym.choice:
                         symbols_with_default_values[sym] = val
                     else:
-                        choice_symbols_with_default_values[sym] = val
+                        choices_with_default_values.add(sym.choice)
                 else:  # Default value assignment to promptless symbol
                     # These assignments are ignored as per kconfig specification
                     # Reason: These symbols are in sdkconfig only as a way how to expose them
@@ -1582,64 +1534,10 @@ class Kconfig(object):
                     sym.present_in_current_sdkconfig = True
 
             for sym in symbols_with_default_values:
-                val = symbols_with_default_values[sym]
-                sym._sdkconfig_value = val
-                sym._loaded_as_default = True
-                if sym._user_value is None and sym.str_value != str(val):
-                    self._info(
-                        (
-                            f"Default value for {sym.name} in sdkconfig is "
-                            f"{ANSI_BOLD}{self._quote_value(val, sym.orig_type)}{ANSI_END} "
-                            f"but it is {ANSI_BOLD}{self._quote_value(sym.str_value, sym.orig_type)}{ANSI_END} "
-                            "according to Kconfig."
-                        )
-                    )
-                    if self.defaults_policy == DefaultsPolicy.USE_SDKCONFIG:  # Use default value from sdkconfig
-                        if _inject_default_value(sym, val):
-                            self._info(
-                                "Using default value from sdkconfig "
-                                f"({ANSI_BOLD}{self._quote_value(val, sym.orig_type)}{ANSI_END}).",
-                                suppress_info_prefix=True,
-                            )
-                        else:
-                            self._warn(
-                                f"Failed to set default value for {sym.name} from sdkconfig. "
-                                f"Default value will be set to {self._quote_value(val, sym.orig_type)}.",
-                                filename,
-                                linenr,
-                            )
-                            unchanged_symbols[sym.name] = val
-                    elif self.defaults_policy == DefaultsPolicy.USE_KCONFIG:  # Use default value from Kconfig
-                        self._info(
-                            "Using default value from Kconfig "
-                            f"({ANSI_BOLD}{self._quote_value(sym.str_value, sym.orig_type)}{ANSI_END}).",
-                            suppress_info_prefix=True,
-                        )
-                        symbols_with_changed_defaults[sym.name] = (sym.str_value, val)
-                    elif self.defaults_policy == DefaultsPolicy.INTERACTIVE:
-                        preferred_source = None
-                        while preferred_source not in ("s", "k"):
-                            preferred_source = input(
-                                "Do you want to use default value from sdkconfig (s) "
-                                "(value will be converted to user-set) or from Kconfig (k)? [s/k]:"
-                            ).lower()
-                        if preferred_source == "s":
-                            # NOTE: This will make "default" from sdkconfig a user-set value.
-                            # Reason: If we keep it as default, the message about defaults differing between sdkconfig
-                            # and Kconfig would still be present because default values between
-                            # sdkconfig and Kconfig would still differ.
-                            self.set_value_and_source(sym, val, filename)
-                            unchanged_symbols[sym.name] = val
-                        elif preferred_source == "k":
-                            symbols_with_changed_defaults[sym.name] = (sym.str_value, val)
-                    else:
-                        raise KconfigError(
-                            f"Unsupported default policy in KCONFIG_DEFAULTS_POLICY envvar: {self.defaults_policy}"
-                        )
+                sym.resolve_defaults()
 
-            changed, unchanged = self._handle_choice_symbols_with_defaults(choice_symbols_with_default_values, filename)
-            symbols_with_changed_defaults.update(changed)
-            unchanged_symbols.update(unchanged)
+            for choice in choices_with_default_values:
+                choice.resolve_defaults()
 
             # Invalidate all cached values as we edited the configuration
             for sym in self.unique_defined_syms:
@@ -1647,15 +1545,6 @@ class Kconfig(object):
 
             for choice in self.unique_choices:
                 choice._invalidate()
-
-            if symbols_with_changed_defaults:
-                print("Default values for the following symbols were changed:")
-                for sym in symbols_with_changed_defaults:
-                    print(f"{sym}: {symbols_with_changed_defaults[sym][0]} -> {symbols_with_changed_defaults[sym][1]}")
-            if unchanged_symbols:
-                print("Default values for the following symbols were not changed:")
-                for sym in unchanged_symbols:
-                    print(f"{sym}: {unchanged_symbols[sym]}")
 
         if replace:
             # If we're replacing the configuration, unset the symbols that
@@ -1672,153 +1561,11 @@ class Kconfig(object):
         if self.print_report or self.report.status == REPORT_STATUS_ERROR:
             self.report.print_report()
 
-    def _handle_choice_symbols_with_defaults(
-        self, choice_symbols_with_default_values: Dict["Symbol", str], filename: str
-    ) -> Tuple[Dict[str, Tuple[str, str]], Dict[str, str]]:
-        """
-        General workflow:
-        1) Convert dict of choice symbols with default value to a dict of choices with default selection
-        2) Check if default value is the same between sdkconfig and Kconfig
-           yes -> everything is fine, just set flags
-           no -> handle according to the defaults policy
-        """
-
-        def _inject_default_value_for_choice(choice: Choice, sym: Symbol) -> bool:
-            """
-            When using default values from sdkconfig, we need to temporarily inject the default selection of the choice
-            to the  system.
-            NOTE: Temporarily = for current configuration session/current Kconfig run.
-            """
-            if sym not in choice.syms:
-                self.report.add_record(
-                    MiscArea,
-                    message=f"Attempted to select symbol {sym.name} in choice {choice.name_and_loc}, "
-                    "but it is not a member of the choice. Ignoring.",
-                )
-                return False
-
-            # self._parsing_kconfigs originally prevented adding new symbols during expression parsing
-            # However, now, we change the configuration structure even outside the parsing and we want possibly
-            # add new symbols, e.g. new default value is a previously unseen string/number.
-            parsing_kconfigs = self._parsing_kconfigs
-            self._parsing_kconfigs = True
-            dependency = self.y
-            for node in choice.nodes:
-                dependency = self._make_and(dependency, node.dep)
-            choice.defaults = [(sym, dependency)]
-            # Invalidate recursively to propagate the change to dependent symbols
-            choice._rec_invalidate()
-
-            # Restore the original value of self._parsing_kconfigs
-            self._parsing_kconfigs = parsing_kconfigs
-
-            return True
-
-        def _handle_interactive_choice(choice: "Choice") -> Tuple[Dict[str, Tuple[str, str]], Dict[str, str]]:
-            print(f"Choose {choice.name} has following possible selections:")
-            selections = list()
-            for i, sym in enumerate(choice.syms, start=1):
-                print(
-                    f"[{i}] {sym.name}"
-                    + ("(selected in sdkconfig)" if sym._sdkconfig_value == "y" else "")
-                    + ("(selected in kconfig)" if sym.str_value == "y" else "")
-                )
-                selections.append(str(i))
-
-            while True:
-                char = input("Choose a value of the selection you want to choose:")
-                if char in selections:
-                    self.set_value_and_source(choice.syms[int(char) - 1], "y", filename)
-                    changed_symbols = {
-                        sym.name: (sym._sdkconfig_value or "", sym.str_value)
-                        for sym in choice.syms
-                        if sym.str_value != sym._sdkconfig_value
-                    }
-                    unchanged_symbols = {
-                        sym.name: sym.str_value for sym in choice.syms if sym.str_value == sym._sdkconfig_value
-                    }
-                    break
-            return changed_symbols, unchanged_symbols
-
-        # SYM_NAME: (OLD_VAL, NEW_VAL)
-        changed_symbols: Dict[str, Tuple[str, str]] = dict()
-        # SYM_NAME: VAL
-        unchanged_symbols: Dict[str, str] = dict()
-
-        choices_with_default_value: Dict["Choice", List["Symbol"]] = dict()
-
-        # Regroup symbols by their choices
-        for sym in choice_symbols_with_default_values:
-            sym._sdkconfig_value = choice_symbols_with_default_values[sym]
-            sym._loaded_as_default = True
-            if sym.choice:
-                if sym.choice not in choices_with_default_value:
-                    choices_with_default_value[sym.choice] = []
-                choices_with_default_value[sym.choice].append(sym)
-
-        for choice in choices_with_default_value:
-            # if choice has a user selection but some of its symbols have default value,
-            # "user-set" those symbols manually.
-            # As the choice will become fully user-set, we will skip the rest of the "default value" logic.
-            if choice._user_selection is not None:
-                for sym in choice.syms:
-                    self.set_value_and_source(sym, sym.bool_value, filename)
-                continue
-
-            # NOTE: there are only symbols with default values; if e.g. somebody tampered the sdkconfig and made some
-            # choice symbols user-set, they will not end up in here.
-            default_choice_syms_from_sdkconfig = choices_with_default_value[choice]
-            y_syms_from_sdkconfig = [
-                sym for sym in default_choice_syms_from_sdkconfig if choice_symbols_with_default_values[sym] == "y"
-            ]
-
-            # We'll check if something differs between sdkconfig and Kconfig
-            # No -> work is done, system will take care of it
-            # Yes -> solve it depending on the policy
-            if len(y_syms_from_sdkconfig) == 1:
-                # _sdkconfig_value == None means that sym was not in the sdkconfig at all -> ignore that
-                # it may happen e.g. when some choice symbols have conditional prompt or were simply added into Kconfig.
-                diff = [
-                    sym
-                    for sym in choice.syms
-                    if sym.str_value != sym._sdkconfig_value
-                    and sym._sdkconfig_value is not None
-                    and sym._loaded_as_default
-                ]
-                # some symbols with default value have their default values different between sdkconfig and Kconfig
-                if len(diff) > 0:
-                    sdkconfig_selection: Symbol = y_syms_from_sdkconfig[0]
-                    self.report.add_record(
-                        DefaultValuesArea,
-                        sym_or_choice=choice,
-                        sdkconfig_selection=sdkconfig_selection.name,
-                        record_type="choice",
-                    )
-                    if self.defaults_policy == DefaultsPolicy.USE_SDKCONFIG:
-                        _inject_default_value_for_choice(choice, sdkconfig_selection)
-                    elif self.defaults_policy == DefaultsPolicy.INTERACTIVE:
-                        changed_diff, unchanged_diff = _handle_interactive_choice(choice)
-                        changed_symbols.update(changed_diff)
-                        unchanged_symbols.update(unchanged_diff)
-            elif len(y_syms_from_sdkconfig) > 1:
-                # More than one choice symbol is set to y. We will use the last one
-                # (general rule of thumb is to take the last one - it is done like that with user-set values as well).
-                selection = y_syms_from_sdkconfig[-1]
-                if self.defaults_policy == DefaultsPolicy.USE_SDKCONFIG:
-                    _inject_default_value_for_choice(choice, selection)
-                elif self.defaults_policy == DefaultsPolicy.INTERACTIVE:
-                    changed_diff, unchanged_diff = _handle_interactive_choice(choice)
-                    changed_symbols.update(changed_diff)
-                    unchanged_symbols.update(unchanged_diff)
-            else:
-                self.report.add_record(
-                    MiscArea,
-                    message=(
-                        f"Choice {choice.name} has no selections set to y. "
-                        f"Will use Kconfig default selection {choice.selection.name}."
-                    ),
-                )
-        return changed_symbols, unchanged_symbols
+        # Reset defaults_resolved flags to allow for next sdkconfig loading
+        for sym in self.unique_defined_syms:
+            sym._defaults_resolved = False
+        for choice in self.unique_choices:
+            choice._defaults_resolved = False
 
     def _undef_assign(self, name, val, filename, linenr):
         # Called for assignments to undefined symbols during .config loading
@@ -4150,6 +3897,7 @@ class Symbol:
         "_is_deprecated",
         "_user_source",
         "_default_value_injected",
+        "_defaults_resolved",
         "choice",
         "defaults",
         "direct_dep",
@@ -4200,6 +3948,9 @@ class Symbol:
     _invalidating: bool
     warning: str
     _default_value_injected: bool
+    _defaults_resolved: bool
+    _cached_vis: Optional[int]
+    direct_dep: Union[Tuple, "Symbol"]
 
     #
     # Public interface
@@ -4332,6 +4083,12 @@ class Symbol:
             sdkconfig default value and Kconfig default value are different.
         """
         self._default_value_injected = False
+
+        """
+        _defaults_resolved:
+            Flag indicating whether the defaults have been resolved during sdkconfig loading.
+        """
+        self._defaults_resolved = False
 
         """
         selects:
@@ -4482,6 +4239,184 @@ class Symbol:
 
         # See Kconfig._build_dep()
         self._dependents: Set[Union[Symbol, Choice]] = set()
+
+    def _inject_default_value(self) -> bool:
+        """
+        Temporarily apply self._sdkconfig_value to the symbol as a first default value.
+        NOTE: Temporarily = for current configuration session/current Kconfig run.
+        """
+        # value_is_valid() accepts only string or 0/2 (corresponding to n/y) values
+        if not self.value_is_valid(
+            STR_TO_BOOL[self._sdkconfig_value] if self._sdkconfig_value in ("y", "n") else str(self._sdkconfig_value)
+        ):
+            self.kconfig._warn(
+                f"'{self._sdkconfig_value}' is not a valid value for the {TYPE_TO_STR[self.orig_type]} symbol "
+                f"{self.name_and_loc}. Assignment ignored.",
+                self.kconfig.filename,
+                self.kconfig.linenr,
+            )
+            return False
+        # self._parsing_kconfigs originally prevented adding new symbols during expression parsing
+        # However, now, we change the configuration structure even outside the parsing and we want possibly
+        # add new symbols, e.g. new default value is a previously unseen string/number.
+        parsing_kconfigs = self.kconfig._parsing_kconfigs
+        self.kconfig._parsing_kconfigs = True
+        # String literal is a constant symbol
+        if self.orig_type == STRING:
+            sym_for_val = self.kconfig._lookup_const_sym(self._sdkconfig_value or "")
+        else:
+            sym_for_val = (
+                self.kconfig._lookup_const_sym(self._sdkconfig_value)
+                if self._sdkconfig_value in ("y", "n")
+                else self.kconfig._lookup_sym(self._sdkconfig_value)
+            )
+
+        # Ignore previous symbol's defaults.
+        # They'll be added during finalize_node() for completeness, but won't take any effect;
+        # First one will be used as it has no condition.
+        dependency = self.kconfig.y
+        for node in self.nodes:
+            dependency = self.kconfig._make_and(dependency, node.dep)
+        self.defaults = [(sym_for_val, dependency)]
+
+        # Invalidate recursively to propagate the change to dependent symbols
+        self._rec_invalidate()
+
+        # Restore the original value of self._parsing_kconfigs
+        self.kconfig._parsing_kconfigs = parsing_kconfigs
+        self._default_value_injected = True
+
+        return True
+
+    def resolve_defaults(self):
+        """
+        Decide whether there is a difference between sdkconfig and Kconfig default values.
+        We cannot resolve it easily in place (self.str_value ?= sym._sdkconfig_value),
+        because we need to consider all dependencies. See the example:
+
+        Kconfig file:
+        -------------
+        config DEPENDENT
+            string "Dependent symbol"
+            default "string_1" if FREE=1
+            default "string_2" if FREE=2
+            default "fallback"
+
+        config FREE
+            int "free symbol"
+            default 1
+
+
+        sdkconfig file:
+        --------------
+        # default:
+        CONFIG_DEPENDENT="string_1"
+        # default:
+        CONFIG_FREE=2
+
+        In this case, Kconfig defaults are loaded (DEPENDENT="string_1", FREE=1).
+        If we load sdkconfig line by line, by the time we load DEPENDENT, we would check whether
+        sdkconfig default equals Kconfig default, which would be true, because we did not load FREE yet.
+        We would then load FREE=2 (this mismatch would be correctly reported), but we would never return to DEPENDENT
+        to check whether its default values between sdkconfig and Kconfig still match.
+
+        In order to resolve defaults correctly, we need to go from free symbols (without any dependencies)
+        to dependent symbols. However, because one config could depend on multiple other configs,
+        we cannot (easily) use top-down approach.
+
+        Instead, we resolve defaults for all symbols loaded as default and symbols themselves
+        recursively ask those symbols they depend on to resolve their defaults first. In our example, DEPENDENT would
+        first ask FREE to evaluate its default value and only after that, it would evaluate its own default value.
+        """
+
+        # defaults_resolved: we already resolved defaults for this symbol
+        # _user_value is not None: user set the value (shouldn't happen, but just in case)
+        # choice: it is a choice symbol, which is resolved on choice level
+        # _sdkconfig_value is None: symbol is not present in sdkconfig (shouldn't happen, but just in case)
+        # resolve_vis() == 0: symbol is not visible, so we don't need to resolve its defaults
+        if (
+            self._defaults_resolved
+            or self._user_value is not None
+            or self.choice
+            or self._sdkconfig_value is None
+            or self.resolve_vis() == 0
+        ):
+            return
+
+        for sc in self.dependencies:
+            # constant symbols have their fixed value and are free - no need to check them
+            if sc.is_constant:
+                continue
+            sc.resolve_defaults()
+
+        # Kconfig default value differs from sdkconfig default value
+        if self.str_value != str(self._sdkconfig_value):
+            self.kconfig.report.add_record(DefaultValuesArea, sym_or_choice=self)
+            self.kconfig._info(
+                (
+                    f"Default value for {self.name} in sdkconfig is "
+                    f"{ANSI_BOLD}{self.kconfig._quote_value(self._sdkconfig_value, self.orig_type)}{ANSI_END} "
+                    f"but it is {ANSI_BOLD}{self.kconfig._quote_value(self.str_value, self.orig_type)}{ANSI_END} "
+                    "according to Kconfig."
+                )
+            )
+            if self.kconfig.defaults_policy == DefaultsPolicy.USE_SDKCONFIG:  # Use default value from sdkconfig
+                if self._inject_default_value():
+                    self.kconfig._info(
+                        "Using default value from sdkconfig "
+                        f"({ANSI_BOLD}{self.kconfig._quote_value(self._sdkconfig_value, self.orig_type)}{ANSI_END}).",
+                        suppress_info_prefix=True,
+                    )
+                else:
+                    self.kconfig._warn(
+                        f"Failed to set default value for {self.name} from sdkconfig. "
+                        "Default value will be set to "
+                        f"{self.kconfig._quote_value(self.str_value, self.orig_type)}.",
+                        self.kconfig.filename,
+                        self.kconfig.linenr,
+                    )
+            elif self.kconfig.defaults_policy == DefaultsPolicy.USE_KCONFIG:  # Use default value from Kconfig
+                self.kconfig._info(
+                    "Using default value from Kconfig "
+                    f"({ANSI_BOLD}{self.kconfig._quote_value(self.str_value, self.orig_type)}{ANSI_END}).",
+                    suppress_info_prefix=True,
+                )
+            elif self.kconfig.defaults_policy == DefaultsPolicy.INTERACTIVE:
+                preferred_source = None
+                while preferred_source not in ("s", "k"):
+                    preferred_source = input(
+                        "Do you want to use default value from sdkconfig (s) "
+                        "(value will be converted to user-set) or from Kconfig (k)? [s/k]:"
+                    ).lower()
+                if preferred_source == "s":
+                    # NOTE: This will make "default" from sdkconfig a user-set value.
+                    # Reason: If we keep it as default, the message about defaults differing between sdkconfig
+                    # and Kconfig would still be present because default values between
+                    # sdkconfig and Kconfig would still differ.
+                    self.kconfig.set_value_and_source(self, self._sdkconfig_value, self.kconfig.filename)
+                elif preferred_source == "k":
+                    self.kconfig.set_value_and_source(self, self.str_value, self.kconfig.filename)
+            else:
+                raise KconfigError(
+                    f"Unsupported default policy in KCONFIG_DEFAULTS_POLICY envvar: {self.kconfig.defaults_policy}"
+                )
+
+        self._defaults_resolved = True
+
+    def resolve_vis(self) -> int:
+        """
+        Weaker version of resolve_defaults. We only want to know whether the symbol is visible or not,
+        but we don't want to resolve its default value. Useful e.g. during choice default selection resolving.
+        """
+        for sc in self.dependencies:
+            if sc == self.choice:  # possible transitive dependencies handled in choice's resolve_defaults()
+                continue
+            if sc.is_constant:
+                # constant symbols have their fixed value and are free - no need to check them
+                continue
+            sc.resolve_defaults()
+
+        return self.visibility  # we need to actually call self.visibility to trigger the calculation
 
     @property
     def present_in_current_sdkconfig(self):
@@ -4846,7 +4781,7 @@ class Symbol:
         return self._cached_assignable
 
     @property
-    def visibility(self):
+    def visibility(self) -> int:
         """
         The visibility of the symbol. One of 0, 2, representing n, y. See
         the module documentation for an overview of symbol values and visibility.
@@ -5050,7 +4985,7 @@ class Symbol:
             self._rec_invalidate_if_has_prompt()
 
     @property
-    def referenced(self):
+    def referenced(self) -> Union[Set["Symbol"], Set["Choice"]]:
         """
         A set() with all symbols and choices referenced in the properties and
         property conditions of the symbol.
@@ -5081,6 +5016,19 @@ class Symbol:
         symbols in it with the global expr_items() function.
         """
         return {item for node in self.nodes for item in node.referenced}
+
+    @property
+    def dependencies(self) -> Set[Union["Symbol", "Choice"]]:
+        """
+        A set() with all symbols and choices that this symbol depends on.
+
+        Unlike 'referenced', this excludes symbols that are targets of 'select' and 'imply'
+        statements, as those represent reverse dependencies (things this symbol affects)
+        rather than true dependencies (things that affect this symbol's value/visibility).
+
+        See MenuNode.dependencies for more details.
+        """
+        return {item for node in self.nodes for item in node.dependencies}
 
     @property
     def orig_defaults(self):
@@ -5350,6 +5298,7 @@ class Choice:
         "_invalidating",
         "defaults",
         "direct_dep",
+        "_defaults_resolved",
         "is_constant",
         "kconfig",
         "name",
@@ -5367,6 +5316,7 @@ class Choice:
     defaults: List[Tuple[Any, Any]]  # Tuple[condition, expression], both can be pretty complicated
     _invalidating: bool
     _user_source: Optional[str]
+    _defaults_resolved: bool
 
     def __init__(self, kconfig: Kconfig, name: Optional[str] = None, direct_dep: Optional[Symbol] = None):
         self.kconfig = kconfig
@@ -5412,6 +5362,12 @@ class Choice:
             'default' conditions.
         """
         self.defaults = []
+
+        """
+        _defaults_resolved:
+            Flag indicating whether the defaults have been resolved during sdkconfig loading.
+        """
+        self._defaults_resolved = False
 
         """
         _user_value:
@@ -5469,6 +5425,157 @@ class Choice:
 
         # See Kconfig._build_dep()
         self._dependents: Set[Union[Symbol, Choice]] = set()
+
+    def resolve_vis(self):
+        for sc in self.dependencies:
+            if sc.is_constant:
+                # constant symbols have their fixed value and are free - no need to check them
+                continue
+            sc.resolve_defaults()
+
+        return self.visibility
+
+    def resolve_defaults(self):
+        # if choice has a user selection but some of its symbols have default value,
+        # "user-set" those symbols manually.
+        # As the choice will become fully user-set, we will skip the rest of the "default value" logic.
+        if self._defaults_resolved or self.resolve_vis() == 0:
+            return
+
+        if self._user_selection is not None:
+            for sym in self.syms:
+                self.kconfig.set_value_and_source(sym, sym.bool_value, self.kconfig.filename)
+            # In this case, we did not resolve "defaults", but the flag can still be used.
+            self._defaults_resolved = True
+            return
+
+        sc: Union[Symbol, Choice]
+        for sc in self.dependencies:
+            if sc.is_constant:
+                # constant symbols have their fixed value and are free - no need to check them
+                continue
+            sc.resolve_defaults()
+
+        # syms that should be y according to sdkconfig and are visible
+        # NOTE: This is tricky; we dont want to resolve sym's value here,
+        # but we need to know whether the symbol is visible or not.
+        y_syms_from_sdkconfig = [sym for sym in self.syms if sym._sdkconfig_value == "y" and sym.resolve_vis() == 2]
+
+        for sym in self.syms:
+            if sym._sdkconfig_value == "y" and sym.visibility == 0:
+                self.kconfig.report.add_record(
+                    MiscArea,
+                    message=f"Choice {self.name} has {sym.name} as default selection, but given symbol is not visible. "
+                    "Ignoring.",
+                )
+
+        # We'll check if something differs between sdkconfig and Kconfig
+        # No -> work is done, system will take care of it
+        # Yes -> solve it depending on the policy
+        if len(y_syms_from_sdkconfig) == 1:
+            # _sdkconfig_value == None means that sym was not in the sdkconfig at all -> ignore that
+            # it may happen e.g. when some choice symbols have conditional prompt or were simply added into Kconfig.
+            diff = [
+                sym
+                for sym in self.syms
+                if sym.str_value != sym._sdkconfig_value and sym._sdkconfig_value is not None and sym._loaded_as_default
+            ]
+            # some symbols with default value have their default values different between sdkconfig and Kconfig
+            if len(diff) > 0:
+                sdkconfig_selection: Symbol = y_syms_from_sdkconfig[0]
+                self.kconfig.report.add_record(
+                    DefaultValuesArea,
+                    sym_or_choice=self,
+                    sdkconfig_selection=sdkconfig_selection.name,
+                    record_type="choice",
+                )
+                if self.kconfig.defaults_policy == DefaultsPolicy.USE_SDKCONFIG:
+                    self._inject_default_value_for_choice(sdkconfig_selection)
+                elif self.kconfig.defaults_policy == DefaultsPolicy.INTERACTIVE:
+                    self._handle_interactive_choice()
+        elif len(y_syms_from_sdkconfig) > 1:
+            # More than one choice symbol is set to y. We will use the last one
+            # (general rule of thumb is to take the last one - it is done like that with user-set values as well).
+            selection = y_syms_from_sdkconfig[-1]
+            if self.kconfig.defaults_policy == DefaultsPolicy.USE_SDKCONFIG:
+                self._inject_default_value_for_choice(selection)
+            elif self.kconfig.defaults_policy == DefaultsPolicy.INTERACTIVE:
+                self._handle_interactive_choice()
+        else:
+            if self.visibility:
+                if self.selection:
+                    self.kconfig.report.add_record(
+                        MiscArea,
+                        message=(
+                            f"Choice {self.name} has no valid sdkconfig selection set to y. "
+                            f"Will use Kconfig default selection {self.selection.name}."
+                        ),
+                    )
+                else:
+                    self.kconfig.report.add_record(
+                        MiscArea,
+                        message=(
+                            f"Choice {self.name} has no sdkconfig nor kconfig selection set to y. "
+                            f"Choice will be deselected."
+                        ),
+                    )
+            # else: silently ignore: invisible choice should have no y-selected symbols, so it is OK
+
+        self._defaults_resolved = True
+
+    def _inject_default_value_for_choice(self, sym: Symbol) -> None:
+        """
+        When using default values from sdkconfig, we need to temporarily inject the default selection of the choice
+        to the  system.
+        NOTE: Temporarily = for current configuration session/current Kconfig run.
+        """
+        if sym not in self.syms:
+            self.kconfig.report.add_record(
+                MiscArea,
+                message=f"Attempted to select symbol {sym.name} in choice {self.name_and_loc}, "
+                "but it is not a member of the choice. Ignoring.",
+            )
+
+        # self._parsing_kconfigs originally prevented adding new symbols during expression parsing
+        # However, now, we change the configuration structure even outside the parsing and we want possibly
+        # add new symbols, e.g. new default value is a previously unseen string/number.
+        parsing_kconfigs = self.kconfig._parsing_kconfigs
+        self.kconfig._parsing_kconfigs = True
+        dependency = self.kconfig.y
+        for node in self.nodes:
+            dependency = self.kconfig._make_and(dependency, node.dep)
+        self.defaults = [(sym, dependency)]
+        # Invalidate recursively to propagate the change to dependent symbols
+        self._rec_invalidate()
+
+        # Restore the original value of self._parsing_kconfigs
+        self.kconfig._parsing_kconfigs = parsing_kconfigs
+
+    def _handle_interactive_choice(self) -> Tuple[Dict[str, Tuple[str, str]], Dict[str, str]]:
+        print(f"Choose {self.name} has following possible selections:")
+        selections = list()
+        for i, sym in enumerate(self.syms, start=1):
+            print(
+                f"[{i}] {sym.name}"
+                + ("(selected in sdkconfig)" if sym._sdkconfig_value == "y" else "")
+                + ("(selected in kconfig)" if sym.str_value == "y" else "")
+            )
+            selections.append(str(i))
+
+        while True:
+            char = input("Choose a value of the selection you want to choose:")
+            if char in selections:
+                self.kconfig.set_value_and_source(self.syms[int(char) - 1], "y", self.kconfig.filename)
+                changed_symbols = {
+                    sym.name: (sym._sdkconfig_value or "", sym.str_value)
+                    for sym in self.syms
+                    if sym.str_value != sym._sdkconfig_value
+                }
+                unchanged_symbols = {
+                    sym.name: sym.str_value for sym in self.syms if sym.str_value == sym._sdkconfig_value
+                }
+                break
+        return changed_symbols, unchanged_symbols
 
     @property
     def present_in_current_sdkconfig(self):
@@ -5559,14 +5666,14 @@ class Choice:
         return self._cached_assignable
 
     @property
-    def visibility(self):
+    def visibility(self) -> int:
         """
         The visibility of the choice. One of 0, 2, representing n, y. See
         the module documentation for an overview of symbol values and visibility.
         """
         if self._cached_vis is None:
-            self._cached_vis = _visibility(self)
-        return self._cached_vis
+            self._cached_vis = _visibility(self)  # type: ignore
+        return self._cached_vis  # type: ignore
 
     @property
     def name_and_loc(self):
@@ -5646,11 +5753,18 @@ class Choice:
             self._rec_invalidate()
 
     @property
-    def referenced(self):
+    def referenced(self) -> Set[Union["Symbol", "Choice"]]:
         """
         See the class documentation.
         """
         return {item for node in self.nodes for item in node.referenced}
+
+    @property
+    def dependencies(self) -> Set[Union["Symbol", "Choice"]]:
+        """
+        See the class documentation and MenuNode.dependencies.
+        """
+        return {item for node in self.nodes for item in node.dependencies}
 
     @property
     def orig_defaults(self):
@@ -5802,6 +5916,7 @@ class MenuNode:
 
     __slots__ = (
         "_id",
+        "_cached_dependees",
         "warning",
         "dep",
         "filename",
@@ -5866,6 +5981,9 @@ class MenuNode:
             NOTE: Do not access this directly, use MenuNode.id() instead!
         """
         self._id = ""
+
+        # Cached dependencies set, computed on first access
+        self._cached_dependees = None
 
         """
         item:
@@ -6181,6 +6299,56 @@ class MenuNode:
             res.add(high)
             res |= expr_items(cond)
 
+        return res
+
+    @property
+    def dependencies(self):
+        """
+        A set() with all symbols and choices that this menu node depends on.
+
+        Unlike 'referenced', this excludes symbols that are targets of 'select' and 'imply'
+        statements, as those represent reverse dependencies (things this symbol affects)
+        rather than true dependencies (things that affect this symbol's value/visibility).
+
+        Includes:
+        - Symbols from 'depends on' (self.dep)
+        - Symbols from prompt conditions
+        - Symbols from default value expressions and conditions
+        - Symbols from select/imply conditions (but NOT the targets)
+        - Symbols from range expressions and conditions
+        - For MENU items: symbols from visibility
+        """
+        if self._cached_dependees is not None:
+            return self._cached_dependees
+
+        # self.dep is included to catch dependencies from a lone 'depends on'
+        # when there are no properties to propagate it to
+        res = expr_items(self.dep)
+
+        if self.prompt:
+            res |= expr_items(self.prompt[1])
+
+        if self.item is MENU:
+            res |= expr_items(self.visibility)
+
+        for value, cond in self.defaults:
+            res |= expr_items(value)
+            res |= expr_items(cond)
+
+        # For selects and implies, only include the condition, not the target.
+        # The target is what we're affecting (reverse dependency), not depending on.
+        for _target, cond in self.selects:
+            res |= expr_items(cond)
+
+        for _target, cond in self.implies:
+            res |= expr_items(cond)
+
+        for low, high, cond in self.ranges:
+            res.add(low)
+            res.add(high)
+            res |= expr_items(cond)
+
+        self._cached_dependees = res
         return res
 
     def __repr__(self):

@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2025 Espressif Systems (Shanghai) CO LTD
+# SPDX-FileCopyrightText: 2025-2026 Espressif Systems (Shanghai) CO LTD
 # SPDX-License-Identifier: Apache-2.0
 
 """
@@ -157,7 +157,7 @@ class DefaultValuesArea(Area):
       This is normally not a problem, but a feature. However, devs may want to know about it.
     """
 
-    def __init__(self, defaults_policy: DefaultsPolicy, verbosity: str):
+    def __init__(self, report: "KconfigReport", verbosity: str):
         super().__init__(
             title="Default Value Mismatch",
             ignore_codes=set(),
@@ -168,7 +168,7 @@ class DefaultValuesArea(Area):
                 """
             ),
         )
-        self.defaults_policy: DefaultsPolicy = defaults_policy
+        self.report: KconfigReport = report
         self.verbosity: str = verbosity
 
         self.changed_defaults: Set[Tuple[str, str, str]] = set()
@@ -234,7 +234,7 @@ class DefaultValuesArea(Area):
             return None
 
         table = Table(title=self.title, title_justify="left", show_header=False, title_style=AREA_TITLE_STYLE)
-        table.add_row(self.defaults_policy.description, style=INFO_STRING_STYLE)
+        table.add_row(self.report.defaults_policy.description, style=INFO_STRING_STYLE)
         table.box = HORIZONTALS
         table.add_column(
             "",
@@ -562,7 +562,7 @@ class MultipleAssignmentArea(Area):
             msg = f"Choice {choice.name}: "
             for val, is_default in self.multiple_assignments_choice[choice]:
                 msg += f"\n{_INDENT}{val}{' (default selection)' if is_default else ' (user-set selection)'}"
-            msg += f"\n{_INDENT}-> using {choice.selection.name}"
+            msg += f"\n{_INDENT}-> using {choice.selection.name if choice.selection else 'choice deselected'}"
             table.add_row(msg)
 
         return table
@@ -583,7 +583,10 @@ class MultipleAssignmentArea(Area):
                 ret_json["data"]["symbols"][sym.name]["values"][val] = "default" if is_default else "user-set"
 
         for choice in self.multiple_assignments_choice:
-            ret_json["data"]["choices"][choice.name] = {"values": dict(), "final_value": choice.selection.name}
+            ret_json["data"]["choices"][choice.name] = {
+                "values": dict(),
+                "final_value": choice.selection.name if choice.selection else "choice deselected",
+            }
             for val, is_default in self.multiple_assignments_choice[choice]:
                 ret_json["data"]["choices"][choice.name]["values"][val] = "default" if is_default else "user-set"
 
@@ -695,6 +698,7 @@ class KconfigReport:
             cls._instance.defaults_policy = defaults_policy
             cls._instance._initialized = False
         cls._instance.kconfig = kconfig
+        cls._instance.defaults_policy = defaults_policy
         return cls._instance
 
     def __init__(
@@ -717,7 +721,7 @@ class KconfigReport:
         self.areas = (
             MultipleDefinitionArea(),
             MiscArea(),
-            DefaultValuesArea(defaults_policy, verbosity=self.verbosity),
+            DefaultValuesArea(self, verbosity=self.verbosity),
             MultipleAssignmentArea(),
             DisabledSymbolArea(),
         )
