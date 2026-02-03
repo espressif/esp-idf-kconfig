@@ -192,7 +192,11 @@ import re
 import sys
 import textwrap
 from typing import TYPE_CHECKING
+from typing import Optional
 from typing import Union
+
+from rich.console import Console
+from rich.text import Text
 
 from esp_kconfiglib.core import AND
 from esp_kconfiglib.core import BOOL
@@ -241,6 +245,9 @@ installation on MSYS2).
 Exception:
 {type(e).__name__}: {e}"""
     )
+
+# Logging variables
+PREFIX_ERROR = "ERROR:"
 
 
 #
@@ -683,6 +690,15 @@ _minconf_filename = None
 _show_all = None
 
 
+def _colorize_message(message: Optional[str]) -> Optional[Text]:
+    if message is None:
+        return None
+    if message.startswith(PREFIX_ERROR):
+        return Text(message, style="red")
+    else:
+        return message
+
+
 def _main():
     menuconfig(standard_kconfig(__doc__))
 
@@ -757,7 +773,9 @@ def menuconfig(kconf: "Kconfig", headless: bool = False) -> None:
     # Enter curses mode. _menuconfig() returns a string to print on exit, after
     # curses has been de-initialized.
     if not headless:
-        print(_wrapper(_menuconfig))  # instead of print(curses.wrapper(_menuconfig))
+        Console(file=sys.stderr).print(
+            _colorize_message(_wrapper(_menuconfig))
+        )  # instead of print(curses.wrapper(_menuconfig))
 
 
 def _wrapper(func):
@@ -888,15 +906,25 @@ def _menuconfig(stdscr):
     # Logic for the main display, with the list of symbols, etc.
 
     global _stdscr
+
+    _stdscr = stdscr
+
+    _init()
+
+    try:
+        return _menuconfig_main_loop()
+    except KeyboardInterrupt:
+        return f"{PREFIX_ERROR} menuconfig interrupted - exiting without saving the configuration"
+
+
+def _menuconfig_main_loop():
+    # Main loop extracted to allow clean KeyboardInterrupt handling
+
     global _conf_filename
     global _conf_changed
     global _minconf_filename
     global _show_help
     global _show_name
-
-    _stdscr = stdscr
-
-    _init()
 
     while True:
         _draw_main()
