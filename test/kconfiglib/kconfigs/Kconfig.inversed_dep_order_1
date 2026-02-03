@@ -1,0 +1,75 @@
+mainmenu "Test defaults mismatch if dependent sym is defined before dependee"
+
+config DEPENDENT_0
+    string "This is a dependent symbol"
+    default "str_1" if FREE_0=1
+    default "str_2" if FREE_0=2
+    default "fallback"
+
+config FREE_0
+    int "free/independent symbol"
+    default 1
+
+config DEPENDENT_1
+    string "This is a dependent symbol"
+    default "str_1" if FREE_1=1
+    default "str_2" if FREE_1=2
+    default "fallback"
+
+config FREE_1
+    int "free/independent symbol"
+    default 1
+
+# currently selected config option becomes invisible
+# NOTE: in this case, we cannot hold to the sdkconfig value no matter the policy!
+# CH_1_1 should be selected after loading the sdkconfig and warnings should be issued
+choice CHOICE_1
+    bool "Test choice"
+    default CH_1_3
+
+    config CH_1_1
+        bool "Choice option 1"
+    config CH_1_2
+        bool "Choice option 2"
+    config CH_1_3
+        bool "Choice option 3"
+        depends on FREE_2
+endchoice
+
+config FREE_2
+    bool "free/independent symbol"
+    default y
+
+choice CHOICE_2
+    bool "Test choice"
+    default CH_2_3 if FREE_3=3
+    default CH_2_2 if FREE_3=2
+
+    config CH_2_1
+        bool "Choice option 1"
+    config CH_2_2
+        bool "Choice option 2"
+    config CH_2_3
+        bool "Choice option 3"
+endchoice
+
+config FREE_3
+    int "free/independent symbol"
+    default 3
+
+config DEPENDENT_ON_CHOICE
+    string "Symbol dependent on choice"
+    default "str_1" if CH_FREE_1
+    default "str_2" if CH_FREE_2
+    default "fallback"
+
+choice CHOICE_FREE
+    bool "Test choice"
+
+    config CH_FREE_1
+        bool "Choice option 1"
+    config CH_FREE_2
+        bool "Choice option 2"
+    config CH_FREE_3
+        bool "Choice option 3"
+endchoice

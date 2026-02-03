@@ -77,8 +77,10 @@ class TestValidDefaultValue(TestDefaultsBase):
             else:
                 assert line not in err
 
+        kconfig.report.reset()
 
-@pytest.mark.parametrize("version", ["2"], indirect=True)
+
+@pytest.mark.parametrize("version", ["1", "2"], indirect=True)
 class TestLoadingDefaults(TestDefaultsBase):
     """
     Checking whether default values are loaded correctly:
@@ -108,8 +110,39 @@ class TestLoadingDefaults(TestDefaultsBase):
             "Promptless symbols should not be present in the output sdkconfig"
         )
 
+        kconfig.report.reset()
 
-@pytest.mark.parametrize("version", ["2"], indirect=True)
+
+@pytest.mark.parametrize("version", ["1", "2"], indirect=True)
+class TestDefaultMismatchReport(TestDefaultsBase):
+    """
+    Ensure symbol default mismatches are included in the report.
+    """
+
+    @pytest.mark.parametrize("policy", ["sdkconfig", "kconfig"], indirect=True)
+    def test_symbol_default_mismatch_reported(self, policy: pytest.FixtureDef) -> None:
+        kconfig = Kconfig(os.path.join(KCONFIG_PATH, "Kconfig.inversed_dep_order_1"))
+        kconfig.load_config(os.path.join(SDKCONFIGS_PATH, "sdkconfig.inversed_dep_order_1"))
+        report_json = kconfig.report._return_json()
+
+        defaults_area = next(
+            (area for area in report_json["areas"] if area["title"] == "Default Value Mismatch"),
+            None,
+        )
+        assert defaults_area is not None
+
+        changed_defaults = defaults_area["data"]["changed_defaults"]
+        changed_names = {entry["name"] for entry in changed_defaults}
+        assert {"FREE_0", "FREE_1", "FREE_2", "FREE_3"}.issubset(changed_names)
+        if os.environ["KCONFIG_DEFAULTS_POLICY"] == "sdkconfig":
+            assert {"DEPENDENT_0", "DEPENDENT_1"}.issubset(changed_names)
+        elif os.environ["KCONFIG_DEFAULTS_POLICY"] == "kconfig":
+            assert {"DEPENDENT_0", "DEPENDENT_1"}.isdisjoint(changed_names)
+
+        kconfig.report.reset()
+
+
+@pytest.mark.parametrize("version", ["1", "2"], indirect=True)
 class TestLoadingChoicesWithDefaults(TestDefaultsBase):
     """
     Checking whether choices with default values are loaded correctly.
@@ -160,23 +193,25 @@ class TestLoadingChoicesWithDefaults(TestDefaultsBase):
 
         kconfig.report.reset()
 
-    def test_loading_choice_dependent_on_symbol(self) -> None:
+    @pytest.mark.parametrize("policy", ["sdkconfig", "kconfig"], indirect=True)
+    def test_loading_choice_dependent_on_symbol(self, policy: pytest.FixtureDef) -> None:
         kconfig = Kconfig(os.path.join(KCONFIG_PATH, "Kconfig.choices"))
         kconfig.load_config(os.path.join(SDKCONFIGS_PATH, "sdkconfig.dependent_choice"))
         output_sdkconfig = kconfig._config_contents(header=None)
         report_json = kconfig.report._return_json()
-        changed_choices = [area for area in report_json["areas"] if area["title"] == "Default Value Mismatch"][0][
-            "data"
-        ]["changed_choices"]
-
         assert "Info" in report_json["header"]["status"]
 
-        dependent_choice = next(
-            (changed_choice for changed_choice in changed_choices if changed_choice["name"] == "DEPENDENT_CHOICE"), None
-        )
-        assert dependent_choice is not None
-        assert "choice deselected" == dependent_choice["kconfig_selection"]
-        assert "DEPENDENT_FIRST" == dependent_choice["sdkconfig_selection"]
+        if os.environ["KCONFIG_DEFAULTS_POLICY"] == "sdkconfig":
+            changed_choices = [area for area in report_json["areas"] if area["title"] == "Default Value Mismatch"][0][
+                "data"
+            ]["changed_choices"]
+            dependent_choice = next(
+                (changed_choice for changed_choice in changed_choices if changed_choice["name"] == "DEPENDENT_CHOICE"),
+                None,
+            )
+            assert dependent_choice is not None
+            assert "DEPENDENT_FIRST" == dependent_choice["kconfig_selection"]
+            assert "DEPENDENT_SECOND" == dependent_choice["sdkconfig_selection"]
 
         if os.environ["KCONFIG_DEFAULTS_POLICY"] == "kconfig":
             assert "kconfig" in report_json["header"]["defaults_policy"]
@@ -534,3 +569,5 @@ class TestDefaultPragmaRegression(TestBase):
         assert not tested_symbol._loaded_as_default
         # sdkconfig value correctly loaded
         assert tested_symbol.str_value == "y"
+
+        kconfig.report.reset()

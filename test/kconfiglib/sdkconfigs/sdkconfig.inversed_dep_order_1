@@ -1,0 +1,35 @@
+# default:
+CONFIG_DEPENDENT_0="str_1"
+# different than Kconfig default!
+# default:
+CONFIG_FREE_0=2
+# default:
+CONFIG_DEPENDENT_1="str_1"
+# default:
+CONFIG_FREE_1=1
+# default:
+CONFIG_FREE_1=2
+# default:
+# CONFIG_CH_1_1 is not set
+# default:
+# CONFIG_CH_1_2 is not set
+# default:
+CONFIG_CH_1_3=y
+# default:
+# CONFIG_FREE_2 is not set
+# default:
+# CONFIG_CH_2_1 is not set
+# default:
+# CONFIG_CH_2_2 is not set
+# default:
+CONFIG_CH_2_3=y
+# default:
+CONFIG_FREE_3=2
+# default:
+CONFIG_DEPENDENT_ON_CHOICE="str_1"
+# default:
+# CONFIG_CH_FREE_1 is not set
+# default:
+CONFIG_CH_FREE_2=y
+# default:
+# CONFIG_CH_FREE_3 is not set
