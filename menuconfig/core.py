@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# SPDX-FileCopyrightText: 2024-2025 Espressif Systems (Shanghai) CO LTD
+# SPDX-FileCopyrightText: 2024-2026 Espressif Systems (Shanghai) CO LTD
 # SPDX-FileCopyrightText: 2018-2019, Nordic Semiconductor ASA and Ulf Magnusson
 # SPDX-License-Identifier: ISC
 # This file is copied from kconfiglib project:
@@ -235,6 +235,9 @@ installation on MSYS2).
 Exception:
 {type(e).__name__}: {e}"""
     )
+
+# Logging variables
+PREFIX_ERROR = "ERROR:"
 
 
 #
@@ -741,7 +744,7 @@ def menuconfig(kconf):
 
     # Enter curses mode. _menuconfig() returns a string to print on exit, after
     # curses has been de-initialized.
-    print(_wrapper(_menuconfig))  # instead of print(curses.wrapper(_menuconfig))
+    print(_wrapper(_menuconfig), file=sys.stderr)  # instead of print(curses.wrapper(_menuconfig))
 
 
 def _wrapper(func):
@@ -866,15 +869,23 @@ def _menuconfig(stdscr):
     # Logic for the main display, with the list of symbols, etc.
 
     global _stdscr
+    _stdscr = stdscr
+
+    _init()
+    try:
+        return _menuconfig_main_loop()
+    except KeyboardInterrupt:
+        return f"{PREFIX_ERROR} menuconfig interrupted - exiting without saving the configuration"
+
+
+def _menuconfig_main_loop():
+    # Main loop extracted to allow clean KeyboardInterrupt handling
+
     global _conf_filename
     global _conf_changed
     global _minconf_filename
     global _show_help
     global _show_name
-
-    _stdscr = stdscr
-
-    _init()
 
     while True:
         _draw_main()
