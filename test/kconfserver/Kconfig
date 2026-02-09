@@ -48,6 +48,17 @@ mainmenu "Testing kconfserver"
             range 0x10 0xaf
             default 0xa0
 
+        config TEST_FLOAT_ENABLE
+            bool "Enable float config"
+            default n
+
+        config TEST_FLOAT
+            float "Something with a float range"
+            depends on TEST_FLOAT_ENABLE
+            range 0.5 2.5 if TEST_BOOL && TEST_FLOAT_ENABLE
+            range -1.0 1.0 if TEST_FLOAT_ENABLE
+            default 0.5
+
         config SUBMENU_TRIGGER
             bool "I enable/disable some submenu items"
             default y

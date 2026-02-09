@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# SPDX-FileCopyrightText: 2024-2025 Espressif Systems (Shanghai) CO LTD
+# SPDX-FileCopyrightText: 2024-2026 Espressif Systems (Shanghai) CO LTD
 # SPDX-License-Identifier: Apache-2.0
 #
 # Long-running server process uses stdin & stdout to communicate JSON
@@ -353,6 +353,12 @@ def handle_set(config, error, to_set):
                     sym.set_value(hex(val))
                 except ValueError:
                     error.append("Hex symbol %s can accept a decimal integer or a string of hex digits, only")
+            elif sym.type == kconfiglib.FLOAT:
+                if not kconfiglib.is_float(str(val)):
+                    error.append(f"Float symbol {sym.name} requires a valid float value")
+                else:
+                    # Accept float, int, or string representation of a float
+                    sym.set_value(str(val))
             else:
                 sym.set_value(str(val))
             print("Set %s" % sym.name)
@@ -386,17 +392,21 @@ def get_ranges(config):
 
     def get_active_range(sym):
         """
-        Returns a tuple of (low, high) integer values if a range
+        Returns a tuple of (low, high) numeric values if a range
         limit is active for this symbol, or (None, None) if no range
         limit exists.
         """
-        base = kconfiglib._TYPE_TO_BASE[sym.orig_type] if sym.orig_type in kconfiglib._TYPE_TO_BASE else 0
-
         try:
             for low_expr, high_expr, cond in sym.ranges:
                 if kconfiglib.expr_value(cond):
-                    low = int(low_expr.str_value, base) if is_base_n(low_expr.str_value, base) else 0
-                    high = int(high_expr.str_value, base) if is_base_n(high_expr.str_value, base) else 0
+                    if sym.orig_type == kconfiglib.FLOAT:
+                        low = float(low_expr.str_value) if kconfiglib.is_float(low_expr.str_value) else 0.0
+                        high = float(high_expr.str_value) if kconfiglib.is_float(high_expr.str_value) else 0.0
+                    else:
+                        type_to_base = kconfiglib._TYPE_TO_BASE
+                        base = type_to_base[sym.orig_type] if sym.orig_type in type_to_base else 0
+                        low = int(low_expr.str_value, base) if is_base_n(low_expr.str_value, base) else 0
+                        high = int(high_expr.str_value, base) if is_base_n(high_expr.str_value, base) else 0
                     return (low, high)
         except ValueError:
             pass

@@ -146,6 +146,11 @@ Kconfig Symbol Types
 * ``bool`` type is represented as JSON Boolean.
 * ``int`` types are represented as JSON integers.
 * ``hex`` types are also represented as JSON integers, clients should read the separate metadata file to know if the UI representation is ``int`` or ``hex``. It is possible to set a ``hex`` item by sending the server a JSON string of hex digits (no prefix) as the value, but the server always sends ``hex`` values as JSON integers.
+* ``float`` types are represented as JSON numbers.
+
+.. note::
+
+    Float values are encoded using Python's standard floating-point representation (IEEE 754 double precision). This may produce visible rounding e.g. in kconfserver responses, for example ``3.333333333333333333`` can be returned as ``3.3333333333333335``.
 
 Error Responses
 ---------------

@@ -202,6 +202,7 @@ from esp_kconfiglib.core import AND
 from esp_kconfiglib.core import BOOL
 from esp_kconfiglib.core import BOOL_TO_STR
 from esp_kconfiglib.core import COMMENT
+from esp_kconfiglib.core import FLOAT
 from esp_kconfiglib.core import HEX
 from esp_kconfiglib.core import INT
 from esp_kconfiglib.core import MENU
@@ -215,6 +216,7 @@ from esp_kconfiglib.core import _recursively_perform_action
 from esp_kconfiglib.core import _restore_default
 from esp_kconfiglib.core import expr_str
 from esp_kconfiglib.core import expr_value
+from esp_kconfiglib.core import is_float
 from esp_kconfiglib.core import split_expr
 from esp_kconfiglib.core import standard_config_filename
 from esp_kconfiglib.core import standard_kconfig
@@ -1716,7 +1718,7 @@ def _change_node(node):
             )
         if c == "n":
             return True
-    if sc.orig_type in (INT, HEX, STRING):
+    if sc.orig_type in (INT, HEX, STRING, FLOAT):
         s = sc.str_value
 
         while True:
@@ -1728,7 +1730,7 @@ def _change_node(node):
             if s is None:
                 break
 
-            if sc.orig_type in (INT, HEX):
+            if sc.orig_type in (INT, HEX, FLOAT):
                 s = s.strip()
 
                 # 'make menuconfig' does this too. Hex values not starting with
@@ -1776,7 +1778,7 @@ def _changeable(node):
         return False
 
     # Active indirectly set value (via "set" option) prevent symbols from being changed.
-    if sc.orig_type in (STRING, INT, HEX):
+    if sc.orig_type in (STRING, INT, HEX, FLOAT):
         return not sc._has_active_indirect_set
 
     # Bool symbols case
@@ -3213,7 +3215,7 @@ def _value_str(node):
     if not item.orig_type:
         return ""
 
-    if item.orig_type in (STRING, INT, HEX):
+    if item.orig_type in (STRING, INT, HEX, FLOAT):
         return f"({item.str_value})"
 
     # BOOL
@@ -3246,9 +3248,34 @@ def _check_valid(sym, s):
     # Returns True if the string 's' is a well-formed value for 'sym'.
     # Otherwise, displays an error and returns False.
 
-    if sym.orig_type not in (INT, HEX):
-        return True  # Anything goes for non-int/hex symbols
+    if sym.orig_type not in (INT, HEX, FLOAT):
+        return True  # Anything goes for non-int/hex/float symbols
 
+    if sym.orig_type == FLOAT:
+        if not is_float(s):
+            err = f"'{s}' is a malformed float value"
+            if "," in s and "." not in s:
+                err += "; use a decimal point ('.') not a comma"
+            _error(f"{err}")
+            return False
+        val = float(s)
+
+        for low_sym, high_sym, cond in sym.ranges:
+            if expr_value(cond):
+                low_s = low_sym.str_value
+                high_s = high_sym.str_value
+                low_val = float(low_s)
+                high_val = float(high_s)
+
+                if not low_val <= val <= high_val:
+                    _error(f"{s} is outside the range {low_s} to {high_s}")
+                    return False
+
+                break
+
+        return True
+
+    # INT and HEX
     base = 10 if sym.orig_type == INT else 16
     try:
         int(s, base)
@@ -3262,7 +3289,7 @@ def _check_valid(sym, s):
             high_s = high_sym.str_value
 
             if not int(low_s, base) <= int(s, base) <= int(high_s, base):
-                _error(f"{s} is outside the range {low_s}-{high_s}")
+                _error(f"{s} is outside the range {low_s} to {high_s}")
                 return False
 
             break
@@ -3274,10 +3301,10 @@ def _range_info(sym):
     # Returns a string with information about the valid range for the symbol
     # 'sym', or None if 'sym' doesn't have a range
 
-    if sym.orig_type in (INT, HEX):
+    if sym.orig_type in (INT, HEX, FLOAT):
         for low, high, cond in sym.ranges:
             if expr_value(cond):
-                return f"Range: {low.str_value}-{high.str_value}"
+                return f"Range: from {low.str_value} to {high.str_value}"
 
     return None
 
@@ -3289,16 +3316,19 @@ def _is_num(name):
 
     try:
         int(name)
+        return True
     except ValueError:
-        if not name.startswith(("0x", "0X")):
-            return False
+        pass
 
+    if name.startswith(("0x", "0X")):
         try:
             int(name, 16)
+            return True
         except ValueError:
-            return False
+            pass
 
-    return True
+    # Also check for float values
+    return is_float(name)
 
 
 def _getch_compat(win):

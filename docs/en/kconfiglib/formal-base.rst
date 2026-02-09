@@ -27,7 +27,7 @@ Below, a context-free grammar describing the Kconfig language is presented. This
     config_options ::= (config_type | config_and_prompt)
                        + (default* | help_option | depends_on* | range_entry* | prompt | select* | imply* | option* | set * | set_default * | warning)*
 
-    config_type ::= "bool" | "int" | "hex" | "string"
+    config_type ::= "bool" | "int" | "hex" | "string" | "float"
     config_and_prompt ::= config_type + noname_prompt
     noname_prompt ::= STRING [+ "if" + expression]
 
@@ -63,6 +63,6 @@ Below, a context-free grammar describing the Kconfig language is presented. This
     config_name ::= REGEX("[A-Z0-9_]+")
     choice_name ::= REGEX("[A-Z0-9_]+")
     macro_name ::= REGEX("[A-Z0-9_]+")
-    value ::= INT | HEX | STRING
+    value ::= INT | HEX | STRING | FLOAT
     menu_name ::= QUOTED_STRING
     path ::= QUOTED_STRING

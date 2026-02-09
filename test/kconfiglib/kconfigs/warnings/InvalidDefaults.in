@@ -15,6 +15,10 @@ config HEX_CONFIG
     hex "Hex config"
     default 0x42
 
+config FLOAT_CONFIG
+    float "Float config"
+    default 1.5
+
 
 # Invalid direct defaults
 
@@ -33,6 +37,10 @@ config INVALID_BOOL_CONFIG
 config INVALID_HEX_CONFIG
     hex "Invalid Hex config"
     default y
+
+config INVALID_FLOAT_CONFIG
+    float "Invalid Float config"
+    default "string"
 
 config INT_OUTSIDE_RANGE_CONFIG
     int "Outside range config"
@@ -53,6 +61,7 @@ config SOURCE
     set INT_CONFIG="string"
     set BOOL_CONFIG=0x42
     set HEX_CONFIG="y"
+    set FLOAT_CONFIG="string"
 
 # Invalid weak indirect defaults
 

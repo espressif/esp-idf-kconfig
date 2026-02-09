@@ -6,6 +6,7 @@
 # https://github.com/ulfalizer/Kconfiglib/commit/061e71f7d78cb057762d88de088055361863deff
 import errno
 import importlib
+import math
 import os
 import re
 import sys
@@ -1214,7 +1215,7 @@ class Kconfig(object):
 
     @staticmethod
     def _quote_value(val: str, sym_type: str) -> str:
-        return val if (val in ("y", "n") or sym_type == INT) else f'"{val}"'
+        return val if (val in ("y", "n") or sym_type in (INT, FLOAT)) else f'"{val}"'
 
     def set_value_and_source(self, sym_or_choice: "Symbol", val: Any, filename: str) -> bool:
         """
@@ -1468,6 +1469,11 @@ class Kconfig(object):
 
                 if sym._was_set:
                     self._assigned_twice(sym, val, filename, linenr)
+
+                # Normalize float values to ensure consistent representation (e.g., "5" -> "5.0")
+                if sym.orig_type == FLOAT:
+                    val = _normalize_float(val)
+
                 # If the value is not set to default, set it
                 if not value_is_default:
                     if self.set_value_and_source(sym, val, filename):
@@ -1664,7 +1670,7 @@ class Kconfig(object):
             elif sym.orig_type == STRING:
                 add(f'#define {self.config_prefix}{sym.name} "{escape(val)}"\n')
 
-            elif sym.orig_type in _INT_HEX:
+            elif sym.orig_type in _INT_HEX_FLOAT:
                 if sym.orig_type == HEX and not val.startswith(("0x", "0X")):
                     val = "0x" + val
                 add(f"#define {self.config_prefix}{sym.name} {val}\n")
@@ -3661,11 +3667,13 @@ class Kconfig(object):
 
         def num_ok(sym, type_):
             # Returns True if the (possibly constant) symbol 'sym' is valid as a value
-            # for a symbol of type type_ (INT or HEX)
+            # for a symbol of type type_ (INT, HEX, or FLOAT)
 
             # 'not sym.nodes' implies a constant or undefined symbol, e.g. a plain
-            # "123"
+            # "123" or "1.5"
             if not sym.nodes:
+                if type_ == FLOAT:
+                    return is_float(sym.name)
                 return _is_base_n(sym.name, _TYPE_TO_BASE[type_])
 
             return sym.orig_type == type_
@@ -3695,7 +3703,7 @@ class Kconfig(object):
                             f"{target_sym.name_and_loc}, which is not bool"
                         )
 
-            elif sym.orig_type:  # STRING/INT/HEX
+            elif sym.orig_type:  # STRING/INT/HEX/FLOAT
                 for default, _ in sym.defaults:
                     if default.__class__ is not Symbol:
                         raise KconfigError(
@@ -3713,7 +3721,7 @@ class Kconfig(object):
                                 f"style: quotes recommended around default value for string symbol {sym.name_and_loc}"
                             )
 
-                    elif not num_ok(default, sym.orig_type):  # INT/HEX
+                    elif not num_ok(default, sym.orig_type):  # INT/HEX/FLOAT
                         self._warn(
                             f"the {TYPE_TO_STR[sym.orig_type]} symbol {sym.name_and_loc} has "
                             f"a non-{TYPE_TO_STR[sym.orig_type]} default {default.name_and_loc}"
@@ -3726,9 +3734,10 @@ class Kconfig(object):
                 self._warn(f"{sym.name_and_loc} defined without a type")
 
             if sym.ranges:
-                if sym.orig_type not in _INT_HEX:
+                if sym.orig_type not in _INT_HEX_FLOAT:
                     self._warn(
-                        f"the {TYPE_TO_STR[sym.orig_type]} symbol {sym.name_and_loc} has ranges, but is not int or hex"
+                        f"the {TYPE_TO_STR[sym.orig_type]} symbol {sym.name_and_loc} "
+                        "has ranges, but is not int, hex, or float"
                     )
                 else:
                     for low, high, _ in sym.ranges:
@@ -4499,6 +4508,11 @@ class Symbol:
             base = _TYPE_TO_BASE[self.orig_type]
             num2str = str if base == 10 else hex
 
+            low_int = 0
+            high_int = 0
+            val_num_int = 0
+            has_default = False
+
             # 1) Check ranges and get low/high values if any
             for low_expr, high_expr, cond in self.ranges:
                 if expr_value(cond):
@@ -4506,8 +4520,8 @@ class Symbol:
 
                     # The zeros are from the C implementation running strtoll()
                     # on empty strings
-                    low = int(low_expr.str_value, base) if _is_base_n(low_expr.str_value, base) else 0
-                    high = int(high_expr.str_value, base) if _is_base_n(high_expr.str_value, base) else 0
+                    low_int = int(low_expr.str_value, base) if _is_base_n(low_expr.str_value, base) else 0
+                    high_int = int(high_expr.str_value, base) if _is_base_n(high_expr.str_value, base) else 0
 
                     break
             else:
@@ -4520,7 +4534,7 @@ class Symbol:
                 if expr_value(cond):
                     if _is_base_n(candidate_val.name, base):
                         val = candidate_val.name
-                        val_num = int(val, base)
+                        val_num_int = int(val, base)
                         self._write_to_conf = True
                         self._has_active_indirect_set = True
                     else:
@@ -4540,24 +4554,21 @@ class Symbol:
             # 3) Apply user value if any
             if vis and self._user_value and not self._has_active_indirect_set:
                 user_val = int(self._user_value, base)
-                if has_active_range and not low <= user_val <= high:
+                if has_active_range and not low_int <= user_val <= high_int:
                     self.kconfig._warn(
                         f"user value {num2str(user_val)} on the {TYPE_TO_STR[self.orig_type]} symbol "
                         f"{self.name_and_loc} ignored due to being outside the active range "
-                        f"([{num2str(low)}, {num2str(high)}]) -- falling back on defaults"
+                        f"([{num2str(low_int)}, {num2str(high_int)}]) -- falling back on defaults"
                     )
                 else:
                     # If the user value is well-formed and satisfies range
                     # constraints, it is stored in exactly the same form as
                     # specified in the assignment (with or without "0x", etc.)
                     val = self._user_value
-                    val_num = int(val, base)
+                    val_num_int = int(val, base)
                     use_defaults = False
 
             if use_defaults:
-                # Used to implement the warning below
-                has_default = False
-
                 # 4) Apply weak_rev_values (weakly-set) if any
                 # Check if indirect value setting is in effect - equivalent to select on BOOl symbol
                 for weak_rev_value in self.weak_rev_values:
@@ -4565,7 +4576,7 @@ class Symbol:
                     if expr_value(cond):
                         if _is_base_n(candidate_val.name, base):
                             val = candidate_val.name
-                            val_num = int(val, base)
+                            val_num_int = int(val, base)
                             self._write_to_conf = True
                         else:
                             num2str = str if base == 10 else hex
@@ -4575,7 +4586,7 @@ class Symbol:
                             )
                         break
                     else:
-                        val_num = 0  # strtoll() on empty string
+                        val_num_int = 0  # strtoll() on empty string
 
                 # 5) Apply defaults if any
                 if not val:
@@ -4584,21 +4595,21 @@ class Symbol:
                             has_default = self._write_to_conf = True
                             val = sym.str_value
                             if _is_base_n(val, base):
-                                val_num = int(val, base)
+                                val_num_int = int(val, base)
                             else:
-                                val_num = 0  # strtoll() on empty string
+                                val_num_int = 0  # strtoll() on empty string
                             break
                     else:
-                        val_num = 0  # strtoll() on empty string
+                        val_num_int = 0  # strtoll() on empty string
 
             # 6) Clamp the value to the range and and check if it is valid
             # This clamping procedure runs even if there's no default
             if has_active_range:
-                clamp = None
-                if val_num < low:
-                    clamp = low
-                elif val_num > high:
-                    clamp = high
+                clamp: Optional[int] = None
+                if val_num_int < low_int:
+                    clamp = low_int
+                elif val_num_int > high_int:
+                    clamp = high_int
 
                 if clamp is not None:
                     # The value is rewritten to a standard form if it is
@@ -4608,8 +4619,8 @@ class Symbol:
                     if has_default:
                         num2str = str if base == 10 else hex
                         self.kconfig._warn(
-                            f"default value {val_num} on {self.name_and_loc} clamped to {num2str(clamp)} due to "
-                            f"being outside the active range ([{num2str(low)}, {num2str(high)}])"
+                            f"default value {val_num_int} on {self.name_and_loc} clamped to {num2str(clamp)} due to "
+                            f"being outside the active range ([{num2str(low_int)}, {num2str(high_int)}])"
                         )
 
         elif self.orig_type == STRING:
@@ -4651,6 +4662,120 @@ class Symbol:
                                 val = sym.str_value
                                 self._write_to_conf = True
                                 break
+
+        elif self.orig_type == FLOAT:
+            # 1) Check ranges and get low/high values if any
+            # Precedence (if step does not apply, go to next step):
+            #     2) Apply rev_values (force-set) if any
+            #     3) Apply user value if any
+            #     4) Apply weak_rev_values (weakly-set) if any
+            #     5) Apply defaults if any
+            # 6) Clamp the value to the range and check if it is valid
+            # Float values are validated using is_float()
+
+            low_float = 0.0
+            high_float = 0.0
+            val_num_float = 0.0
+            has_default = False
+
+            # 1) Check ranges and get low/high values if any
+            for low_expr, high_expr, cond in self.ranges:
+                if expr_value(cond):
+                    has_active_range = True
+                    low_float = float(low_expr.str_value) if is_float(low_expr.str_value) else 0.0
+                    high_float = float(high_expr.str_value) if is_float(high_expr.str_value) else 0.0
+                    break
+            else:
+                has_active_range = False
+
+            # 2) Apply rev_values (force-set) if any
+            for rev_value in self.rev_values:
+                candidate_val, cond, src = rev_value
+                if expr_value(cond):
+                    if is_float(candidate_val.name):
+                        val = _normalize_float(candidate_val.name)
+                        val_num_float = float(val)
+                        self._write_to_conf = True
+                        self._has_active_indirect_set = True
+                    else:
+                        self.kconfig._warn(
+                            f"Indirectly set value {candidate_val.str_value} on {self.name_and_loc} "
+                            f"(by {src.name_and_loc}) is not a valid float."
+                        )
+                    break
+            else:
+                self._has_active_indirect_set = False
+
+            # Defaults are used if the symbol is invisible, lacks a user value,
+            # or has an out-of-range user value
+            use_defaults = not self._has_active_indirect_set
+
+            # 3) Apply user value if any
+            if vis and self._user_value is not None and not self._has_active_indirect_set:
+                user_val_float = float(self._user_value)
+                if has_active_range and not low_float <= user_val_float <= high_float:
+                    self.kconfig._warn(
+                        f"user value {user_val_float} on the float symbol "
+                        f"{self.name_and_loc} ignored due to being outside the active range "
+                        f"([{low_float}, {high_float}]) -- falling back on defaults"
+                    )
+                else:
+                    # If the user value is well-formed and satisfies range
+                    # constraints, it is stored in exactly the same form as
+                    # specified in the assignment
+                    val = self._user_value
+                    val_num_float = float(val)
+                    use_defaults = False
+
+            if use_defaults:
+                # 4) Apply weak_rev_values (weakly-set) if any
+                for weak_rev_value in self.weak_rev_values:
+                    candidate_val, cond, src = weak_rev_value
+                    if expr_value(cond):
+                        if is_float(candidate_val.name):
+                            val = _normalize_float(candidate_val.name)
+                            val_num_float = float(val)
+                            self._write_to_conf = True
+                        else:
+                            self.kconfig._warn(
+                                f"Indirectly set value {candidate_val.str_value} on {self.name_and_loc} "
+                                f"(by {src.name_and_loc}) is not a valid float."
+                            )
+                        break
+                    else:
+                        val_num_float = 0.0
+
+                # 5) Apply defaults if any
+                if not val:
+                    for sym, cond in self.defaults:
+                        if expr_value(cond):
+                            has_default = self._write_to_conf = True
+                            val = _normalize_float(sym.str_value)
+                            if is_float(val):
+                                val_num_float = float(val)
+                            else:
+                                val_num_float = 0.0
+                            break
+                    else:
+                        val_num_float = 0.0
+
+            # 6) Clamp the value to the range and check if it is valid
+            if has_active_range:
+                float_clamp: Optional[float] = None
+                if val_num_float < low_float:
+                    float_clamp = low_float
+                elif val_num_float > high_float:
+                    float_clamp = high_float
+
+                if float_clamp is not None:
+                    # The value is rewritten to a standard form if it is clamped
+                    val = str(float_clamp)
+
+                    if has_default:
+                        self.kconfig._warn(
+                            f"default value {val_num_float} on {self.name_and_loc} clamped to {float_clamp} due to "
+                            f"being outside the active range ([{low_float}, {high_float}])"
+                        )
 
         # env_var corresponds to SYMBOL_AUTO in the C implementation, and is
         # also set on the defconfig_list symbol there. Test for the
@@ -4834,7 +4959,7 @@ class Symbol:
                 else f"{pragma_default_comment}# {self.kconfig.config_prefix}{self.name} is not set\n"
             )
 
-        if self.orig_type in _INT_HEX:
+        if self.orig_type in _INT_HEX_FLOAT:
             return f"{pragma_default_comment}{self.kconfig.config_prefix}{self.name}={val}\n"
 
         # sym.orig_type == STRING
@@ -4880,6 +5005,7 @@ class Symbol:
                     (self.orig_type == INT and _is_base_n(value, 10))  # valid int
                     or self.orig_type == STRING  # valid string
                     or (self.orig_type == HEX and _is_base_n(value, 16) and int(value, 16) >= 0)  # valid hex
+                    or (self.orig_type == FLOAT and is_float(value))  # valid float
                 )
             )
         )
@@ -4948,6 +5074,10 @@ class Symbol:
             )
 
             return False
+
+        # Normalize float values to ensure consistent representation (e.g., "5" -> "5.0")
+        if self.orig_type == FLOAT:
+            value = _normalize_float(value)
 
         self._user_value = value
         self._was_set = True
@@ -6985,6 +7115,38 @@ def _is_base_n(s, n):
         return False
 
 
+def is_float(s: str) -> bool:
+    """
+    Return True if 's' can be parsed as a finite float, False otherwise.
+    Rejects inf, nan, infinity and similar special values.
+    """
+    try:
+        x = float(s)
+        return math.isfinite(x)
+    except (ValueError, TypeError):
+        return False
+
+
+def _normalize_float(s):
+    """
+    Normalize a float string to a canonical representation.
+
+    Converts integer-like floats to explicit float notation (e.g., "5" -> "5.0").
+    This ensures consistent comparison between values like "5" and "5.0".
+
+    Args:
+        s: A string that can be parsed as a float.
+
+    Returns:
+        A normalized string representation of the float value.
+        Returns the original string if it cannot be parsed as a float.
+    """
+    try:
+        return str(float(s))
+    except ValueError:
+        return s
+
+
 def _strcmp(s1, s2):
     # TODO: is this C-like logic needed?
     # strcmp()-alike that returns -1, 0, or 1
@@ -6992,12 +7154,18 @@ def _strcmp(s1, s2):
     return (s1 > s2) - (s1 < s2)
 
 
-def _sym_to_num(sym: Union[Symbol, Choice]) -> int:
+def _sym_to_num(sym: Union[Symbol, Choice]) -> Union[int, float]:
     # expr_value() helper for converting a symbol to a number. Raises
     # ValueError for symbols that can't be converted.
 
-    # For BOOL n/y count as 0/2.
-    return sym.bool_value if sym.orig_type == BOOL else int(sym.str_value, _TYPE_TO_BASE[sym.orig_type])
+    # For BOOL n/y count as 0/2. For FLOAT, convert to float.
+    if sym.orig_type == BOOL:
+        return sym.bool_value
+    else:
+        try:
+            return int(sym.str_value, _TYPE_TO_BASE[sym.orig_type])
+        except ValueError:
+            return float(sym.str_value)
 
 
 def _save_old(path):
@@ -7487,7 +7655,8 @@ except AttributeError:
     _T_UNEQUAL,
     _T_VISIBLE,
     _T_WARNING,
-) = range(1, 52)
+    _T_FLOAT,
+) = range(1, 53)
 
 
 def _recursively_perform_action(start_node, action, exclude_items=[_T_MENU, _T_COMMENT]):
@@ -7522,6 +7691,7 @@ _get_keyword = {
     "bool": _T_BOOL,
     "boolean": _T_BOOL,
     "choice": _T_CHOICE,
+    "float": _T_FLOAT,
     "comment": _T_COMMENT,
     "config": _T_CONFIG,
     "default": _T_DEFAULT,
@@ -7591,6 +7761,7 @@ BOOL = _T_BOOL
 STRING = _T_STRING
 INT = _T_INT
 HEX = _T_HEX
+FLOAT = _T_FLOAT
 
 TYPE_TO_STR = {
     UNKNOWN: "unknown",
@@ -7598,6 +7769,7 @@ TYPE_TO_STR = {
     STRING: "string",
     INT: "int",
     HEX: "hex",
+    FLOAT: "float",
 }
 
 # Used in comparisons. 0 means the base is inferred from the format of the
@@ -7606,6 +7778,7 @@ _TYPE_TO_BASE = {
     HEX: 16,
     INT: 10,
     STRING: 0,
+    FLOAT: 0,
     UNKNOWN: 0,
 }
 
@@ -7621,6 +7794,7 @@ _STRING_LEX = frozenset(
         _T_BOOL,
         _T_CHOICE,
         _T_COMMENT,
+        _T_FLOAT,
         _T_HEX,
         _T_INT,
         _T_MAINMENU,
@@ -7641,6 +7815,7 @@ _STRING_LEX = frozenset(
 _TYPE_TOKENS = frozenset(
     {
         _T_BOOL,
+        _T_FLOAT,
         _T_INT,
         _T_HEX,
         _T_STRING,
@@ -7682,6 +7857,14 @@ _INT_HEX = frozenset(
     {
         INT,
         HEX,
+    }
+)
+
+_INT_HEX_FLOAT = frozenset(
+    {
+        INT,
+        HEX,
+        FLOAT,
     }
 )
 

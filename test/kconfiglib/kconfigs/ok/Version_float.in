@@ -1,0 +1,29 @@
+mainmenu "Test if float version comparisons are parsed correctly"
+
+    config VER
+        float "Version"
+        default 5.3
+
+    config FOO_EQ
+        int "Foo equality"
+        default 1 if VER = 5.3
+        default 0
+
+    config FOO_GT
+        int "Foo greater-than"
+        default 1 if VER > 5.0
+        default 0
+
+    config FOO_LT
+        int "Foo less-than"
+        default 1 if VER < 6.0
+        default 0
+
+    config VERSION_2
+        float "Test that lexicographical comparison is not used for floats"
+        default 10.0
+
+    config FOO_GT_2
+        int "Foo greater-than for version 2"
+        default 1 if VERSION_2 > 5.3 # lexicographically, 10.0 < 5.3, but numerically, 10.0 > 5.3
+        default 0

@@ -7,7 +7,7 @@
 # Used internally by the ESP-IDF build system. But designed to be
 # non-IDF-specific.
 #
-# SPDX-FileCopyrightText: 2018-2025 Espressif Systems (Shanghai) CO LTD
+# SPDX-FileCopyrightText: 2018-2026 Espressif Systems (Shanghai) CO LTD
 # SPDX-License-Identifier: Apache-2.0
 import argparse
 import json
@@ -264,7 +264,10 @@ class DeprecatedOptions(object):
         def _opt_defined(opt):
             if opt.orig_type == kconfiglib.BOOL and opt.str_value != "n":
                 opt_defined = True
-            elif opt.orig_type in (kconfiglib.INT, kconfiglib.STRING, kconfiglib.HEX) and opt.str_value != "":
+            elif (
+                opt.orig_type in (kconfiglib.INT, kconfiglib.STRING, kconfiglib.HEX, kconfiglib.FLOAT)
+                and opt.str_value != ""
+            ):
                 opt_defined = True
             else:
                 opt_defined = False
@@ -474,18 +477,21 @@ def get_json_values(config: kconfiglib.Kconfig) -> dict:
             if not candidate_val and sym.type in (
                 kconfiglib.INT,
                 kconfiglib.HEX,
+                kconfiglib.FLOAT,
             ):
                 print(
                     f"warning: {sym.name} has no value set in the configuration."
                     " This can be caused e.g. by missing default value for the current chip version."
                 )
-                val: Optional[Union[str, bool, int]] = None
+                val: Optional[Union[str, bool, int, float]] = None
             elif sym.type == kconfiglib.BOOL:
                 val = candidate_val != "n"
             elif sym.type == kconfiglib.HEX:
                 val = int(candidate_val, 16)
             elif sym.type == kconfiglib.INT:
                 val = int(candidate_val)
+            elif sym.type == kconfiglib.FLOAT:
+                val = float(candidate_val)
             else:
                 val = candidate_val
             config_dict[sym.name] = val
@@ -557,11 +563,17 @@ def write_json_menus(_: DeprecatedOptions, config: kconfiglib.Kconfig, filename:
                 # should have one condition which is true
                 for min_range, max_range, cond_expr in sym.ranges:
                     if kconfiglib.expr_value(cond_expr):
-                        base = 16 if sym.type == kconfiglib.HEX else 10
-                        greatest_range = [
-                            int(min_range.str_value, base),
-                            int(max_range.str_value, base),
-                        ]
+                        if sym.type == kconfiglib.FLOAT:
+                            greatest_range = [
+                                float(min_range.str_value),
+                                float(max_range.str_value),
+                            ]
+                        else:
+                            base = 16 if sym.type == kconfiglib.HEX else 10
+                            greatest_range = [
+                                int(min_range.str_value, base),
+                                int(max_range.str_value, base),
+                            ]
                         break
 
             new_json = {

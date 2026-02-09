@@ -1,0 +1,6 @@
+mainmenu "Test kconfig float"
+
+    config FLOAT_VALUE
+        float "Float value"
+        range 0.5 2.5
+        default 1.0
