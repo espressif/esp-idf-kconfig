@@ -422,7 +422,8 @@ def write_cmake(deprecated_options: DeprecatedOptions, config: kconfiglib.Kconfi
 
         f.write(
             textwrap.dedent(
-                """#
+                """\
+                #
                 # Automatically generated file. DO NOT EDIT.
                 # Espressif IoT Development Framework (ESP-IDF) Configuration cmake include file
                 #
