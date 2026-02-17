@@ -229,7 +229,7 @@ def get_sym_default_value_dict(config: kconfiglib.Kconfig) -> Dict[str, bool]:
     Returns a dict with <config symbol>:<has active default value?> pairs.
     """
     defaults = dict()
-    for sym in config.syms.values():
+    for sym in config.unique_defined_syms:
         defaults[sym.name] = sym.has_active_default_value()
     return defaults
 
