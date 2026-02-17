@@ -6,9 +6,13 @@
 > { "TEST_CHILD_STR" : "Other value" }
 < { "values" : { "TEST_CHILD_STR" : "Other value" }, "defaults": {"TEST_CHILD_STR": false}}
 
+* Enable float config
+> { "TEST_FLOAT_ENABLE": true }
+< { "values" : { "TEST_FLOAT_ENABLE": true, "TEST_FLOAT": 0.5 }, "ranges": {"TEST_FLOAT": [0.5, 2.5]}, "visible": {"TEST_FLOAT": true}, "defaults": {"TEST_FLOAT_ENABLE": false}}
+
 * Clear TEST_BOOL, hiding child items
 > { "TEST_BOOL" : false }
-< { "values" : { "TEST_BOOL" : false },  "ranges": {"TEST_CONDITIONAL_RANGES": [0, 10], "TEST_CONDITIONAL_HEX_RANGES": [16, 175]}, "visible": { "TEST_CHILD_BOOL" : false, "TEST_CHILD_STR" : false }, "defaults": {}}
+< { "values" : { "TEST_BOOL" : false },  "ranges": {"TEST_CONDITIONAL_RANGES": [0, 10], "TEST_CONDITIONAL_HEX_RANGES": [16, 175], "TEST_FLOAT": [-1.0, 1.0]}, "visible": { "TEST_CHILD_BOOL" : false, "TEST_CHILD_STR" : false }, "defaults": {}}
 
 * Set TEST_CHILD_BOOL, invalid as parent is disabled
 > { "TEST_CHILD_BOOL" : false }
@@ -32,11 +36,11 @@
 
 * Disabling all items in a submenu causes all sub-items to have visible:false
 > { "SUBMENU_TRIGGER": false }
-< { "values" : { "SUBMENU_TRIGGER": false}, "visible": { "test-config-submenu-Kconfig-55" : false, "SUBMENU_ITEM_A": false, "SUBMENU_ITEM_B": false}, "defaults": {"SUBMENU_TRIGGER": false} }
+< { "values" : { "SUBMENU_TRIGGER": false}, "visible": { "test-config-submenu-Kconfig-66" : false, "SUBMENU_ITEM_A": false, "SUBMENU_ITEM_B": false}, "defaults": {"SUBMENU_TRIGGER": false} }
 
 * Re-enabling submenu causes that menu to be visible again, and refreshes sub-items
 > { "SUBMENU_TRIGGER": true }
-< { "values" : { "SUBMENU_TRIGGER": true}, "visible": {"test-config-submenu-Kconfig-55": true, "SUBMENU_ITEM_A": true, "SUBMENU_ITEM_B": true}, "values": {"SUBMENU_TRIGGER": true, "SUBMENU_ITEM_A": 77, "SUBMENU_ITEM_B": false }, "defaults": {} }
+< { "values" : { "SUBMENU_TRIGGER": true}, "visible": {"test-config-submenu-Kconfig-66": true, "SUBMENU_ITEM_A": true, "SUBMENU_ITEM_B": true}, "values": {"SUBMENU_TRIGGER": true, "SUBMENU_ITEM_A": 77, "SUBMENU_ITEM_B": false }, "defaults": {} }
 
 * Disabling submenuconfig item hides its children
 > { "SUBMENU_CONFIG": false }
@@ -54,28 +58,32 @@
 > { "TEST_CONDITIONAL_HEX_RANGES": "90" }
 < { "values" : { "TEST_CONDITIONAL_HEX_RANGES" : 144 }, "defaults": {} }
 
+* Set float value
+> { "TEST_FLOAT": 1.25 }
+< { "values": { "TEST_FLOAT": 1.25 }, "defaults": {"TEST_FLOAT": false} }
+
 * Can reset value to the original state
 >R ["TEST_BOOL"]
-< {"version": 3, "values": {"TEST_BOOL": false}, "ranges": {"TEST_CONDITIONAL_RANGES": [0, 10], "TEST_CONDITIONAL_HEX_RANGES": [16, 175]}, "visible": {"TEST_CHILD_BOOL": false, "TEST_CHILD_STR": false}, "defaults": {"TEST_BOOL": true}}
+< {"version": 3, "values": {"TEST_BOOL": false, "TEST_FLOAT": 0.5}, "ranges": {"TEST_CONDITIONAL_RANGES": [0, 10], "TEST_CONDITIONAL_HEX_RANGES": [16, 175], "TEST_FLOAT": [-1.0, 1.0]}, "visible": {"TEST_CHILD_BOOL": false, "TEST_CHILD_STR": false}, "defaults": {"TEST_BOOL": true}}
 
 * Set TEST_BOOL in order to reset afterwards
 > { "TEST_BOOL" : true }
-< {"version": 3, "values": {"TEST_BOOL": true, "TEST_CHILD_BOOL": true, "TEST_CHILD_STR": "New value"}, "ranges": {"TEST_CONDITIONAL_RANGES": [0, 100], "TEST_CONDITIONAL_HEX_RANGES": [0, 175]}, "visible": {"TEST_CHILD_BOOL": true, "TEST_CHILD_STR": true}, "defaults": {"TEST_BOOL": false}}
+< {"version": 3, "values": {"TEST_BOOL": true, "TEST_CHILD_BOOL": true, "TEST_CHILD_STR": "New value", "TEST_FLOAT" : 1.25}, "ranges": {"TEST_CONDITIONAL_RANGES": [0, 100], "TEST_CONDITIONAL_HEX_RANGES": [0, 175], "TEST_FLOAT": [0.5, 2.5]}, "visible": {"TEST_CHILD_BOOL": true, "TEST_CHILD_STR": true}, "defaults": {"TEST_BOOL": false}}
 
 * Can reset multiple values at once
 >R ["TEST_BOOL", "SOME_UNRELATED_THING"]
-< {"version": 3, "values": {"TEST_BOOL": false, "SOME_UNRELATED_THING": false}, "ranges": {"TEST_CONDITIONAL_RANGES": [0, 10], "TEST_CONDITIONAL_HEX_RANGES": [16, 175]}, "visible": {"TEST_CHILD_BOOL": false, "TEST_CHILD_STR": false}, "defaults": {"TEST_BOOL": true, "SOME_UNRELATED_THING": true}}
+< {"version": 3, "values": {"TEST_BOOL": false, "SOME_UNRELATED_THING": false, "TEST_FLOAT": 0.5}, "ranges": {"TEST_CONDITIONAL_RANGES": [0, 10], "TEST_CONDITIONAL_HEX_RANGES": [16, 175], "TEST_FLOAT": [-1.0, 1.0]}, "visible": {"TEST_CHILD_BOOL": false, "TEST_CHILD_STR": false}, "defaults": {"TEST_BOOL": true, "SOME_UNRELATED_THING": true}}
 
 * Can reset the whole configuration
 >R ["all"]
-< {"version": 3, "values": {"CHOICE_A": true, "CHOICE_B": false, "DEPENDS_ON_CHOICE": "Depends on A", "TEST_CONDITIONAL_HEX_RANGES": 160}, "ranges": {}, "visible": {}, "defaults": {"TEST_CHILD_STR": true, "CHOICE_A": true, "CHOICE_B": true, "DEPENDS_ON_CHOICE": true, "TEST_CONDITIONAL_HEX_RANGES": true, "SUBMENU_TRIGGER": true, "SUBMENU_CONFIG": true}}
+< {"version": 3, "values": {"CHOICE_A": true, "CHOICE_B": false, "DEPENDS_ON_CHOICE": "Depends on A", "TEST_CONDITIONAL_HEX_RANGES": 160, "TEST_FLOAT_ENABLE": false}, "ranges": {}, "visible": {"TEST_FLOAT": false}, "defaults": {"TEST_CHILD_STR": true, "CHOICE_A": true, "CHOICE_B": true, "DEPENDS_ON_CHOICE": true, "TEST_CONDITIONAL_HEX_RANGES": true, "SUBMENU_TRIGGER": true, "SUBMENU_CONFIG": true, "TEST_FLOAT": true, "TEST_FLOAT_ENABLE": true}}
 
 * Enable some configs to test menu reset
 > {"SUBMENU_TRIGGER": true, "SUBMENU_ITEM_A": 42, "SOME_UNRELATED_THING": true }
 < {"version": 3, "values": {"SOME_UNRELATED_THING": true, "SUBMENU_ITEM_A": 42}, "ranges": {}, "visible": {}, "defaults": {"SUBMENU_TRIGGER": false, "SUBMENU_ITEM_A": false, "SOME_UNRELATED_THING": false}}
 
 * Reset menu "Submenu" by its id (<path> is added in test_kconfserver.py)
->R ["test-config-submenu-Kconfig-55"]
+>R ["test-config-submenu-Kconfig-66"]
 < {"version": 3, "values": {"SUBMENU_ITEM_A": 77}, "ranges": {}, "visible": {}, "defaults": {"SUBMENU_ITEM_A": true}}
 
 * Enable some configs to test mixed reset
@@ -83,5 +91,5 @@
 <  {"version": 3, "values": {"TEST_BOOL": true, "TEST_CHILD_BOOL": true, "TEST_CHILD_STR": "OHAI!", "SUBMENU_ITEM_A": 42}, "ranges": {"TEST_CONDITIONAL_RANGES": [0, 100], "TEST_CONDITIONAL_HEX_RANGES": [0, 175]}, "visible": {"TEST_CHILD_BOOL": true, "TEST_CHILD_STR": true}, "defaults": {"TEST_BOOL": false, "SUBMENU_ITEM_A": false}}
 
 * Reset menu "Submenu" and TEST_BOOL in one request
->R ["test-config-submenu-Kconfig-55", "TEST_BOOL"]
+>R ["test-config-submenu-Kconfig-66", "TEST_BOOL"]
 < {"version": 3, "values": {"TEST_BOOL": false, "SUBMENU_ITEM_A": 77}, "ranges": {"TEST_CONDITIONAL_RANGES": [0, 10], "TEST_CONDITIONAL_HEX_RANGES": [16, 175]}, "visible": {"TEST_CHILD_BOOL": false, "TEST_CHILD_STR": false}, "defaults": {"TEST_BOOL": true, "SUBMENU_ITEM_A": true}}

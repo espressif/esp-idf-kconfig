@@ -12,7 +12,7 @@ Introduction and Basic Concepts
 The language is used to describe configuration options (configs and choices), organize them in a tree-like structure for e.g. GUI configurators and to define relations between the configs. Kconfig keywords can be divided into two groups: entries and options. Entries define basic structure of the configuration itself and individual configuration options. Options further specify the entries. All the possible keywords together with their syntax and semantics will be described further. For now, here is a list of all Kconfig keywords:
 
 - entries (described in `Entries`_): ``mainmenu``, ``menu``, ``config``, ``menuconfig``, ``choice``, ``source``, ``if``, ``comment`` and macros
-- options (described in `Options`_), ``<type>`` (one of ``bool``, ``int``, ``string``, ``hex``), ``prompt``, ``depends on``, ``default``, ``help``, ``range``, ``select``, ``imply``, ``option``, ``visible if``
+- options (described in `Options`_), ``<type>`` (one of ``bool``, ``int``, ``string``, ``hex``, ``float``), ``prompt``, ``depends on``, ``default``, ``help``, ``range``, ``select``, ``imply``, ``option``, ``visible if``
 
 Kconfig is indentation based language (like e.g. Python or YAML). In the context of `esp-idf-kconfig`, the indentation should always be 4 spaces. The language is case-sensitive, so ``config`` and ``CONFIG`` have different meaning. When quoting strings, it is highly recommended to use double quotes.
 
@@ -119,7 +119,7 @@ The ``config`` entry is used to define a configuration option and is probably th
 
 This entry can have the following options:
 
-- ``<type>``: mandatory, one of ``bool``, ``int``, ``string``, ``hex``
+- ``<type>``: mandatory, one of ``bool``, ``int``, ``string``, ``hex``, ``float``
 - ``prompt``: optional, at most one
 - ``default``: optional, multiple times
 - ``help``: optional, at most one
@@ -275,14 +275,14 @@ The Macro Entry
 
 Macro is a special type of entry allowing user to define a name for given value without creating a config option. Instead of other entries, it is not started by any keyword, but rather a direct assignment of a value to a name. Once defined, the macro can be used in other entries as a value (e.g. in ``default`` or ``range`` options). If used before its definition, the system will evaluate it as non-existent. There are two ways how to use the macro:
 
-* ``$(MACRO_NAME)``: The system will first try to expand it as a macro. If the macro is not defined, the system will try to expand it as an environment variable. If that fails, the value is empty and will cause a parse error. The value may be bool, string, int or hex.
+* ``$(MACRO_NAME)``: The system will first try to expand it as a macro. If the macro is not defined, the system will try to expand it as an environment variable. If that fails, the value is empty and will cause a parse error. The value may be bool, string, int, hex or float.
 * ``"$(MACRO_NAME)"``: Same as above, but the value will always be a string and empty expansion does not result in an error but empty string instead.
 
 .. note::
 
     Macros are only helpers when e.g. some value is used repeatedly in one ``Kconfig`` file. Unlike config options, macros are not written out to ``sdkconfig`` files in any way.
 
-The syntax is as follows. The ``symbol_name`` is a non-quoted capitalized string consisting of letters from the English alphabet, numbers, and underscores, ``value`` is an integer, hexadecimal number, string or a Kconfig boolean (y/n). In the context of simple ``NAME = value`` pairs, there is not difference between ``=`` and ``:=`` and the support of the latter is only for compatibility reasons.
+The syntax is as follows. The ``symbol_name`` is a non-quoted capitalized string consisting of letters from the English alphabet, numbers, and underscores, ``value`` is an integer, hexadecimal number, string, float or a Kconfig boolean (y/n). In the context of simple ``NAME = value`` pairs, there is not difference between ``=`` and ``:=`` and the support of the latter is only for compatibility reasons.
 
 .. code-block:: bnf
 
@@ -398,7 +398,7 @@ Options further specify the entries and are indented by one level. They will be 
 The ``<type>`` Option
 ^^^^^^^^^^^^^^^^^^^^^
 
-The type of the configuration option. The possible values are ``bool``, ``int``, ``string``, ``hex``. If used, only one type definition is allowed per entry. Optionally, it can be followed by the inline prompt and the ``if`` keyword and a boolean expression (see :ref:`prompt option section <prompt-option>` for more details). If the expression will be false, the option will not be visible in the GUI configurator.
+The type of the configuration option. The possible values are ``bool``, ``int``, ``string``, ``hex``, ``float``. If used, only one type definition is allowed per entry. Optionally, it can be followed by the inline prompt and the ``if`` keyword and a boolean expression (see :ref:`prompt option section <prompt-option>` for more details). If the expression will be false, the option will not be visible in the GUI configurator.
 
 This option can be used in the following entries:
 
@@ -414,7 +414,7 @@ Syntax is as follows, where inline prompt is an optional quoted string and can b
 
 .. code-block:: bnf
 
-    type ::= "bool" | "int" | "string" | "hex" [+ inline_prompt [+ "if" + condition]]
+    type ::= "bool" | "int" | "string" | "hex" | "float" [+ inline_prompt [+ "if" + condition]]
 
 Example:
 
@@ -562,7 +562,7 @@ The ``set`` and ``set default`` options allow you to define reverse dependency b
 
 The ``set`` option ignores direct dependencies and defaults of the target symbol, the ``set default`` option does not.
 
-Although ``TARGET`` symbol can be of ``int``, ``string``, or ``hex`` type, the ``SOURCE`` symbol must be of type ``bool``.
+Although ``TARGET`` symbol can be of ``int``, ``string``, ``hex`` or ``float`` type, the ``SOURCE`` symbol must be of type ``bool``.
 
 .. note::
 
@@ -582,7 +582,7 @@ Formal syntax is as follows:
 
     assignment ::= symbol + "=" +  ( value | symbol )
 
-Where ``symbol`` is a non-quoted capitalized string consisting of letters from the English alphabet, numbers, and underscores, ``value`` is a quoted string, integer or hexadecimal number. The ``if`` keyword and the boolean expression are optional.
+Where ``symbol`` is a non-quoted capitalized string consisting of letters from the English alphabet, numbers, and underscores, ``value`` is a quoted string, integer, hexadecimal number or float. The ``if`` keyword and the boolean expression are optional.
 
 Example for ``set`` and ``set default``:
 
@@ -674,8 +674,8 @@ The ``range`` option is used to define the range of the configuration option of 
 
 This option can be used in the following entries and is optional:
 
-- ``config``: only for ``int`` and ``hex`` types
-- ``menuconfig``: only for ``int`` and ``hex`` types
+- ``config``: only for ``int``, ``hex`` and ``float`` types
+- ``menuconfig``: only for ``int``, ``hex`` and ``float`` types
 
 .. code-block:: bnf
 

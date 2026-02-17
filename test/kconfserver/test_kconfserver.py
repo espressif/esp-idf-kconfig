@@ -121,7 +121,7 @@ def test_protocol_versions(server, protocol_version):
         resp = send_request(p, {"version": protocol_version, f"{command}": send})
         assert resp.get("version") == protocol_version
         for key, val in expected.items():
-            assert resp[key] == val, f"Mismatch in {key}: expected {val}, got {resp[key]}"
+            assert resp[key] == val, f"Mismatch in {key} ({desc}): expected {val}, got {resp[key]}"
 
 
 @pytest.mark.parametrize(

@@ -58,6 +58,7 @@ class TestValidDefaultValue(TestDefaultsBase):
             "INT_CONFIG": "1",
             "HEX_CONFIG": "0x42",
             "STRING_CONFIG": "string",
+            "FLOAT_CONFIG": "1.5",
         }
 
         for name in names_and_valid_values:
@@ -68,6 +69,7 @@ class TestValidDefaultValue(TestDefaultsBase):
         stderr_lines = (
             "Failed to set default value for HEX_CONFIG from sdkconfig",
             "Failed to set default value for INT_CONFIG from sdkconfig",
+            "Failed to set default value for FLOAT_CONFIG from sdkconfig",
             "'0x42' is not a valid value for the bool symbol BOOL_CONFIG",
             "malformed string literal in assignment to",
         )  # STRING_CONFIG

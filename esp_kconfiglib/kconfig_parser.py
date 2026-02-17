@@ -24,6 +24,7 @@ from .core import AND
 from .core import BOOL
 from .core import COMMENT
 from .core import EQUAL
+from .core import FLOAT
 from .core import GREATER
 from .core import GREATER_EQUAL
 from .core import HEX
@@ -42,6 +43,7 @@ from .core import KconfigError
 from .core import MenuNode
 from .core import Symbol
 from .core import Variable
+from .core import is_float
 
 ParserElement.enable_packrat(cache_size_limit=None)  # Speeds up parsing by caching intermediate results
 
@@ -581,25 +583,24 @@ class Parser:
         Converts a string or a list of operands and operators to the corresponding Kconfig symbols and operators.
         """
 
-        def is_dec_hex(s: str) -> bool:
+        def is_numeric(s: str) -> bool:
+            """Check if s is a numeric literal (int, hex, or float)."""
             if not s:
                 return False
             if s.isnumeric():
                 return True
             if s[0] == "-":
                 s = s[1:]
-                for c in s:
-                    if not c.isdigit():
-                        return False
-                return True
-            elif s[0:2] in ["0x", "0X"]:
+                if not s:
+                    return False
+            if s[0:2] in ["0x", "0X"]:
                 s = s[2:]
                 for c in s:
                     if c not in "0123456789abcdefABCDEF":
                         return False
                 return True
-            else:
-                return False
+            # Check for float (including scientific notation)
+            return is_float(s)
 
         operators = ("&&", "||", "!", "=", "!=", "<", "<=", ">", ">=")
         if isinstance(expr, str):
@@ -643,7 +644,7 @@ class Parser:
                 elif expr in ("y", "'y'", '"y"'):
                     return self.kconfig.y
                 else:
-                    if (expr.startswith(("'", '"')) or not expr.isupper()) and not is_dec_hex(expr):
+                    if (expr.startswith(("'", '"')) or not expr.isupper()) and not is_numeric(expr):
                         sym = self.kconfig._lookup_const_sym(expr[1:-1] if expr.startswith(("'", '"')) else expr)
                     else:
                         sym = self.kconfig._lookup_sym(expr)
@@ -686,4 +687,5 @@ class Parser:
         "string": STRING,
         "int": INT,
         "hex": HEX,
+        "float": FLOAT,
     }

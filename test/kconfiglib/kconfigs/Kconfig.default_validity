@@ -17,3 +17,7 @@ mainmenu "Test validity of injected value"
     config HEX_CONFIG
         hex "Hex config"
         default 0x42
+
+    config FLOAT_CONFIG
+        float "Float config"
+        default 1.5

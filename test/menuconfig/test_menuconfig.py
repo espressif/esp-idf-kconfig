@@ -365,3 +365,36 @@ class TestSetRiskyConfig:
                 f"the value of symbol {sym_name}, but it was"
                 f"{' not' if not monkeypatch_menuconfig['key_dialog_called']() else ''}."
             )
+
+
+@pytest.mark.parametrize("version", ["1", "2"], indirect=True)
+class TestFloatInput(MenuconfigTestBase):
+    @pytest.fixture
+    def monkeypatch_float_input(self):
+        import esp_menuconfig.core
+
+        original_input_dialog = esp_menuconfig.core._input_dialog
+        original_update_menu = esp_menuconfig.core._update_menu
+
+        def mock_input_dialog(title, initial_text, info_text=None):
+            return "1.25"
+
+        esp_menuconfig.core._input_dialog = mock_input_dialog
+        esp_menuconfig.core._update_menu = lambda: None
+
+        yield
+
+        esp_menuconfig.core._input_dialog = original_input_dialog
+        esp_menuconfig.core._update_menu = original_update_menu
+
+    def test_float_value_change(self, monkeypatch_float_input: Dict[str, Any]) -> None:
+        kconfig = Kconfig(os.path.join(KCONFIGS_PATH, "Kconfig.float"))
+        menuconfig(kconfig, headless=True)
+
+        sym = kconfig.syms["FLOAT_VALUE"]
+        assert sym.str_value == "1.0"
+        assert _change_node(sym.nodes[0]) is True
+        assert sym.str_value == "1.25"
+
+        sdkconfig = kconfig._config_contents(None)
+        assert "CONFIG_FLOAT_VALUE=1.25" in sdkconfig

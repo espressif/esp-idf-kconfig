@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2024-2025 Espressif Systems (Shanghai) CO LTD
+# SPDX-FileCopyrightText: 2024-2026 Espressif Systems (Shanghai) CO LTD
 # SPDX-License-Identifier: Apache-2.0
 import os
 import re
@@ -13,6 +13,32 @@ import pytest
 from esp_kconfiglib import DefaultsPolicy
 
 KCONFIG_PARSER_VERSIONS = ["1", "2"]
+
+FLOAT_SNIPPET = textwrap.dedent(
+    """
+    mainmenu "Test"
+
+        config FLOAT_VAL
+            float "Float value"
+            range 0.5 2.5
+            default 1.25
+    """
+)
+
+FLOAT_SNIPPET_WITH_TARGET = textwrap.dedent(
+    """
+    mainmenu "Test"
+
+        config IDF_TARGET
+            string "IDF target"
+            default "esp32"
+
+        config FLOAT_VAL
+            float "Float value"
+            range 0.5 2.5
+            default 1.25
+    """
+)
 
 
 # Define argument container for CLI invocation
@@ -128,6 +154,9 @@ class TestCmake(KconfgenBaseTestCase):
         runner(self.args, TestCmake.HEXPREFIX, 'set(CONFIG_HEX_NOPREFIX "0x33")')
         runner(self.args, TestCmake.HEXPREFIX, 'set(CONFIG_HEX_PREFIX "0x77")')
 
+    def test_float_value(self, runner):
+        runner(self.args, FLOAT_SNIPPET, 'set(CONFIG_FLOAT_VAL "1.25")')
+
 
 @pytest.mark.parametrize("set_parser_version", KCONFIG_PARSER_VERSIONS, indirect=True)
 class TestJson(KconfgenBaseTestCase):
@@ -151,6 +180,9 @@ class TestJson(KconfgenBaseTestCase):
         snippet = TestCmake.HEXPREFIX
         runner(self.args, snippet, f'"HEX_NOPREFIX": {0x33}')
         runner(self.args, snippet, f'"HEX_PREFIX": {0x77}')
+
+    def test_float_value(self, runner):
+        runner(self.args, FLOAT_SNIPPET, r'"FLOAT_VAL":\s+1\.25', test="regex")
 
 
 @pytest.mark.parametrize("set_parser_version", KCONFIG_PARSER_VERSIONS, indirect=True)
@@ -186,6 +218,9 @@ class TestJsonMenus(KconfgenBaseTestCase):
         """
         runner(self.args, in_text, r'"range":\s+\[\s+16,\s+175\s+\]', test="regex")
 
+    def test_float_ranges(self, runner):
+        runner(self.args, FLOAT_SNIPPET, r'"range":\s+\[\s+0\.5,\s+2\.5\s+\]', test="regex")
+
 
 @pytest.mark.parametrize("set_parser_version", KCONFIG_PARSER_VERSIONS, indirect=True)
 class TestConfig(KconfgenBaseTestCase):
@@ -220,6 +255,21 @@ class TestConfig(KconfgenBaseTestCase):
 
     def test_discard_unknown_option(self, runner):
         runner(self.args, TestConfig.input, "CONFIG_UNKNOWN", test="not in")
+
+
+@pytest.mark.parametrize("set_parser_version", KCONFIG_PARSER_VERSIONS, indirect=True)
+class TestConfigFloat(KconfgenBaseTestCase):
+    input = FLOAT_SNIPPET
+
+    @pytest.fixture(autouse=True)
+    def init(self, tmp_path):
+        cfg = os.path.join(str(tmp_path), "config")
+        with open(cfg, "w") as f:
+            f.write("CONFIG_FLOAT_VAL=1.75\n")
+        self.args = Args(output="config", config=cfg)
+
+    def test_float_value(self, runner):
+        runner(self.args, TestConfigFloat.input, "CONFIG_FLOAT_VAL=1.75")
 
 
 @pytest.mark.parametrize("set_parser_version", KCONFIG_PARSER_VERSIONS, indirect=True)
@@ -344,6 +394,9 @@ class TestHeader(KconfgenBaseTestCase):
         runner(self.args, TestCmake.HEXPREFIX, "#define CONFIG_HEX_NOPREFIX 0x33")
         runner(self.args, TestCmake.HEXPREFIX, "#define CONFIG_HEX_PREFIX 0x77")
 
+    def test_float_value(self, runner):
+        runner(self.args, FLOAT_SNIPPET, "#define CONFIG_FLOAT_VAL 1.25")
+
 
 @pytest.mark.parametrize("set_parser_version", KCONFIG_PARSER_VERSIONS, indirect=True)
 class TestDocs(KconfgenBaseTestCase):
@@ -421,6 +474,9 @@ class TestDocs(KconfgenBaseTestCase):
         ).strip()
         runner(self.args, in_text, expected)
 
+    def test_float_range(self, runner):
+        runner(self.args, FLOAT_SNIPPET, r"Range:\n\s+- from 0.5 to 2.5", test="regex")
+
 
 @pytest.mark.parametrize("set_parser_version", KCONFIG_PARSER_VERSIONS, indirect=True)
 class TestDefaults(KconfgenBaseTestCase):
@@ -481,6 +537,28 @@ class TestDefaults(KconfgenBaseTestCase):
             line for line in with_labels[3:] if not (line.startswith("#") and line != "# default:\n") and line != "\n"
         ]
         assert stripped == without
+
+
+@pytest.mark.parametrize("set_parser_version", KCONFIG_PARSER_VERSIONS, indirect=True)
+class TestSaveDefconfigFloat(KconfgenBaseTestCase):
+    input = FLOAT_SNIPPET_WITH_TARGET
+
+    @pytest.fixture(autouse=True)
+    def init(self, tmp_path):
+        cfg = os.path.join(str(tmp_path), "config")
+        with open(cfg, "w") as f:
+            f.write(
+                textwrap.dedent(
+                    """
+                    CONFIG_IDF_TARGET="esp32"
+                    CONFIG_FLOAT_VAL=1.75
+                    """
+                )
+            )
+        self.args = Args(output="savedefconfig", config=cfg)
+
+    def test_save_float(self, runner):
+        runner(self.args, TestSaveDefconfigFloat.input, "CONFIG_FLOAT_VAL=1.75")
 
 
 @pytest.mark.parametrize("set_parser_version", KCONFIG_PARSER_VERSIONS, indirect=True)

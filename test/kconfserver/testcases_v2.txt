@@ -32,11 +32,11 @@
 
 * Disabling all items in a submenu causes all sub-items to have visible:False
 > { "SUBMENU_TRIGGER": false }
-< { "values" : { "SUBMENU_TRIGGER": false}, "visible": { "test-config-submenu-Kconfig-55" : false, "SUBMENU_ITEM_A": false, "SUBMENU_ITEM_B": false} }
+< { "values" : { "SUBMENU_TRIGGER": false}, "visible": { "test-config-submenu-Kconfig-66" : false, "SUBMENU_ITEM_A": false, "SUBMENU_ITEM_B": false} }
 
 * Re-enabling submenu causes that menu to be visible again, and refreshes sub-items
 > { "SUBMENU_TRIGGER": true }
-< { "values" : { "SUBMENU_TRIGGER": true}, "visible": {"test-config-submenu-Kconfig-55": true, "SUBMENU_ITEM_A": true, "SUBMENU_ITEM_B": true}, "values": {"SUBMENU_TRIGGER": true, "SUBMENU_ITEM_A": 77, "SUBMENU_ITEM_B": false } }
+< { "values" : { "SUBMENU_TRIGGER": true}, "visible": {"test-config-submenu-Kconfig-66": true, "SUBMENU_ITEM_A": true, "SUBMENU_ITEM_B": true}, "values": {"SUBMENU_TRIGGER": true, "SUBMENU_ITEM_A": 77, "SUBMENU_ITEM_B": false } }
 
 * Disabling submenuconfig item hides its children
 > { "SUBMENU_CONFIG": false }

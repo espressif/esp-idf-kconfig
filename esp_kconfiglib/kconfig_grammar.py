@@ -139,6 +139,8 @@ symbol_regex = r"""(?<!\S)
                     (y|n|\"y\"|\"n\")(?!\S)  # y, n, "y", "n" symbols
                     |0[x|X][\da-fA-F]+  # hexnums: 0x1234, 0X1234ABCD
                     |\d+(\.\d+){1,2} # versions: 4.4, 5.3.1 (versions without dots are handled by the "numbers" below)
+                    |-?\d+\.\d+(?:[eE][+-]?\d+)?  # floats: 1.5, -3.14, 1.5e-6, -2.5E10
+                    |-?\d+[eE][+-]?\d+  # floats with exponent but no decimal: 1e-6, -2E10
                     |-?\d+   # numbers: 1234, -1234
                     |[A-Z\d_]+  # variables: FOO, BAR_BAR, ENABLE_ESP64
                     |'[^']*'  # strings: 'here is a đĐđĐ[]tring'
@@ -291,7 +293,7 @@ class KconfigOptionBlock(KconfigBlock):
             # Parsing the option block
             ############################################
             # parse type
-            if tokens[0] in ("bool", "int", "string", "hex"):
+            if tokens[0] in ("bool", "int", "string", "hex", "float"):
                 option_dict["type"] = tokens[0]
 
                 if len(tokens) > 1:  # inline prompt
