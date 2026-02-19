@@ -60,7 +60,7 @@ class Args:
         return flags
 
 
-# Fixture to set parser policy for each test (uses os.environ to avoid scope mismatch)
+# Fixture to set parser version for each test (uses os.environ to avoid scope mismatch)
 @pytest.fixture(autouse=True)
 def set_parser_version(request):
     version = request.param
@@ -248,7 +248,8 @@ class TestConfig(KconfgenBaseTestCase):
                     """
                 )
             )
-        self.args = Args(output="config", config=cfg)
+        # use sdkconfig default values policy explicitly by default, tests can override it
+        self.args = Args(output="config", config=cfg, env="KCONFIG_DEFAULTS_POLICY=sdkconfig")
 
     def test_keep_saved_option(self, runner):
         runner(self.args, TestConfig.input, "CONFIG_TEST=y")
