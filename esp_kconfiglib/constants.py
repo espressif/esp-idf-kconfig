@@ -28,3 +28,6 @@ DEP_OP_END = "# End of deprecated options"
 
 # This pragma marks config options that have default value in sdkconfig file:
 SDKCONFIG_DEFAULT_PRAGMA = "# default:"
+
+# Suffix for header_tree dependency files (from esp-idf-configdep); avoids ambiguity with .config
+HEADER_TREE_SUFFIX = ".cdep"

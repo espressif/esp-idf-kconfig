@@ -27,6 +27,7 @@ from typing import Union
 
 from esp_kconfiglib.constants import DEP_OP_BEGIN
 from esp_kconfiglib.constants import DEP_OP_END
+from esp_kconfiglib.constants import HEADER_TREE_SUFFIX
 from esp_kconfiglib.constants import SDKCONFIG_DEFAULT_PRAGMA
 from esp_kconfiglib.constants import DefaultsPolicy
 from esp_kconfiglib.report import PRAGMA_PREFIX
@@ -975,7 +976,6 @@ class Kconfig(object):
         filename/linenr:
             The current parsing location, for use in Python preprocessor functions.
             See the module docstring.
-        TODO: May be removed during removing preprocessor functions
         """
         self.filename = filename
         self.linenr = 0
@@ -1620,6 +1620,26 @@ class Kconfig(object):
         elif self.warn_assign_override:
             self._warn(msg, filename, linenr)
 
+    def _header_string(self, sym: "Symbol") -> str:
+        """
+        Helper function, returns C-like #define string for the given symbol.
+        """
+        # NOTE: _write_to_conf is determined when the value is calculated.
+        #       TLDR, you need to get sym.str_value before checking _write_to_conf
+        val = sym.str_value
+        if not sym._write_to_conf:
+            return ""
+        if sym.orig_type == BOOL and val == "y":
+            return f"#define {self.config_prefix}{sym.name} 1\n"
+        elif sym.orig_type == STRING:
+            return f'#define {self.config_prefix}{sym.name} "{escape(val)}"\n'
+        elif sym.orig_type in _INT_HEX_FLOAT:
+            if sym.orig_type == HEX and not val.startswith(("0x", "0X")):
+                val = "0x" + val
+            return f"#define {self.config_prefix}{sym.name} {val}\n"
+        else:
+            return ""
+
     def write_autoconf(self, filename=None, header=None):
         r"""
         Writes out symbol values as a C header file, matching the format used
@@ -1673,26 +1693,9 @@ class Kconfig(object):
         add = chunks.append
 
         for sym in self.unique_defined_syms:
-            # _write_to_conf is determined when the value is calculated. This
-            # is a hidden function call due to property magic.
-            #
-            # Note: In client code, you can check if sym.config_string is empty
-            # instead, to avoid accessing the internal _write_to_conf variable
-            # (though it's likely to keep working).
-            val = sym.str_value
-            if not sym._write_to_conf:
-                continue
-
-            if sym.orig_type == BOOL and val == "y":
-                add(f"#define {self.config_prefix}{sym.name} 1\n")
-
-            elif sym.orig_type == STRING:
-                add(f'#define {self.config_prefix}{sym.name} "{escape(val)}"\n')
-
-            elif sym.orig_type in _INT_HEX_FLOAT:
-                if sym.orig_type == HEX and not val.startswith(("0x", "0X")):
-                    val = "0x" + val
-                add(f"#define {self.config_prefix}{sym.name} {val}\n")
+            header_string = self._header_string(sym)
+            if header_string:
+                add(header_string)
 
         return "".join(chunks)
 
@@ -1973,6 +1976,174 @@ class Kconfig(object):
                 node.item._visited = True
 
             yield node
+
+    def sync_deps(self, path):
+        """
+        Creates or updates a directory structure that can be used to avoid
+        doing a full rebuild whenever the configuration is changed, mirroring
+        include/config/ in the kernel.
+
+        This function is intended to be called during each build, before
+        compiling source files that depend on configuration symbols.
+
+        See the Kconfig.__init__() docstring for raised exceptions
+        (OSError/IOError). KconfigError is never raised here.
+
+        path:
+          Path to directory
+
+        sync_deps(path) does the following:
+
+          1. If the directory <path> does not exist, it is created.
+
+          2. If <path>/auto.conf exists, old symbol values are loaded from it,
+             which are then compared against the current symbol values. If a
+             symbol has changed value (would generate different output in
+             autoconf.h compared to before), the change is signaled by
+             touch'ing a file corresponding to the symbol.
+
+             The first time sync_deps() is run on a directory, <path>/auto.conf
+             won't exist, and no old symbol values will be available. This
+             logically has the same effect as updating the entire
+             configuration.
+
+             The path to a symbol's file is calculated from the symbol's name
+             by replacing all '_' with '/' and appending the header_tree suffix
+             (.cdep, based on the esp-idf-configdep tool). For example, FEATURE_ENABLE
+             gets <path>/feature/enable.cdep, and FOO gets <path>/foo.cdep.
+
+          3. A new auto.conf with the current symbol values is written, to keep
+             track of them for the next build.
+
+             If auto.conf exists and its contents is identical to what would
+             get written out, it is left untouched. This avoids updating file
+             metadata like the modification time and possibly triggering
+             redundant work in build tools.
+
+
+        The last piece of the puzzle is knowing what symbols each source file
+        depends on. Knowing that, dependencies can be added from source files
+        to the files corresponding to the symbols they depend on. The source
+        file will then get recompiled (only) when the symbol value changes
+        (provided sync_deps() is run first during each build).
+
+        The tool in the ESP-IDF framework that extracts symbol dependencies
+        from source files is esp-idf-configdep: https://github.com/espressif/esp-idf-configdep.
+
+        In case you need a different scheme for your project, the sync_deps()
+        implementation can be used as a template.
+        """
+        if not exists(path):
+            os.mkdir(path, 0o755)
+
+        # Load old values from auto.conf, if any
+        self._load_old_vals(path)
+
+        for sym in self.unique_defined_syms:
+            # _write_to_conf is determined when the value is calculated. This
+            # is a hidden function call due to property magic.
+            #
+            # Note: In client code, you can check if sym.config_string is empty
+            # instead, to avoid accessing the internal _write_to_conf variable
+            # (though it's likely to keep working).
+            val = sym.str_value
+
+            # n tristate values do not get written to auto.conf and autoconf.h,
+            # making a missing symbol logically equivalent to n
+
+            if sym._write_to_conf:
+                if sym._old_val is None and sym.orig_type is BOOL and val == "n":
+                    # No old value (the symbol was missing or n), new value n.
+                    # No change.
+                    continue
+
+                if val == sym._old_val:
+                    # New value matches old. No change.
+                    continue
+
+            elif sym._old_val is None:
+                # The symbol wouldn't appear in autoconf.h (because
+                # _write_to_conf is false), and it wouldn't have appeared in
+                # autoconf.h previously either (because it didn't appear in
+                # auto.conf). No change.
+                continue
+
+            # 'sym' has a new value. Flag it.
+            _touch_dep_file(path, sym.name)
+
+        # Remember the current values as the "new old" values.
+        #
+        # This call could go anywhere after the call to _load_old_vals(), but
+        # putting it last means sync_deps() can be safely rerun if it fails
+        # before this point.
+        self._write_old_vals(path)
+
+    def _load_old_vals(self, path):
+        # Loads old symbol values from auto.conf into a dedicated
+        # Symbol._old_val field. Mirrors load_config().
+        #
+        # The extra field could be avoided with some trickery involving dumping
+        # symbol values and restoring them later, but this is simpler and
+        # faster. The C tools also use a dedicated field for this purpose.
+
+        for sym in self.unique_defined_syms:
+            sym._old_val = None
+
+        try:
+            auto_conf = open(join(path, "auto.conf"), "r", encoding=self._encoding)
+        except EnvironmentError as e:
+            if e.errno == errno.ENOENT:
+                # No old values
+                return
+            raise
+
+        with auto_conf as f:
+            for line in f:
+                match = self._set_match(line)
+                if not match:
+                    # We only expect CONFIG_FOO=... (and possibly a header
+                    # comment) in auto.conf
+                    continue
+
+                name, val = match.groups()
+                if name in self.syms:
+                    sym = self.syms[name]
+
+                    if sym.orig_type is STRING:
+                        match = _conf_string_match(val)
+                        if not match:
+                            continue
+                        val = unescape(match.group(1))
+
+                    sym._old_val = val
+                else:
+                    # Flag that the symbol no longer exists, in
+                    # case something still depends on it
+                    _touch_dep_file(path, name)
+
+    def _write_old_vals(self, path):
+        # Helper for writing auto.conf. Basically just a simplified
+        # write_config() that doesn't write any comments (including
+        # '# CONFIG_FOO is not set' comments). The format matches the C
+        # implementation, though the ordering is arbitrary there (depends on
+        # the hash table implementation).
+        #
+        # A separate helper function is neater than complicating write_config()
+        # by passing a flag to it, plus we only need to look at symbols here.
+
+        self._write_if_changed(os.path.join(path, "auto.conf"), self._old_vals_contents())
+
+    def _old_vals_contents(self):
+        # _write_old_vals() helper. Returns the contents to write as a string.
+
+        # Temporary list instead of generator makes this a bit faster
+        return "".join(
+            [
+                sym.config_string
+                for sym in self.unique_defined_syms
+                if not (sym.orig_type is BOOL and not sym.bool_value)
+            ]
+        )
 
     def eval_string(self, s):
         """
@@ -3926,6 +4097,7 @@ class Symbol:
         "_user_source",
         "_default_value_injected",
         "_defaults_resolved",
+        "_old_val",
         "choice",
         "defaults",
         "direct_dep",
@@ -7025,7 +7197,11 @@ def standard_kconfig(description=None):
     # there would be a dedicated option for this.
     try:
         parser_version = int(os.environ.get("KCONFIG_PARSER_VERSION", "1"))
-        kconfig = Kconfig(parsed_args.kconfig, suppress_traceback=True, parser_version=parser_version)
+        kconfig = Kconfig(
+            parsed_args.kconfig,
+            suppress_traceback=True,
+            parser_version=parser_version,
+        )
     except (EnvironmentError, KconfigError) as e:
         cmd = sys.argv[0]  # Empty string if missing
         if cmd:
@@ -7185,6 +7361,20 @@ def _sym_to_num(sym: Union[Symbol, Choice]) -> Union[int, float]:
             return int(sym.str_value, _TYPE_TO_BASE[sym.orig_type])
         except ValueError:
             return float(sym.str_value)
+
+
+def _touch_dep_file(path, sym_name):
+    # If sym_name is FEATURE_ENABLE, touches path/feature/enable.cdep.
+    # Uses HEADER_TREE_SUFFIX (.cdep based on the esp-idf-configdep tool). See the sync_deps()
+    # docstring.
+
+    sym_path = os.path.join(path, sym_name.lower().replace("_", os.sep) + HEADER_TREE_SUFFIX)
+    sym_path_dir = dirname(sym_path)
+    if not exists(sym_path_dir):
+        os.makedirs(sym_path_dir, 0o755)
+
+    # A kind of truncating touch, mirroring the C tools
+    os.close(os.open(sym_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o644))
 
 
 def _save_old(path):

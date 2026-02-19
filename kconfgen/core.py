@@ -631,6 +631,14 @@ def write_report(_: DeprecatedOptions, config: kconfiglib.Kconfig, filename: str
     config.report.output_json(filename)
 
 
+def write_cdep_tree(_: DeprecatedOptions, config: kconfiglib.Kconfig, path: str) -> None:
+    """
+    Writes cdep_tree file structure: e.g. path/feature/enable.cdep for FEATURE_ENABLE.
+    Used by the tools like esp-idf-configdep to optimize rebuilds.
+    """
+    config.sync_deps(path)
+
+
 def update_if_changed(source: str, destination: str, encoding: str) -> None:
     with open(source, "r", encoding=encoding) as f:
         source_contents = f.read()
@@ -654,6 +662,7 @@ OUTPUT_FORMATS = {
     "json_menus": write_json_menus,
     "savedefconfig": write_min_config,
     "report": write_report,
+    "cdep_tree": write_cdep_tree,
 }
 
 
@@ -720,9 +729,9 @@ def main():
     )
     args = parser.parse_args()
 
-    for fmt, filename in args.output:
+    for fmt, _ in args.output:
         if fmt not in OUTPUT_FORMATS.keys():
-            print("Format '%s' not recognised. Known formats: %s" % (fmt, OUTPUT_FORMATS.keys()))
+            print(f"Format '{fmt}' not recognized. Known formats: {list(OUTPUT_FORMATS.keys())}")
             sys.exit(1)
 
     try:
@@ -832,15 +841,22 @@ def main():
         deprecated_options = DeprecatedOptions("", path_rename_files=[])
 
     # Output the files specified in the arguments
-    for output_type, filename in args.output:
+    for output_type, filename_or_path in args.output:
+        # file structure will be created/updated, cannot be done as the rest of the output options
+        if output_type == "cdep_tree":
+            write_cdep_tree(deprecated_options, config, filename_or_path)
+            continue
         with tempfile.NamedTemporaryFile(
-            prefix="kconfgen_tmp", mode="w+", delete=False, encoding=kconfig_encoding
+            prefix="kconfgen_tmp",
+            mode="w+",
+            delete=False,
+            encoding=kconfig_encoding,
         ) as f:
             temp_file = f.name
         try:
             output_function = OUTPUT_FORMATS[output_type]
             output_function(deprecated_options, config, temp_file)
-            update_if_changed(temp_file, filename, encoding=kconfig_encoding)
+            update_if_changed(temp_file, filename_or_path, encoding=kconfig_encoding)
         finally:
             try:
                 os.remove(temp_file)
