@@ -1107,7 +1107,14 @@ class Kconfig(object):
         return None
 
     def load_config(
-        self, filename=None, replace=True, verbose=None, print_report=False, load_deprecated=False, **kwargs
+        self,
+        filename=None,
+        replace=True,
+        verbose=None,
+        print_report=False,
+        load_deprecated=False,
+        is_main_sdkconfig=True,
+        **kwargs,
     ):
         """
         Loads symbol values from a file in the .config format. Equivalent to
@@ -1174,6 +1181,13 @@ class Kconfig(object):
           Important NOTE: Deprecated symbols are not a part of the menu tree (they do not appear in menuconfig),
           but are still used during e.g. expression evaluation.
 
+        is_main_sdkconfig (default: True):
+          When True, the main sdkconfig file is loaded: symbol._sdkconfig_value and _loaded_as_default
+          are updated.
+          When False, symbol values are loaded but _sdkconfig_value and _loaded_as_default are left
+          unchanged, so e.g. "default in main, user-set in alternate, same value" still triggers
+          need_save. Pass False when loading an alternate sdkconfig file (e.g. menuconfig Load [O]).
+
         Returns a string with a message saying which file got loaded (or
         possibly that no file got loaded, when 'filename' is None). This is
         meant to reduce boilerplate in tools, which can do e.g.
@@ -1203,7 +1217,7 @@ class Kconfig(object):
 
         # This stub only exists to make sure _warn_assign_no_prompt gets re-enabled
         try:
-            self._load_config(filename, replace, load_deprecated)
+            self._load_config(filename, replace, load_deprecated, is_main_sdkconfig)
             if print_report:
                 self.report.print_report()
         except UnicodeDecodeError as e:
@@ -1227,7 +1241,7 @@ class Kconfig(object):
             sym_or_choice._user_source = filename
             return True
 
-    def _load_config(self, filename, replace, load_deprecated):
+    def _load_config(self, filename, replace, load_deprecated, is_main_sdkconfig=True):
         def _create_new_deprecated_symbol(name, val):
             """
             When load_deprecated=True, Kconfig also loads deprecated symbols from the sdkconfig file.
@@ -1478,8 +1492,10 @@ class Kconfig(object):
                 if not value_is_default:
                     if self.set_value_and_source(sym, val, filename):
                         # sdkconfig value is set only if set_value succeeded (e.g. no malformed value in sdkconfig)
-                        sym._sdkconfig_value = val
-                        sym._loaded_as_default = False
+                        # on top of that, only main sdkconfig updates _sdkconfig_value and _loaded_as_default
+                        if is_main_sdkconfig:
+                            sym._sdkconfig_value = val
+                            sym._loaded_as_default = False
                         sym.present_in_current_sdkconfig = True
                         if all(node.prompt is None for node in sym.nodes):
                             # User-set value assignment to promptless symbol
@@ -1487,8 +1503,9 @@ class Kconfig(object):
                 # If value is supposed to be a default and symbol has a prompt, save it for later
                 elif any(node.prompt is not None for node in sym.nodes):
                     sym.present_in_current_sdkconfig = True
-                    sym._sdkconfig_value = val
-                    sym._loaded_as_default = True
+                    if is_main_sdkconfig:
+                        sym._sdkconfig_value = val
+                        sym._loaded_as_default = True
                     if not sym.choice:
                         symbols_with_default_values[sym] = val
                     else:
@@ -1497,10 +1514,11 @@ class Kconfig(object):
                     # These assignments are ignored as per kconfig specification
                     # Reason: These symbols are in sdkconfig only as a way how to expose them
                     #         for other tools to use them and are supposed to change.
-                    # _sdkconfig_value and _loaded_as_default still set to prevent unnecessary saves in menuconfig
-                    sym._sdkconfig_value = val
-                    sym._loaded_as_default = True
-                    if sym.str_value != sym._sdkconfig_value:
+                    # _sdkconfig_value and _loaded_as_default only when loading main sdkconfig
+                    if is_main_sdkconfig:
+                        sym._sdkconfig_value = val
+                        sym._loaded_as_default = True
+                    if is_main_sdkconfig and sym.str_value != sym._sdkconfig_value:
                         self.report.add_record(DefaultValuesArea, sym_or_choice=sym, promptless=True)
 
                 value_is_default = False
@@ -1535,8 +1553,9 @@ class Kconfig(object):
 
                 for sym, val in choices_with_user_set_value[choice]:
                     self.set_value_and_source(sym, val, filename)
-                    sym._sdkconfig_value = val
-                    sym._loaded_as_default = False
+                    if is_main_sdkconfig:
+                        sym._sdkconfig_value = val
+                        sym._loaded_as_default = False
                     sym.present_in_current_sdkconfig = True
 
             for sym in symbols_with_default_values:

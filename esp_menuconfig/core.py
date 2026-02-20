@@ -1974,7 +1974,6 @@ def _load_dialog():
         filename = os.path.expanduser(filename)
 
         if _try_load(filename):
-            _conf_filename = filename
             _conf_changed = _needs_save()
 
             # Turn on show-all mode if the selected node is not visible after
@@ -1998,7 +1997,7 @@ def _try_load(filename):
     #   Configuration file to load
 
     try:
-        _kconf.load_config(filename)
+        _kconf.load_config(filename, replace=False, is_main_sdkconfig=False)
         return True
     except EnvironmentError as e:
         _error(f"Error loading '{filename}'\n\n{e.strerror} (errno: {errno.errorcode[e.errno]})")
