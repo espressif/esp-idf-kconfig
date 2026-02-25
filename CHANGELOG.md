@@ -1,3 +1,11 @@
+## v2.5.3 (2026-02-25)
+
+### Bug Fixes
+
+- **menuconfig**: compare changes against main sdkconfig
+- gracefully exit from menuconfig after SIGINT
+- menuconfig returns exit message on Windows
+
 ## v2.5.2 (2026-01-12)
 
 ### Bug Fixes
