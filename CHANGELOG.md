@@ -20,6 +20,24 @@
 </div>
 <hr>
 
+## v3.5.0 (2026-02-25)
+
+### ✨ New Features
+
+- introduce float type *(Jan Beran - f1d6615)*
+
+### 🐛 Bug Fixes
+
+- **menuconfig**: compare changes against main sdkconfig *(Jan Beran - 2d49295)*
+- gracefully exit from menuconfig after SIGINT *(Jan Beran - 93d62bc)*
+- menuconfig returns exit message on Windows *(Jan Beran - aed6274)*
+- respect dependencies when loading default values *(Jan Beran - 0ee53b1)*
+
+### 📖 Documentation
+
+- provide example how to solve default value mismatch *(Jan Beran - 6ad9183)*
+
+
 ## v3.4.2 (2026-01-12)
 
 ### 🐛 Bug Fixes
