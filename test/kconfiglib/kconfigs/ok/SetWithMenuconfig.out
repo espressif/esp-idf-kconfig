@@ -1,0 +1,10 @@
+#
+# Automatically generated file. DO NOT EDIT.
+# Espressif IoT Development Framework (ESP-IDF)  Project Configuration
+#
+# default:
+CONFIG_SOURCE=y
+# default:
+CONFIG_TARGET=42
+# default:
+CONFIG_WEAK_TARGET=99

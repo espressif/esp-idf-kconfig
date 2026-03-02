@@ -1,0 +1,17 @@
+mainmenu "Test set with menuconfig"
+
+    menuconfig SOURCE
+        bool "Source menuconfig"
+        default y
+        set TARGET=42
+        set default WEAK_TARGET=99
+
+    config TARGET # Should be 42, SOURCE is y
+        int "Target"
+        default 0
+        depends on SOURCE
+
+    config WEAK_TARGET # Should be 99, SOURCE is y
+        int "Weak target"
+        default 0
+        depends on SOURCE

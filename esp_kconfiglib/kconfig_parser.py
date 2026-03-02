@@ -164,6 +164,15 @@ class Parser:
         menunode.prompt = (parsed_menu[1], self.kconfig.y)
 
         menu_options = parsed_menu[2]
+        if menu_options["set"] or menu_options["weak_set"]:
+            self.kconfig.report.add_record(
+                MiscArea,
+                message=(
+                    f"{self.file_stack[-1]}:{lineno(loc, s)}: "
+                    "'set' option is only valid for config and "
+                    "menuconfig entries. Option ignored."
+                ),
+            )
         if menu_options["depends_on"]:  # depends on
             for depend in menu_options["depends_on"]:
                 expr = self.parse_expression(depend)
@@ -469,12 +478,13 @@ class Parser:
                     cond = self.kconfig.y if set_entry[2] is None else self.parse_expression(set_entry[2])
                     node.weak_sets.append((target_sym, val, cond))
             else:
-                self.kconfig._warn(
-                    (
+                self.kconfig.report.add_record(
+                    MiscArea,
+                    message=(
                         f"{node.item.name} of type {TYPE_TO_STR[node.item.orig_type]} "  # type: ignore[union-attr]
                         f"(defined at {self.file_stack[-1]}:{node.linenr}) "
                         "has 'set default' option, which is only supported for boolean symbols. Option ignored."
-                    )
+                    ),
                 )
 
         # parse set (indirect value setting)
@@ -486,12 +496,13 @@ class Parser:
                     cond = self.kconfig.y if set_entry[2] is None else self.parse_expression(set_entry[2])
                     node.sets.append((target_sym, val, cond))
             else:
-                self.kconfig._warn(
-                    (
+                self.kconfig.report.add_record(
+                    MiscArea,
+                    message=(
                         f"{node.item.name} of type {TYPE_TO_STR[node.item.orig_type]} "  # type: ignore[union-attr]
                         f"(defined at {self.file_stack[-1]}:{node.linenr}) "
                         "has 'set' option, which is only supported for boolean symbols. Option ignored."
-                    )
+                    ),
                 )
 
         # parse option

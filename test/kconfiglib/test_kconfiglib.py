@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2024-2025 Espressif Systems (Shanghai) CO LTD
+# SPDX-FileCopyrightText: 2024-2026 Espressif Systems (Shanghai) CO LTD
 # SPDX-License-Identifier: Apache-2.0
 import os
 import subprocess
@@ -92,12 +92,6 @@ class TestOKCases(BaseKconfigTest):
         assert os.environ.get("KCONFIG_PARSER_VERSION", "") == version
         v1_skipped_tests = {
             "EnvironmentVariable": "Original kconfiglib does not support unquoted environment variable expansion.",
-            "IndirectValueSetSimple": (
-                "Original kconfiglib does not support indirect value setting for non-bool target configs."
-            ),
-            "IndirectValueSetComplex": (
-                "Original kconfiglib does not support indirect value setting for non-bool target configs."
-            ),
         }
         if int(version) == 1 and filename in v1_skipped_tests.keys():
             pytest.skip(v1_skipped_tests[filename])
@@ -120,10 +114,9 @@ class TestWarningCases(BaseKconfigTest):
             "UndefinedEnvironmentVariable": (
                 "Original kconfiglib does not support unquoted environment variable expansion."
             ),
-            "IndirectSetNonBool": (
-                "Original kconfiglib does not support indirect value setting for non-bool target configs."
+            "SelectImplyNonBool": (
+                "Parser v1 does not emit type-check warnings for 'select' and 'imply' on non-bool source symbols."
             ),
-            "InvalidDefaults": ("This test includes only parser v2 functionality (set and set default options)."),
         }
         if int(version) == 1 and filename in v1_skipped_tests.keys():
             pytest.skip(v1_skipped_tests[filename])
