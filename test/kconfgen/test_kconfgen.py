@@ -48,6 +48,7 @@ class Args:
     config: Optional[str] = None
     sdkconfig_rename: Optional[str] = None
     env: Optional[str] = None
+    list_separator: str = "semicolon"
 
     def to_cli(self):
         # Build flags from args fields except env and output (handled separately)
