@@ -20,6 +20,17 @@
 </div>
 <hr>
 
+## v3.6.0 (2026-03-05)
+
+### ✨ New Features
+
+- generate per-option config structure *(Jan Beran - 012bb7d)*
+
+### 🐛 Bug Fixes
+
+- fix sdkconfig.cmake header indentation *(Jan Beran - b19161e)*
+
+
 ## v3.5.0 (2026-02-25)
 
 ### ✨ New Features
