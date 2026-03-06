@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 import re
 from typing import TYPE_CHECKING
+from typing import Callable
 from typing import Dict
 from typing import List
 from typing import Optional
@@ -11,9 +12,7 @@ from pyparsing import Forward
 from pyparsing import Group
 from pyparsing import Keyword
 from pyparsing import LineEnd
-from pyparsing import Literal
 from pyparsing import OneOrMore
-from pyparsing import OpAssoc
 from pyparsing import Opt
 from pyparsing import ParseException
 from pyparsing import ParseResults
@@ -25,7 +24,6 @@ from pyparsing import Token
 from pyparsing import Word
 from pyparsing import ZeroOrMore
 from pyparsing import alphanums
-from pyparsing import infix_notation
 from pyparsing import one_of
 
 if TYPE_CHECKING:
@@ -148,15 +146,157 @@ symbol_regex = r"""(?<!\S)
                     |\"?\$[({]?[A-Z\d_]+[)}]?\"?"""  # $ENV, ENV can be in () or {} and the whole thing can be in ""
 
 symbol = Regex(symbol_regex, re.X)
-operator_with_precedence = [
-    (Literal("!"), 1, OpAssoc.RIGHT),
-    (one_of("= != < > <= >="), 2, OpAssoc.LEFT),
-    (one_of("&&"), 2, OpAssoc.LEFT),
-    (one_of("||"), 2, OpAssoc.LEFT),
-]
 
-# Expression has operators above and symbols as operands
-expression = infix_notation(symbol, operator_with_precedence)
+
+class KconfigExpression(Token):
+    """
+    Kconfig expression parser: regex tokenization + recursive descent with operator precedence.
+
+    Operator precedence (lowest to highest): || , && , = != < > <= >= , !
+    Produces ParseResults matching pyparsing's infix_notation output structure:
+      - single symbol  ->  ParseResults(['FOO'])
+      - compound expr  ->  ParseResults([['A', '&&', 'B']])
+      - nested         ->  ParseResults([[['A', '&&', 'B'], '||', 'C']])
+    Same-precedence operators are kept flat (e.g. A && B && C -> ['A','&&','B','&&','C']).
+    """
+
+    _symbol_regex = re.compile(symbol_regex, re.X)
+    _operator_regex = re.compile(r"&&|\|\||!=|<=|>=|[=<>!()]")
+    _cmp_operators = ("=", "!=", "<", ">", "<=", ">=")
+
+    def __init__(self) -> None:
+        super().__init__()
+
+    def _generateDefaultName(self) -> str:
+        return "expression"
+
+    def _tokenize(self, instring: str, start: int) -> Tuple[List[str], List[int]]:
+        """
+        Split a Kconfig expression substring into its lexical elements.
+
+        Scans instring from position start, skipping whitespace, and
+        extracts expression tokens (symbols and operators).
+
+        Stops tokenizing when unrecognized symbol is encountered (not matching
+        either self._symbol_regex or self._operator_regex) or when the end of
+        the instring is reached.
+
+        Returns a tuple (tokens, token_ends) where tokens is the ordered list of
+        extracted strings and token_ends[i] is the position in instring
+        immediately after tokens[i] (used by parseImpl to report the final parse
+        location).
+        """
+        tokens: List[str] = []
+        token_ends: List[int] = []
+        pos = start
+        slen = len(instring)
+
+        while pos < slen:
+            # skip whitespace (including newlines, matching pyparsing default)
+            while pos < slen and instring[pos] in Token.DEFAULT_WHITE_CHARS:
+                pos += 1
+            if pos >= slen:
+                break
+
+            m = self._operator_regex.match(instring, pos)
+            if m:
+                tokens.append(m.group())
+                pos = m.end()
+                token_ends.append(pos)
+                continue
+
+            m = self._symbol_regex.match(instring, pos)
+            if m:
+                tokens.append(m.group())
+                pos = m.end()
+                token_ends.append(pos)
+                continue
+
+            break
+
+        return tokens, token_ends
+
+    # ---- recursive descent ----
+
+    # TLDR: Recursive descent works in a way that it recursively calls _parse_* methods;
+    # the lower the precedence, the sooner will be given methods called (and parsed last).
+
+    def _parse_binary_op(
+        self, tokens: List[str], pos_idx: int, operators: Tuple[str, ...], parse_operand: Callable
+    ) -> Tuple:
+        """Generic left-associative binary operator parser."""
+        left, pos_idx = parse_operand(tokens, pos_idx)
+        items = [left]
+        while pos_idx < len(tokens) and tokens[pos_idx] in operators:
+            items.append(tokens[pos_idx])
+            pos_idx += 1
+            right, pos_idx = parse_operand(tokens, pos_idx)
+            items.append(right)
+        return (items if len(items) > 1 else items[0]), pos_idx
+
+    def _parse_or(self, tokens: List[str], pos_idx: int) -> Tuple:
+        """
+        Parse an OR expression (lowest precedence): expr || expr || ...
+        """
+        return self._parse_binary_op(tokens, pos_idx, ("||",), self._parse_and)
+
+    def _parse_and(self, tokens: List[str], pos_idx: int) -> Tuple:
+        """
+        Parse an AND expression: expr && expr && ...
+        """
+        return self._parse_binary_op(tokens, pos_idx, ("&&",), self._parse_cmp)
+
+    def _parse_cmp(self, tokens: List[str], pos_idx: int) -> Tuple:
+        """
+        Parse a comparison expression: expr (= | != | < | > | <= | >=) expr.
+        """
+        return self._parse_binary_op(tokens, pos_idx, self._cmp_operators, self._parse_unary)
+
+    def _parse_unary(self, tokens: List[str], pos_idx: int) -> Tuple:
+        """
+        Parse a unary negation (right-associative): !expr
+        """
+        if pos_idx < len(tokens) and tokens[pos_idx] == "!":
+            pos_idx += 1
+            operand, pos_idx = self._parse_unary(tokens, pos_idx)
+            return ["!", operand], pos_idx
+        return self._parse_atom(tokens, pos_idx)
+
+    def _parse_atom(self, tokens: List[str], pos_idx: int) -> Tuple:
+        """
+        Parse an atom: either a parenthesized sub-expression or a bare symbol/value.
+        """
+        if pos_idx >= len(tokens):
+            raise ParseException("", 0, "Unexpected end of expression")
+        tok = tokens[pos_idx]
+        if tok == "(":
+            pos_idx += 1
+            result, pos_idx = self._parse_or(tokens, pos_idx)
+            if pos_idx >= len(tokens) or tokens[pos_idx] != ")":
+                raise ParseException("", 0, "Missing closing parenthesis")
+            pos_idx += 1
+            return result, pos_idx
+        if not self._symbol_regex.fullmatch(tok):
+            raise ParseException("", 0, f"Unexpected token '{tok}' where symbol expected")
+        return tok, pos_idx + 1
+
+    # ---- pyparsing interface ----
+
+    def parseImpl(self, instring: str, loc: int, doActions: bool = True) -> Tuple[int, list]:
+        tokens, token_ends = self._tokenize(instring, loc)
+        if not tokens:
+            raise ParseException(instring, loc, "Expected expression", self)
+
+        try:
+            result, tok_pos = self._parse_or(tokens, 0)
+        except ParseException:
+            raise ParseException(instring, loc, "Invalid expression", self)
+
+        end_pos = token_ends[tok_pos - 1] if tok_pos > 0 else loc
+        return end_pos, [result]
+
+
+expression = KconfigExpression()
 
 
 class KconfigOptionBlock(KconfigBlock):
