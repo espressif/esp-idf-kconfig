@@ -3889,7 +3889,7 @@ class Kconfig(object):
             if len(choice.nodes) > 1 and choice.name not in self.allowed_multi_def_choices:
                 occurrences = set(f"    {os.path.abspath(node.filename)}:{node.linenr}" for node in choice.nodes)
                 if len(occurrences) > 1:
-                    self.report.add_record(MultipleDefinitionArea, sym_or_choice=sym, occurrences=occurrences)
+                    self.report.add_record(MultipleDefinitionArea, sym_or_choice=choice, occurrences=occurrences)
 
     def _check_sym_sanity(self):
         # Checks various symbol properties that are handiest to check after

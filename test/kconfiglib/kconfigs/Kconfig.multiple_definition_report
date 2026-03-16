@@ -1,0 +1,31 @@
+mainmenu "Multiple symbol and choice definitions for report test"
+
+config DUP_SYMBOL
+    int "First DUP_SYMBOL"
+    default 1
+
+config DUP_SYMBOL
+    int "Second DUP_SYMBOL"
+    default 2
+
+choice DUP_CHOICE
+    prompt "First DUP_CHOICE"
+
+    config DUP_CHOICE_A
+        bool "option a"
+    config DUP_CHOICE_B
+        bool "option b"
+endchoice
+
+choice DUP_CHOICE
+    prompt "Second DUP_CHOICE"
+
+    config DUP_CHOICE_C
+        bool "option c"
+    config DUP_CHOICE_D
+        bool "option d"
+endchoice
+
+config UNRELATED
+    float "Unrelated symbol"
+    default 1.1

@@ -520,6 +520,37 @@ class TestLoadingDeprecated(TestBase):
 
 
 @pytest.mark.parametrize("version", ["1", "2"], indirect=True)
+class TestMultipleDefinitionReport(TestBase):
+    """
+    Test that multiple definitions of symbols and choices are reported under the correct
+    names in the Multiple Symbol/Choice Definitions report area (symbol name for symbols,
+    choice name for choices).
+    """
+
+    def test_multiple_definition_report_symbol_and_choice(self):
+        kconfig = Kconfig(os.path.join(KCONFIG_PATH, "Kconfig.multiple_definition_report"))
+        report_json = kconfig.report._return_json()
+        area = next(
+            (a for a in report_json["areas"] if a["title"] == "Multiple Symbol/Choice Definitions"),
+            None,
+        )
+        assert area is not None, "Multiple Symbol/Choice Definitions area not found in report"
+        data = area["data"]
+
+        assert "DUP_SYMBOL" in data, "Symbol with multiple definitions should be reported under its name"
+        assert len(data["DUP_SYMBOL"]) >= 2, "DUP_SYMBOL should be reported as defined multiple times"
+
+        assert "DUP_CHOICE" in data, (
+            "Choice with multiple definitions should be reported under its name (not a symbol name)"
+        )
+        assert len(data["DUP_CHOICE"]) >= 2, "DUP_CHOICE should be reported as defined multiple times"
+
+        assert "UNRELATED" not in data, "UNRELATED should not be reported as defined multiple times"
+
+        kconfig.report.reset()
+
+
+@pytest.mark.parametrize("version", ["1", "2"], indirect=True)
 class TestDisabledSymbols(TestBase):
     """
     Test ensures disabled symbols/choices with user-set value are reported correctly.
