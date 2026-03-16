@@ -1,0 +1,25 @@
+mainmenu "Test deprecated options"
+
+config FEATURE_ENABLE
+    bool "Enable feature"
+    default y
+
+config FEATURE_SPEED
+    int "Feature speed"
+    default 100
+
+config FEATURE_NAME
+    string "Feature name"
+    default "default_name"
+
+config FEATURE_ADDR
+    hex "Feature address"
+    default 0xFF
+
+config FEATURE_DISABLE
+    bool "Disable feature"
+    default n
+
+config ANOTHER_BOOL
+    bool "Another boolean"
+    default y

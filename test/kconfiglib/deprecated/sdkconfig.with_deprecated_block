@@ -1,0 +1,7 @@
+CONFIG_FEATURE_ENABLE=y
+CONFIG_FEATURE_SPEED=200
+
+# Deprecated options for backward compatibility
+CONFIG_OLD_FEATURE_ENABLE=y
+CONFIG_OLD_SPEED=200
+# End of deprecated options

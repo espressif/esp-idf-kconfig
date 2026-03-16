@@ -18,4 +18,5 @@ The package also includes new parser, based on `Pyparsing <https://github.com/py
     Language Description <language>
     Differences from Kconfiglib <differences>
     Default Values <defaults>
+    Deprecated Options <deprecated-options>
     Configuration Report <configuration-report>
