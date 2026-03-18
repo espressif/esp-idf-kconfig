@@ -1,0 +1,54 @@
+mainmenu "Test multiple sources setting same target"
+
+    comment "First active source (in definition order) wins for set"
+
+    config TARGET_SET # Should be 10 (FIRST_SOURCE wins)
+        int "Target set"
+        default 0
+
+    config FIRST_SOURCE
+        bool "First source"
+        default y
+        set TARGET_SET=10
+
+    config SECOND_SOURCE
+        bool "Second source"
+        default y
+        set TARGET_SET=20
+
+    config THIRD_SOURCE
+        bool "Third source"
+        default y
+        set TARGET_SET=30
+
+    comment "First active source wins for set default too"
+
+    config TARGET_WEAK # Should be 100 (WEAK_FIRST wins)
+        int "Target weak"
+        default 0
+
+    config WEAK_FIRST
+        bool "Weak first"
+        default y
+        set default TARGET_WEAK=100
+
+    config WEAK_SECOND
+        bool "Weak second"
+        default y
+        set default TARGET_WEAK=200
+
+    comment "set from inactive source is skipped, next active source wins"
+
+    config TARGET_SKIP # Should be 50 (ACTIVE_SOURCE wins, INACTIVE is skipped)
+        int "Target skip"
+        default 0
+
+    config INACTIVE_SOURCE
+        bool
+        default n
+        set TARGET_SKIP=40
+
+    config ACTIVE_SOURCE
+        bool "Active source"
+        default y
+        set TARGET_SKIP=50

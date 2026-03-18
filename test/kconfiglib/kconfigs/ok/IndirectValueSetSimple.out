@@ -38,3 +38,13 @@ CONFIG_O=y
 CONFIG_O_SELECTOR=y
 # default:
 CONFIG_P=45
+
+#
+# Test indirect set for float targets
+#
+# default:
+CONFIG_Q=y
+# default:
+CONFIG_R=3.14
+# default:
+CONFIG_T=0.0

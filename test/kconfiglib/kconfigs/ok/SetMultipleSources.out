@@ -1,0 +1,34 @@
+#
+# Automatically generated file. DO NOT EDIT.
+# Espressif IoT Development Framework (ESP-IDF)  Project Configuration
+#
+
+#
+# First active source (in definition order) wins for set
+#
+# default:
+CONFIG_TARGET_SET=10
+# default:
+CONFIG_FIRST_SOURCE=y
+# default:
+CONFIG_SECOND_SOURCE=y
+# default:
+CONFIG_THIRD_SOURCE=y
+
+#
+# First active source wins for set default too
+#
+# default:
+CONFIG_TARGET_WEAK=100
+# default:
+CONFIG_WEAK_FIRST=y
+# default:
+CONFIG_WEAK_SECOND=y
+
+#
+# set from inactive source is skipped, next active source wins
+#
+# default:
+CONFIG_TARGET_SKIP=50
+# default:
+CONFIG_ACTIVE_SOURCE=y

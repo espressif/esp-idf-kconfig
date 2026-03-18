@@ -1,0 +1,19 @@
+mainmenu "Select and imply in non-bool configs"
+
+    config NONBOOL
+        int "Non-bool config"
+        default 0
+        select B
+        imply C
+
+    config A
+        int "A"
+        default 0
+
+    config B
+        bool "B"
+        default n
+
+    config C
+        bool "C"
+        default n

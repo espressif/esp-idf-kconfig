@@ -244,11 +244,10 @@ class TestChoicesDefault(MenuconfigTestBase):
         )
 
 
-@pytest.mark.parametrize("version", ["2"], indirect=True)
+@pytest.mark.parametrize("version", ["1", "2"], indirect=True)
 class TestIndirectlySetValues(MenuconfigTestBase):
     """
     Test if menuconfig correctly handles values indirectly set via "set" and "set default" options.
-    NOTE: Only for KCONFIG_PARSER_VERSION=2, as this is the only version which supports indirectly set values.
     """
 
     def test_indirectly_set_value(self) -> None:

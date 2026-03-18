@@ -3280,6 +3280,46 @@ class Kconfig(object):
 
                 node.implies.append((self._expect_nonconst_sym(), self._parse_cond()))
 
+            elif t0 == _T_SET:
+                if node.item.__class__ is not Symbol:
+                    self.report.add_record(
+                        MiscArea,
+                        message=(
+                            f"{self.filename}:{self.linenr}: "
+                            "'set' option is only valid for config and "
+                            "menuconfig entries. Option ignored."
+                        ),
+                    )
+                    while self._tokens[self._tokens_i] is not None:
+                        self._tokens_i += 1
+                    continue
+
+                is_default = self._check_token(_T_DEFAULT)
+
+                if node.item.orig_type and node.item.orig_type is not BOOL:
+                    kind = "set default" if is_default else "set"
+                    self.report.add_record(
+                        MiscArea,
+                        message=(
+                            f"{node.item.name} of type "
+                            f"{TYPE_TO_STR[node.item.orig_type]} "
+                            f"(defined at {self.filename}:{node.linenr}) "
+                            f"has '{kind}' option, which is only supported for "
+                            "boolean symbols. Option ignored."
+                        ),
+                    )
+                    while self._tokens[self._tokens_i] is not None:
+                        self._tokens_i += 1
+                    continue
+
+                output_list = node.weak_sets if is_default else node.sets
+
+                expr = self._parse_expr()
+                if not (isinstance(expr, tuple) and len(expr) == 3 and expr[0] is EQUAL):
+                    self._parse_error("'set' syntax is 'set [default] <config>=<value> [if <condition>]'")
+
+                output_list.append((expr[1], expr[2], self._parse_cond()))
+
             elif t0 == _T_VISIBLE:
                 if not self._check_token(_T_IF):
                     self._parse_error("expected 'if' after 'visible'")
@@ -7865,7 +7905,8 @@ except AttributeError:
     _T_VISIBLE,
     _T_WARNING,
     _T_FLOAT,
-) = range(1, 53)
+    _T_SET,
+) = range(1, 54)
 
 
 def _recursively_perform_action(start_node, action, exclude_items=[_T_MENU, _T_COMMENT]):
@@ -7929,6 +7970,7 @@ _get_keyword = {
     "range": _T_RANGE,
     "rsource": _T_RSOURCE,
     "select": _T_SELECT,
+    "set": _T_SET,
     "source": _T_SOURCE,
     "string": _T_STRING,
     "visible": _T_VISIBLE,

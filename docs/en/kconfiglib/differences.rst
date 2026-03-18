@@ -16,4 +16,3 @@ Although we tried to keep the ``esp-idf-kconfig`` package as close to the origin
 - The inference of default values has been reworked (see :ref:`defaults`).
 - Preprocessor macros are supported only in the form of ``symbol = value`` or ``symbol := value`` and strings need to be enclosed in quotes.
 - New parser recognizes default values in ``sdkconfig`` files (see :ref:`defaults`).
-- New ``set`` and ``set default`` options are supported, allowing you to indirectly set a value of a config of any type, similarly to ``select`` for ``bool`` configs (see :ref:`set-option`).

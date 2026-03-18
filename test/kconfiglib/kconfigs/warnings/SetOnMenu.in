@@ -1,0 +1,9 @@
+mainmenu "Test set on menu"
+
+menu "My menu"
+    set A=1
+endmenu
+
+config A
+    int "A"
+    default 0

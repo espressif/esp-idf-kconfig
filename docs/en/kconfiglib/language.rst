@@ -12,7 +12,7 @@ Introduction and Basic Concepts
 The language is used to describe configuration options (configs and choices), organize them in a tree-like structure for e.g. GUI configurators and to define relations between the configs. Kconfig keywords can be divided into two groups: entries and options. Entries define basic structure of the configuration itself and individual configuration options. Options further specify the entries. All the possible keywords together with their syntax and semantics will be described further. For now, here is a list of all Kconfig keywords:
 
 - entries (described in `Entries`_): ``mainmenu``, ``menu``, ``config``, ``menuconfig``, ``choice``, ``source``, ``if``, ``comment`` and macros
-- options (described in `Options`_), ``<type>`` (one of ``bool``, ``int``, ``string``, ``hex``, ``float``), ``prompt``, ``depends on``, ``default``, ``help``, ``range``, ``select``, ``imply``, ``option``, ``visible if``
+- options (described in `Options`_), ``<type>`` (one of ``bool``, ``int``, ``string``, ``hex``, ``float``), ``prompt``, ``depends on``, ``default``, ``help``, ``range``, ``select``, ``imply``, ``set``, ``set default``, ``option``, ``visible if``
 
 Kconfig is indentation based language (like e.g. Python or YAML). In the context of `esp-idf-kconfig`, the indentation should always be 4 spaces. The language is case-sensitive, so ``config`` and ``CONFIG`` have different meaning. When quoting strings, it is highly recommended to use double quotes.
 
@@ -567,6 +567,10 @@ Although ``TARGET`` symbol can be of ``int``, ``string``, ``hex`` or ``float`` t
 .. note::
 
     As mentioned above, source symbols can only be of a ``bool``-type. However, this limitation can be worked around by introducing so-called "mapping symbol" (see :ref:`reverse_dependencies_by_non_bool_source`).
+
+.. note::
+
+    Both parsers warn when ``set`` or ``set default`` is used on a non-``bool`` source symbol and ignore the option. However, due to a different parsing strategy in parser v1, the warning is only emitted if the type keyword (e.g. ``int``) appears **before** ``set`` in the source file. If the type is declared after ``set``, parser v1 will silently ignore the option without a warning. To avoid this, always declare the type before any ``set`` or ``set default`` options.
 
 This option can be used in the following entries (optionally, multiple times):
 

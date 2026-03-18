@@ -82,3 +82,24 @@ mainmenu "Test simple indirect set"
     config P # Should be 45, O is selected, thus y
         int "p"
         default 0
+
+
+    comment "Test indirect set for float targets"
+
+    config Q
+        bool
+        default y
+        set R=3.14
+
+    config R # Should be 3.14, Q is y
+        float "r"
+        default 0.0
+
+    config S
+        bool
+        default n
+        set default T=2.72
+
+    config T # Should be 0.0, S is n
+        float "t"
+        default 0.0
