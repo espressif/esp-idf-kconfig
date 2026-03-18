@@ -1133,11 +1133,16 @@ class Kconfig(object):
           List of paths to sdkconfig.rename files. Each file contains lines of
           the form "CONFIG_OLD CONFIG_NEW", optionally with '!' prefix on the
           new name to indicate boolean inversion.
+
+        If the same deprecated option appears more than once across the loaded
+        files, the last mapping is used and a record is added to the configuration
+        report (Miscellaneous area).
         """
         from .deprecated import DeprecatedOptions
 
         self._deprecated_options = DeprecatedOptions(
             self.config_prefix,
+            self.report,
             path_rename_files=path_rename_files,
             encoding=self._encoding,
         )

@@ -18,6 +18,7 @@ from typing import Optional
 from typing import Set
 from typing import Tuple
 from typing import Union
+from typing import cast
 
 from .constants import DefaultsPolicy
 
@@ -47,6 +48,12 @@ _INDENT = " " * 4
 VERBOSITY_QUIET = "quiet"  # Report only if there is an error
 VERBOSITY_DEFAULT = "default"  # Report standard information
 VERBOSITY_VERBOSE = "verbose"  # Report everything every time
+
+_MISC_VERBOSITY_RANK = {
+    VERBOSITY_QUIET: 0,
+    VERBOSITY_DEFAULT: 1,
+    VERBOSITY_VERBOSE: 2,
+}
 
 AREA_TITLE_STYLE = "bold blue"
 INFO_STRING_STYLE = "italic"
@@ -440,55 +447,79 @@ class MultipleDefinitionArea(Area):
 class MiscArea(Area):
     """
     All the messages not related to the other areas.
+
+    Each record may specify ``min_verbosity`` (quiet / default / verbose). A message is
+    visible for status, printing, and JSON only when the report verbosity (fixed when the
+    report is constructed from ``KCONFIG_REPORT_VERBOSITY``) is at least that level.
     """
 
-    def __init__(self):
+    def __init__(self, verbosity: str):
         super().__init__(
             title="Miscellaneous",
             ignore_codes=set(),
             info_string="",
         )
-
-        self.messages: Set[str] = set()
+        self.verbosity = verbosity
+        # (message, min_verbosity) — min_verbosity one of VERBOSITY_* constants
+        self._records: List[Tuple[str, str]] = []
 
     def add_record(self, sym_or_choice: "Union[Symbol, Choice]", **kwargs: Optional[dict]) -> None:
         """
         kwargs:
             message: str
-        As the only Area, MiscArea does not care about the Symbol/Choice.
+            min_verbosity: str (optional)
+                Minimum report verbosity required for this message to affect status,
+                print output, and JSON. Defaults to VERBOSITY_DEFAULT.
         """
         if "message" not in kwargs.keys():
             raise AttributeError("Message must be specified for MiscArea.")
-        self.messages.add(str(kwargs["message"]))
+        min_v = kwargs.get("min_verbosity", VERBOSITY_DEFAULT)
+        if min_v not in _MISC_VERBOSITY_RANK:
+            raise AttributeError(
+                "min_verbosity must be one of "
+                f"{VERBOSITY_QUIET!r}, {VERBOSITY_DEFAULT!r}, or {VERBOSITY_VERBOSE!r}, got {min_v!r}"
+            )
+        self._records.append((str(kwargs["message"]), cast(str, min_v)))
+
+    def _visible_messages(self) -> List[str]:
+        r = _MISC_VERBOSITY_RANK.get(self.verbosity, _MISC_VERBOSITY_RANK[VERBOSITY_DEFAULT])
+        return [m for m, mv in self._records if r >= _MISC_VERBOSITY_RANK[mv]]
+
+    @property
+    def messages(self) -> List[str]:
+        """Messages visible at this area's report verbosity."""
+        return self._visible_messages()
 
     def report_severity(self) -> int:
-        return STATUS_OK if not self.messages else STATUS_OK_WITH_INFO
+        return STATUS_OK if not self._visible_messages() else STATUS_OK_WITH_INFO
 
     def print(self, verbosity: str) -> Optional[Table]:
-        if not self.messages:
+        visible = self._visible_messages()
+        if not visible:
             return None
 
         table = Table(title=self.title, title_justify="left", show_header=False, title_style=AREA_TITLE_STYLE)
         table.box = HORIZONTALS
         table.add_column("", justify="left", no_wrap=False)
-        for message in self.messages:
+        for message in visible:
             table.add_row(f"* {message}")
         return table
 
     def return_json(self) -> Optional[dict]:
-        if not self.messages:
+        visible = self._visible_messages()
+        if not visible:
             return None
         ret_json = super().return_json()
         if not ret_json:
             ret_json = dict()
-        ret_json["data"] = list(self.messages)
+        ret_json["data"] = visible
         return ret_json
 
     def reset(self) -> None:
         """
         Reset the area to its initial state, clearing all records and data.
         """
-        self.messages.clear()
+        self._records.clear()
 
 
 class MultipleAssignmentArea(Area):
@@ -728,7 +759,7 @@ class KconfigReport:
         # Areas
         self.areas = (
             MultipleDefinitionArea(),
-            MiscArea(),
+            MiscArea(self.verbosity),
             DefaultValuesArea(self, verbosity=self.verbosity),
             MultipleAssignmentArea(),
             DisabledSymbolArea(),
@@ -802,6 +833,10 @@ class KconfigReport:
         Adds a record for given area.
         Typically, record is related to the Symbol/Choice object (sym_or_choice from kwargs).
         However, some areas may not need sym_or_choice to be specified, thus it is not mandatory.
+
+        For :class:`MiscArea`, optional ``min_verbosity`` (``quiet`` / ``default`` / ``verbose``)
+        sets the minimum report verbosity at which the message counts for status, print, and JSON
+        (default: ``default``).
         """
         if "sym_or_choice" not in kwargs.keys():
             # E.g. MiscArea does not care about the Symbol/Choice

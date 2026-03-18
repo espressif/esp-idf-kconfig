@@ -13,6 +13,10 @@ from esp_kconfiglib.core import BOOL
 from esp_kconfiglib.core import INT
 from esp_kconfiglib.core import STRING
 from esp_kconfiglib.deprecated import DeprecatedOptions
+from esp_kconfiglib.report import STATUS_OK
+from esp_kconfiglib.report import VERBOSITY_VERBOSE
+from esp_kconfiglib.report import KconfigReport
+from esp_kconfiglib.report import MiscArea
 
 TEST_DIR = os.path.join(os.path.dirname(__file__), "deprecated")
 KCONFIG = os.path.join(TEST_DIR, "Kconfig")
@@ -22,6 +26,8 @@ RENAME_SYNTAX_ERROR = os.path.join(TEST_DIR, "rename.syntax_error")
 RENAME_SAME_NAME = os.path.join(TEST_DIR, "rename.same_name")
 RENAME_MISSING_PREFIX = os.path.join(TEST_DIR, "rename.missing_prefix")
 SDKCONFIG_LEGACY_SPEED = os.path.join(TEST_DIR, "sdkconfig.legacy_speed")
+RENAME_DUPLICATE_OLD_A = os.path.join(TEST_DIR, "rename.duplicate_old_a")
+SDKCONFIG_DUPLICATE_OLD_A = os.path.join(TEST_DIR, "sdkconfig.duplicate_old_a")
 
 
 @pytest.fixture
@@ -443,20 +449,70 @@ class TestWriteDeprecatedTypeCoverage:
 
 
 class TestRenameFileErrors:
+    def _report(self):
+        return Kconfig(KCONFIG).report
+
     def test_syntax_error(self):
         """Malformed line in rename file raises RuntimeError."""
         with pytest.raises(RuntimeError, match="Syntax error"):
-            DeprecatedOptions("CONFIG_", path_rename_files=[RENAME_SYNTAX_ERROR])
+            DeprecatedOptions("CONFIG_", self._report(), path_rename_files=[RENAME_SYNTAX_ERROR])
 
     def test_same_name_replacement(self):
         """Mapping an option to itself raises RuntimeError."""
         with pytest.raises(RuntimeError, match="same as original name"):
-            DeprecatedOptions("CONFIG_", path_rename_files=[RENAME_SAME_NAME])
+            DeprecatedOptions("CONFIG_", self._report(), path_rename_files=[RENAME_SAME_NAME])
 
     def test_missing_config_prefix(self):
         """Option without correct CONFIG_ prefix raises RuntimeError."""
         with pytest.raises(RuntimeError):
-            DeprecatedOptions("CONFIG_", path_rename_files=[RENAME_MISSING_PREFIX])
+            DeprecatedOptions("CONFIG_", self._report(), path_rename_files=[RENAME_MISSING_PREFIX])
+
+
+class TestDuplicateRenameMappings:
+    @pytest.fixture(autouse=True)
+    def _reset_kconfig_report_singleton(self):
+        """
+        KconfigReport is a singleton; verbosity is read from env only on first __init__ per instance,
+        so we need to reset it between tests.
+        """
+        KconfigReport._instance = None
+        yield
+        KconfigReport._instance = None
+
+    def test_last_mapping_used(self):
+        """When the same deprecated name is mapped twice, the last target wins."""
+        config = Kconfig(KCONFIG)
+        config.load_rename_files([RENAME_DUPLICATE_OLD_A])
+        assert config.deprecated_options.get_new_option("OLD_A") == "FEATURE_SPEED"
+
+    def test_resolved_value_uses_last_mapping(self):
+        config = Kconfig(KCONFIG)
+        config.load_rename_files([RENAME_DUPLICATE_OLD_A])
+        config.load_config(SDKCONFIG_DUPLICATE_OLD_A, replace=False)
+        assert config.syms["FEATURE_SPEED"].str_value == "200"
+        assert config.syms["FEATURE_ENABLE"].str_value == "y"
+
+    def test_duplicate_misc_not_in_report_when_verbosity_default(self, monkeypatch):
+        monkeypatch.delenv("KCONFIG_REPORT_VERBOSITY", raising=False)
+        config = Kconfig(KCONFIG)
+        config.load_rename_files([RENAME_DUPLICATE_OLD_A])
+        misc = config.report.area_to_instance[MiscArea]
+        assert not any("duplicate" in m.lower() and "last mapping is used" in m.lower() for m in misc.messages)
+
+    def test_duplicate_misc_in_report_when_verbosity_verbose(self, monkeypatch):
+        monkeypatch.setenv("KCONFIG_REPORT_VERBOSITY", VERBOSITY_VERBOSE)
+        config = Kconfig(KCONFIG)
+        config.load_rename_files([RENAME_DUPLICATE_OLD_A])
+        misc = config.report.area_to_instance[MiscArea]
+        assert any("duplicate" in m.lower() and "last mapping is used" in m.lower() for m in misc.messages)
+
+    def test_duplicate_misc_does_not_affect_status_when_verbosity_default(self, monkeypatch):
+        monkeypatch.delenv("KCONFIG_REPORT_VERBOSITY", raising=False)
+        config = Kconfig(KCONFIG)
+        config.load_rename_files([RENAME_DUPLICATE_OLD_A])
+        misc = config.report.area_to_instance[MiscArea]
+        assert misc.report_severity() == STATUS_OK
+        assert config.report.status == STATUS_OK
 
 
 class TestUndefinedNewSymbol:

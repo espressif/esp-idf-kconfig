@@ -18,6 +18,11 @@ Rename files (conventionally named ``sdkconfig.rename``) contain one mapping per
 
 Each line declares that ``CONFIG_OLD_OPTION_NAME`` is deprecated and has been replaced by ``CONFIG_NEW_OPTION_NAME``. Lines starting with ``#`` are comments. Blank lines are ignored.
 
+Duplicate Rename Mappings
+^^^^^^^^^^^^^^^^^^^^^^^^^
+
+If the same deprecated option name appears in more than one mapping (within a file or across multiple loaded rename files), **the last mapping is used**. A **Miscellaneous** report entry documents the duplicate when the configuration report verbosity is **verbose** (environment variable ``KCONFIG_REPORT_VERBOSITY=verbose``); at default or quiet verbosity it does not affect report status or printed output.
+
 Boolean Inversion
 ^^^^^^^^^^^^^^^^^
 
@@ -122,7 +127,7 @@ Summary
    * - Operation
      - Behavior
    * - ``load_rename_files(paths)``
-     - Parses rename files and enables deprecated option handling.
+     - Parses rename files and enables deprecated option handling. Duplicate deprecated names: last mapping is used; optional Miscellaneous note at verbose report verbosity only.
    * - ``load_config()`` (default)
      - Resolves deprecated names to new symbols. Skips the deprecated block.
    * - ``load_config(load_deprecated=True)``

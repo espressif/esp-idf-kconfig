@@ -12,6 +12,9 @@ from typing import Tuple
 
 from .constants import DEP_OP_BEGIN
 from .constants import DEP_OP_END
+from .report import VERBOSITY_VERBOSE
+from .report import KconfigReport
+from .report import MiscArea
 
 if TYPE_CHECKING:
     from .core import Kconfig
@@ -28,8 +31,15 @@ class DeprecatedOptions:
 
     _RENAME_FILE_NAME = "sdkconfig.rename"
 
-    def __init__(self, config_prefix: str, path_rename_files: List[str] = [], encoding: str = "utf-8"):
+    def __init__(
+        self,
+        config_prefix: str,
+        report: KconfigReport,
+        path_rename_files: List[str] = [],
+        encoding: str = "utf-8",
+    ):
         self.config_prefix = config_prefix
+        self.report = report
         self.encoding = encoding
         # sdkconfig.renames specification: each line contains a pair of config options separated by whitespace(s).
         # The first option is the deprecated one, the second one is the new one.
@@ -74,17 +84,6 @@ class DeprecatedOptions:
                         raise RuntimeError(f"Syntax error in {rename_path} (line {line_number})")
                     if not parsed_line["old"]:
                         continue
-                    if parsed_line["old"] in rep_dic:
-                        raise RuntimeError(
-                            "Error in {} (line {}): Replacement {} exist for {} and new "
-                            "replacement {} is defined".format(
-                                rename_path,
-                                line_number,
-                                rep_dic[parsed_line["old"]],
-                                parsed_line["old"],
-                                parsed_line["new"],
-                            )
-                        )
 
                     (dep_opt, new_opt) = (
                         self.remove_config_prefix(parsed_line["old"]),
@@ -101,6 +100,25 @@ class DeprecatedOptions:
                             f"Error in {rename_path} (line {line_number}): "
                             f"Replacement name is the same as original name ({dep_opt})."
                         )
+                    if dep_opt in rep_dic:
+                        prev_new = rep_dic[dep_opt]
+                        self.report.add_record(
+                            MiscArea,
+                            message=(
+                                f"Duplicate rename mapping for {self.config_prefix}{dep_opt} in "
+                                f"{rename_path} (line {line_number}): "
+                                f"previous target {self.config_prefix}{prev_new}, "
+                                f"new target {parsed_line['new']} - last mapping is used."
+                            ),
+                            min_verbosity=VERBOSITY_VERBOSE,
+                        )
+                        while dep_opt in inversions:
+                            inversions.remove(dep_opt)
+                        prev_list = rev_rep_dic.get(prev_new)
+                        if prev_list and dep_opt in prev_list:
+                            prev_list.remove(dep_opt)
+                            if not prev_list:
+                                del rev_rep_dic[prev_new]
                     rep_dic[dep_opt] = new_opt
                     rev_rep_dic[new_opt].append(dep_opt)
                     if parsed_line["new"].startswith("!"):

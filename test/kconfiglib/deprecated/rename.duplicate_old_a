@@ -1,0 +1,3 @@
+# Same deprecated option twice: last mapping is used (FEATURE_SPEED)
+CONFIG_OLD_A CONFIG_FEATURE_ENABLE
+CONFIG_OLD_A CONFIG_FEATURE_SPEED
