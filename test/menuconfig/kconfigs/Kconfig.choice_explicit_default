@@ -1,0 +1,47 @@
+# Named choice with explicit default (second symbol), not implicit first-symbol default
+mainmenu "mainmenu"
+
+    config A
+        bool "a"
+        default y
+        help
+            help for a
+
+    comment "Named choice with explicit default BAR"
+
+    choice NAMED_CHOICE
+        prompt "prompt for named choice"
+        default BAR
+
+        config FOO
+            bool "foo"
+            help
+                help for foo
+
+        config BAR
+            bool "bar"
+            help
+                help for bar
+
+    endchoice
+
+    comment "Unnamed choice"
+
+    choice
+        bool "unnamed choice"
+        default BAZ
+        help
+            help for bool choice
+
+        config BAZ
+            bool "baz"
+            help
+                help for baz
+            depends on A
+
+        config QUX
+            bool "qux"
+            help
+                help for qux
+
+    endchoice

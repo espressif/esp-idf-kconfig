@@ -2,23 +2,21 @@
 # SPDX-License-Identifier: Apache-2.0
 import os
 import sys
-from typing import TYPE_CHECKING
+from pathlib import Path
 from typing import Any
 from typing import Dict
 from typing import Union
 
 import pytest
 
-from esp_menuconfig.core import _change_node
-
-if TYPE_CHECKING:
-    from esp_kconfiglib.core import Choice
-    from esp_kconfiglib.core import Symbol
-
 from esp_kconfiglib import Kconfig
+from esp_kconfiglib.core import Choice
+from esp_kconfiglib.core import Symbol
 from esp_menuconfig import _needs_save
 from esp_menuconfig import _restore_default
 from esp_menuconfig import menuconfig
+from esp_menuconfig.core import _change_node
+from esp_menuconfig.core import _node_str
 
 TEST_FILES_PATH = os.path.abspath(os.path.dirname(__file__))
 KCONFIGS_PATH = os.path.join(TEST_FILES_PATH, "kconfigs")
@@ -397,3 +395,86 @@ class TestFloatInput(MenuconfigTestBase):
 
         sdkconfig = kconfig._config_contents(None)
         assert "CONFIG_FLOAT_VALUE=1.25" in sdkconfig
+
+
+@pytest.mark.parametrize("version", ["1", "2"], indirect=True)
+class TestChoiceDefaultMenuLabels(MenuconfigTestBase):
+    """IDF-14509: parent choices show (default value); options show (default selection) only when appropriate."""
+
+    @pytest.mark.parametrize(
+        ("kconfig_file", "named_default_selection", "named_sym_to_leave_default"),
+        [
+            # Implicit default: first symbol in the named choice
+            ("Kconfig.choice_default", "FOO", "BAR"),
+            # Explicit `default BAR` — (default selection) must follow Kconfig, not symbol order
+            ("Kconfig.choice_explicit_default", "BAR", "FOO"),
+        ],
+    )
+    def test_choice_default_and_selection_labels(
+        self,
+        version: int,
+        tmp_path: Path,
+        kconfig_file: str,
+        named_default_selection: str,
+        named_sym_to_leave_default: str,
+    ) -> None:
+        sdkconfig = tmp_path / "sdkconfig"
+        sdkconfig.write_text("", encoding="utf-8")
+        prev_kconfig_config = os.environ.get("KCONFIG_CONFIG")
+        os.environ["KCONFIG_CONFIG"] = str(sdkconfig)
+        try:
+            kconfig = Kconfig(os.path.join(KCONFIGS_PATH, kconfig_file), parser_version=version)
+            menuconfig(kconfig, headless=True)
+
+            named_choice_node = None
+            unnamed_choice_node = None
+            sym_nodes: Dict[str, Any] = {}
+
+            for n in kconfig.node_iter():
+                if isinstance(n.item, Choice) and n.prompt:
+                    if n.prompt[0] == "prompt for named choice":
+                        named_choice_node = n
+                    elif n.prompt[0] == "unnamed choice":
+                        unnamed_choice_node = n
+                elif isinstance(n.item, Symbol) and n.item.name in ("FOO", "BAR", "BAZ", "QUX"):
+                    sym_nodes[n.item.name] = n
+
+            assert named_choice_node is not None
+            assert unnamed_choice_node is not None
+            for name in ("FOO", "BAR", "BAZ", "QUX"):
+                assert name in sym_nodes, f"missing menu node for {name}"
+
+            named_parent = _node_str(named_choice_node)
+            assert "(default value)" in named_parent
+            assert "prompt for named choice" in named_parent
+
+            default_line = _node_str(sym_nodes[named_default_selection])
+            other_line = _node_str(sym_nodes[named_sym_to_leave_default])
+            assert "(default selection)" in default_line
+            assert "(default value)" not in default_line
+            assert "(default selection)" not in other_line
+            assert "(default value)" not in other_line
+
+            unnamed_parent = _node_str(unnamed_choice_node)
+            assert "(default value)" in unnamed_parent
+
+            baz_line = _node_str(sym_nodes["BAZ"])
+            qux_line = _node_str(sym_nodes["QUX"])
+            assert "(default selection)" in baz_line
+            assert "(default value)" not in baz_line
+            assert "(default selection)" not in qux_line
+            assert "(default value)" not in qux_line
+
+            kconfig.syms[named_sym_to_leave_default].set_value("y")
+
+            named_parent_after = _node_str(named_choice_node)
+            assert "(default value)" not in named_parent_after
+            foo_after = _node_str(sym_nodes["FOO"])
+            bar_after = _node_str(sym_nodes["BAR"])
+            assert "(default selection)" not in foo_after
+            assert "(default selection)" not in bar_after
+        finally:
+            if prev_kconfig_config is None:
+                os.environ.pop("KCONFIG_CONFIG", None)
+            else:
+                os.environ["KCONFIG_CONFIG"] = prev_kconfig_config
