@@ -690,6 +690,8 @@ _conf_filename = None
 _conf_changed = False
 _minconf_filename = None
 _show_all = None
+_show_help = False
+_show_name = False
 
 
 def _colorize_message(message: Optional[str]) -> Optional[Text]:
@@ -721,6 +723,8 @@ def menuconfig(kconf: "Kconfig", headless: bool = False) -> None:
     global _conf_changed
     global _minconf_filename
     global _show_all
+    global _show_help
+    global _show_name
 
     _kconf = kconf
 
@@ -772,12 +776,16 @@ def menuconfig(kconf: "Kconfig", headless: bool = False) -> None:
     # in one piece already...)
     os.environ.setdefault("ESCDELAY", "0")
 
+    if headless:
+        # Match initial TUI state so helpers like _node_str() work in tests.
+        _show_help = _show_name = False
+        return
+
     # Enter curses mode. _menuconfig() returns a string to print on exit, after
     # curses has been de-initialized.
-    if not headless:
-        Console(file=sys.stderr).print(
-            _colorize_message(_wrapper(_menuconfig))
-        )  # instead of print(curses.wrapper(_menuconfig))
+    Console(file=sys.stderr).print(
+        _colorize_message(_wrapper(_menuconfig))
+    )  # instead of print(curses.wrapper(_menuconfig))
 
 
 def _wrapper(func):
@@ -3155,9 +3163,14 @@ def _node_str(node):
         if isinstance(node.item, Symbol):
             sym = node.item
 
-            # Print "(default value)" next to symbols without a user value (from e.g. a
-            # .config), but skip for for symbols of UNKNOWN type (which generate a warning though)
-            if sym.has_active_default_value():
+            # Choice options in y mode: show whether the *choice* is still on its
+            # Kconfig default selection, not per-symbol "(default value)" on every row.
+            if _is_y_mode_choice_sym(sym):
+                if sym.orig_type and sym.choice._user_selection is None and sym.choice.selection is sym:
+                    s += " (default selection)"
+            elif sym.has_active_default_value():
+                # Print "(default value)" next to symbols without a user value (from e.g. a
+                # .config), but skip for symbols of UNKNOWN type (which generate a warning though)
                 s += " (default value)"
 
             for _, cond, source in sym.rev_values:
@@ -3166,9 +3179,10 @@ def _node_str(node):
                     break
 
     if isinstance(node.item, Choice) and node.item.bool_value == 2:
+        choice = node.item
         # Print the prompt of the selected symbol after the choice for
         # choices in y mode
-        sym = node.item.selection
+        sym = choice.selection
         if sym:
             for sym_node in sym.nodes:
                 # Use the prompt used at this choice location, in case the
@@ -3183,6 +3197,11 @@ def _node_str(node):
                     if sym_node.prompt:
                         s += f" ({sym_node.prompt[0]})"
                         break
+
+        # After the selected option hint, so the line reads:
+        #   "<prompt> (<current selection>) (default value)" when applicable.
+        if node.prompt and choice.orig_type and choice._user_selection is None:
+            s += " (default value)"
 
     # Print "--->" next to nodes that have menus that can potentially be
     # entered. Print "----" if the menu is empty. We don't allow those to be
