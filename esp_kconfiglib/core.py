@@ -33,6 +33,7 @@ from esp_kconfiglib.constants import DefaultsPolicy
 from esp_kconfiglib.report import PRAGMA_PREFIX
 from esp_kconfiglib.report import STATUS_ERROR as REPORT_STATUS_ERROR
 from esp_kconfiglib.report import DefaultValuesArea
+from esp_kconfiglib.report import DisabledSymbolArea
 from esp_kconfiglib.report import KconfigReport
 from esp_kconfiglib.report import MiscArea
 from esp_kconfiglib.report import MultipleAssignmentArea
@@ -1530,28 +1531,42 @@ class Kconfig(object):
             #############################################
 
             for choice in choices_with_user_set_value:
+                choice_selections = choices_with_user_set_value[choice]
+                if choice.visibility == 0:
+                    if is_main_sdkconfig:  # Only report if loading main sdkconfig
+                        if all(val == "n" for _, val in choice_selections):
+                            choice_user_val: Optional[str] = None
+                        else:
+                            choice_user_val = _choice_user_entries_last_y_name(choice_selections)
+                        self.report.add_record(
+                            DisabledSymbolArea,
+                            sym_or_choice=choice,
+                            user_value=choice_user_val,
+                        )
                 # if all symbols are set to n, we need to report that the current choice selection
                 # is attempted to be set to n without setting another choice symbol to y
-                if all(val == "n" for _, val in choices_with_user_set_value[choice]):
-                    self.report.add_record(
-                        MiscArea,
-                        message=(
-                            f"Trying to set symbol {choice.selection.name} to n, but it is currently selected "
-                            f"by choice {choice.name}. For setting it to n, set another choice symbol to y instead."
-                        ),
-                    )
+                elif all(val == "n" for _, val in choice_selections):
+                    sel = choice.selection
+                    if sel is not None:
+                        self.report.add_record(
+                            MiscArea,
+                            message=(
+                                f"Trying to set symbol {sel.name} to n, but it is currently selected "
+                                f"by choice {choice.name}. For setting it to n, set another choice symbol to y instead."
+                            ),
+                        )
                 # if there are multiple active selections, report that the last one will be used
-                if len([val for _, val in choices_with_user_set_value[choice] if val == "y"]) > 1:
-                    active_selections = [sym.name for sym, val in choices_with_user_set_value[choice] if val == "y"]
+                elif len([val for _, val in choice_selections if val == "y"]) > 1:
+                    last_y_name = _choice_user_entries_last_y_name(choice_selections)
                     self.report.add_record(
                         MiscArea,
                         message=(
                             f"Choice {choice.name} has multiple active selections. "
-                            f"The last one will be used: {active_selections[-1]} ."
+                            f"The last one will be used: {last_y_name}."
                         ),
                     )
 
-                for sym, val in choices_with_user_set_value[choice]:
+                for sym, val in choice_selections:
                     self.set_value_and_source(sym, val, filename)
                     if is_main_sdkconfig:
                         sym._sdkconfig_value = val
@@ -7062,6 +7077,20 @@ def standard_sc_expr_str(sc):
         return sc.name
 
     return f"<choice {sc.name}>" if sc.name else "<choice>"
+
+
+def _choice_user_entries_last_y_name(entries: List[Tuple[Symbol, str]]) -> Optional[str]:
+    """
+    Name of the last symbol set to y in sdkconfig load order (choices_with_user_set_value entries).
+
+    Same 'last wins' rule as for multiple y in deferred load. Related: Choice.resolve_defaults uses
+    y_syms_from_sdkconfig[-1] in definition order with visibility filtering, not this entry order.
+    """
+    last_sym: Optional[Symbol] = None
+    for sym, val in entries:
+        if val == "y":
+            last_sym = sym
+    return last_sym.name if last_sym else None
 
 
 def _parenthesize(expr, type_, sc_expr_str_fn):

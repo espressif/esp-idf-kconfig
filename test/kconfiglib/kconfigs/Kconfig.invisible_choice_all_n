@@ -1,0 +1,18 @@
+mainmenu "Test"
+
+config NOT
+    bool "prompt"
+    default n
+
+if NOT
+    choice CHOICE
+        prompt "Choice"
+
+    config SYM
+        bool "Sym"
+
+    config SYM2
+        bool "Sym2"
+
+    endchoice
+endif

@@ -614,15 +614,17 @@ class DisabledSymbolArea(Area):
             ),
         )
         self.hidden_symbols: Dict[Symbol, str] = dict()
-        self.hidden_choices: Dict[Choice, Symbol] = dict()
+        # None: every choice symbol user-set to n (choice invisible). Otherwise the last y symbol name
+        # from sdkconfig (same order as deferred load).
+        self.hidden_choices: Dict[Choice, Optional[str]] = dict()
 
     def add_record(self, sym_or_choice: "Union[Symbol, Choice]", **kwargs: Optional[dict]) -> None:
         """
         kwargs:
-            user_value: str
+            user_value: str for symbols; Optional[str] for choices (None = all choice symbols n, invisible).
         """
         if "user_value" not in kwargs.keys():
-            raise AttributeError("User value must be specified for HiddenSymbolArea.")
+            raise AttributeError("User value must be specified for DisabledSymbolArea.")
         # Choice symbols are ignored; choice will be reported separately.
         if sym_or_choice.__class__.__name__ == "Symbol" and not sym_or_choice.choice:  # type: ignore
             self.hidden_symbols[sym_or_choice] = kwargs["user_value"]  # type: ignore
@@ -630,10 +632,10 @@ class DisabledSymbolArea(Area):
             self.hidden_choices[sym_or_choice] = kwargs["user_value"]  # type: ignore
 
     def report_severity(self) -> int:
-        return STATUS_OK_WITH_INFO if self.hidden_symbols else STATUS_OK
+        return STATUS_OK_WITH_INFO if self.hidden_symbols or self.hidden_choices else STATUS_OK
 
     def print(self, verbosity: str) -> Optional[Table]:
-        if not self.hidden_symbols:
+        if self.report_severity() == STATUS_OK:
             return None
         table = Table(title=self.title, title_justify="left", show_header=False, title_style=AREA_TITLE_STYLE)
         table.box = HORIZONTALS
@@ -644,13 +646,18 @@ class DisabledSymbolArea(Area):
             )
         for choice in self.hidden_choices:
             user_source = choice._user_source or getattr(choice._user_selection, "_user_source", "")
-            table.add_row(
-                f"* {choice.name_and_loc} with user-set symbol {self.hidden_choices[choice].name} from {user_source}"
-            )
+            y_name = self.hidden_choices[choice]
+            if y_name is None:
+                table.add_row(
+                    f"* {choice.name_and_loc} with all choice symbols disabled in sdkconfig; "
+                    f"the choice is not visible. Source: {user_source or '(unknown)'}"
+                )
+            else:
+                table.add_row(f"* {choice.name_and_loc} with user-set value {y_name} from {user_source}")
         return table
 
     def return_json(self) -> Optional[dict]:
-        if not self.hidden_symbols:
+        if self.report_severity() == STATUS_OK:
             return None
         ret_json = super().return_json()
         if not ret_json:
@@ -664,8 +671,9 @@ class DisabledSymbolArea(Area):
                 "source": symbol._user_source,
             }
         for choice in self.hidden_choices:
+            y_name = self.hidden_choices[choice]
             ret_json["data"]["choices"][choice.name] = {
-                "value": self.hidden_choices[choice].name,
+                "value": y_name,
                 "source": choice._user_source or getattr(choice._user_selection, "_user_source", ""),
             }
 
@@ -852,9 +860,6 @@ class KconfigReport:
             if sym._user_value is not None and sym.visibility == 0:
                 str_value = bool_to_str[sym._user_value] if sym._user_value in bool_to_str else sym._user_value
                 self.add_record(DisabledSymbolArea, sym_or_choice=sym, user_value=str_value)
-        for choice in self.kconfig.unique_choices:
-            if choice._user_selection is not None and choice.visibility == 0:
-                self.add_record(DisabledSymbolArea, sym_or_choice=choice, user_value=choice._user_selection)
 
     def print_report(self, file: Optional[str] = None) -> None:
         # Some areas (DisabledSymbolArea for instance) need to be finalized after Kconfig

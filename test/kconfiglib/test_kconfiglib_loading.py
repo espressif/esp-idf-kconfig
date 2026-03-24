@@ -375,7 +375,7 @@ class TestMultipleValueSet(TestBase):
         assert misc_area is not None
         assert (
             "Choice CHOICE_SECOND_COMMON has multiple active selections. "
-            "The last one will be used: GAMMA_SECOND_COMMON ." in misc_area["data"]
+            "The last one will be used: GAMMA_SECOND_COMMON." in misc_area["data"]
         )
 
         kconfig.report.reset()
@@ -582,6 +582,40 @@ class TestDisabledSymbols(TestBase):
         assert "CHOICE_B" in area["data"]["choices"]["DISABLED_CHOICE"]["value"]
         assert "sdkconfig.disabled_symbols_choices" in area["data"]["choices"]["DISABLED_CHOICE"]["source"]
 
+        kconfig.report.reset()
+
+    def test_disabled_choice_all_symbols_n_choice_invisible(self):
+        """
+        When the choice is not visible and every choice symbol is user-set to n in sdkconfig,
+        DisabledSymbolArea stores None for the choice (JSON value null).
+        """
+        kconfig = Kconfig(os.path.join(KCONFIG_PATH, "Kconfig.invisible_choice_all_n"))
+        kconfig.load_config(os.path.join(SDKCONFIGS_PATH, "sdkconfig.invisible_choice_all_n"))
+        report_json = kconfig.report._return_json()
+        area = next(
+            (area for area in report_json["areas"] if area["title"] == "Disabled Symbols/Choices With User-Set Value"),
+            None,
+        )
+        assert area is not None, "Disabled Symbols/Choices With User-Set Value area not found in report"
+        assert "CHOICE" in area["data"]["choices"]
+        assert area["data"]["choices"]["CHOICE"]["value"] is None
+        kconfig.report.reset()
+
+    def test_disabled_choice_with_y_value_choice_invisible(self):
+        """
+        When the choice is not visible but a choice symbol is user-set to y,
+        DisabledSymbolArea stores the last y symbol name for the choice.
+        """
+        kconfig = Kconfig(os.path.join(KCONFIG_PATH, "Kconfig.invisible_choice_all_n"))
+        kconfig.load_config(os.path.join(SDKCONFIGS_PATH, "sdkconfig.invisible_choice_with_y"))
+        report_json = kconfig.report._return_json()
+        area = next(
+            (area for area in report_json["areas"] if area["title"] == "Disabled Symbols/Choices With User-Set Value"),
+            None,
+        )
+        assert area is not None, "Disabled Symbols/Choices With User-Set Value area not found in report"
+        assert "CHOICE" in area["data"]["choices"]
+        assert area["data"]["choices"]["CHOICE"]["value"] == "SYM2"
         kconfig.report.reset()
 
 
