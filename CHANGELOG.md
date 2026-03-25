@@ -20,6 +20,20 @@
 </div>
 <hr>
 
+## v3.7.0 (2026-03-25)
+
+### ✨ New Features
+
+- add set and set default keywords to parser v1 *(Jan Beran - 7db140d)*
+
+### 🐛 Bug Fixes
+
+- **kconfig**: report invisible choices with all-n sdkconfig without crashing *(Jan Beran - 89a6ed6)*
+- **report**: correctly report choice defined multiple times *(Jan Beran - 1af0ab2)*
+- **menuconfig**: clarify choice default labels *(Jan Beran - f22a47d)*
+- include only defined symbols in kconfserver "default" key *(Jan Beran - 2f40196)*
+
+
 ## v3.6.0 (2026-03-05)
 
 ### ✨ New Features
