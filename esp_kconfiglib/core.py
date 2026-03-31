@@ -460,6 +460,7 @@ class Kconfig(object):
         "_srctree_prefix",
         "_unset_match",
         "_warn_assign_no_prompt",
+        "_deprecated_options",
         "allowed_multi_def_choices",
         "allowed_multi_def_syms",
         "choices",
@@ -768,6 +769,14 @@ class Kconfig(object):
             specified by self.comment_default_value.
         """
         self.comment_default_value = SDKCONFIG_DEFAULT_PRAGMA
+
+        """
+        _deprecated_options:
+            Instance of DeprecatedOptions class for handling deprecated option mappings.
+            None if no rename files have been loaded.
+            See deprecated.py for more details.
+        """
+        self._deprecated_options = None
 
         # Regular expressions for parsing .config files
         self._set_match = re.compile(self.config_prefix + r"([^=]+)=(.*)", re.ASCII).match
@@ -1107,6 +1116,42 @@ class Kconfig(object):
 
         return None
 
+    def load_rename_files(self, path_rename_files):
+        """
+        Load sdkconfig.rename files for deprecated option handling.
+
+        Parses the given rename files and stores the deprecated-to-new option
+        mappings internally. This enables:
+        - Automatic resolution of deprecated option names during load_config()
+        - Writing deprecated compatibility blocks in write_config() and write_autoconf()
+        - Touching cdep files for deprecated aliases in sync_deps()
+
+        Must be called before load_config() to enable deprecated option resolution
+        during config loading.
+
+        path_rename_files:
+          List of paths to sdkconfig.rename files. Each file contains lines of
+          the form "CONFIG_OLD CONFIG_NEW", optionally with '!' prefix on the
+          new name to indicate boolean inversion.
+
+        If the same deprecated option appears more than once across the loaded
+        files, the last mapping is used and a record is added to the configuration
+        report (Miscellaneous area).
+        """
+        from .deprecated import DeprecatedOptions
+
+        self._deprecated_options = DeprecatedOptions(
+            self.config_prefix,
+            self.report,
+            path_rename_files=path_rename_files,
+            encoding=self._encoding,
+        )
+
+    @property
+    def deprecated_options(self):
+        """The DeprecatedOptions instance, or None if no rename files have been loaded."""
+        return self._deprecated_options
+
     def load_config(
         self,
         filename=None,
@@ -1252,18 +1297,15 @@ class Kconfig(object):
             1) Create a new Symbol object and add it into kconfig.syms (but not to e.g. unique_defined_syms).
                This is because we want deprecated symbols to participate in expression evaluation (in some cases),
                but nothing else.
-            2) Infer the type of the symbol. This is the most uncertain part. Once we move the logic regarding
-               deprecated values into Kconfig, we should inherit the type of the new symbol.
-               Currently, we cannot get this information and must rely on the properties of the value.
-               FIXME: Once we handle deprecated values directly in kconfiglib instead of kconfgen, we will
-                      be able to inherit the type from the new symbol.
+            2) Infer the type of the symbol. If deprecated option mappings are loaded, the type is
+               inherited from the new (replacement) symbol. Otherwise, falls back to value-based inference.
             3) Prepare a MenuNode without any connection to the rest of the tree and use it as this symbol's MenuNode.
                This is necessary as some of the symbol's properties are stored in the MenuNode (e.g. prompt, which is
                used to calculate visibility). We do not want deprecated values to be part of the original menu tree,
                so these MenuNodes are not connected to it in any way.
             4) Set the symbol's value.
             """
-            if not currently_loading_deprecated:
+            if not in_deprecated_block:
                 return
 
             parsing_kconfigs = self._parsing_kconfigs
@@ -1274,7 +1316,15 @@ class Kconfig(object):
             sym._is_deprecated = True
             sym._loaded_as_default = False
 
-            if val in ("y", "n"):
+            new_sym = None
+            if self._deprecated_options:
+                new_name = self._deprecated_options.get_new_option(name)
+                if new_name:
+                    new_sym = get_sym(new_name)
+
+            if new_sym and new_sym.nodes:
+                sym.orig_type = new_sym.orig_type
+            elif val in ("y", "n"):
                 sym.orig_type = BOOL
             elif val.startswith(("0x", "0X")):
                 sym.orig_type = HEX
@@ -1297,7 +1347,7 @@ class Kconfig(object):
             self.set_value_and_source(sym, val if val[0] not in ("'", '"') else val[1:-1], filename)
             return sym
 
-        currently_loading_deprecated = False
+        in_deprecated_block = False
 
         # We need to first load symbols with user-set value, but those can be anywhere in sdkconfig.
         # We cache symbols with default values and set them additionally.
@@ -1351,22 +1401,47 @@ class Kconfig(object):
                     continue
 
                 if line and line.strip() == DEP_OP_BEGIN:
-                    currently_loading_deprecated = load_deprecated
+                    in_deprecated_block = True
                     value_is_default = False
                     continue
                 elif line and line.strip() == DEP_OP_END:
-                    currently_loading_deprecated = False
+                    in_deprecated_block = False
                     value_is_default = False
+                    continue
+
+                if in_deprecated_block and not load_deprecated:
                     continue
 
                 match = set_match(line)
                 if match:
                     name, val = match.groups()
                     sym = get_sym(name)
-                    if not sym and currently_loading_deprecated:
+                    if not sym and in_deprecated_block:
                         sym = _create_new_deprecated_symbol(name, val)
                         value_is_default = False
                         continue
+
+                    # We encountered a deprecated option: map old name to new symbol
+                    if (not sym or not sym.nodes) and not in_deprecated_block and self._deprecated_options:
+                        new_name = self._deprecated_options.get_new_option(name)
+                        if new_name:
+                            new_sym = get_sym(new_name)
+                            if new_sym and new_sym.nodes:
+                                if self._deprecated_options.is_inversion(name) and new_sym.orig_type == BOOL:
+                                    val = "n" if val.startswith("y") else "y"
+                                self._info(
+                                    "{}:{} {} was replaced with {}{}".format(
+                                        filename,
+                                        linenr,
+                                        self.config_prefix + name,
+                                        self.config_prefix + new_name,
+                                        " and inverted" if self._deprecated_options.is_inversion(name) else "",
+                                    )
+                                )
+                                sym = new_sym
+                                name = new_name
+                                value_is_default = False
+
                     if not sym or not sym.nodes:
                         self._undef_assign(name, val, filename, linenr)
                         value_is_default = False
@@ -1450,9 +1525,32 @@ class Kconfig(object):
 
                     name = match.group(1)
                     sym = get_sym(name)
-                    if not sym and currently_loading_deprecated:
+                    if not sym and in_deprecated_block:
                         sym = _create_new_deprecated_symbol(name, "n")
                         value_is_default = False
+
+                    # We have encountered a deprecated option: resolve it for "is not set" lines
+                    _deprecated_unset_val = None
+                    if (not sym or not sym.nodes) and not in_deprecated_block and self._deprecated_options:
+                        new_name = self._deprecated_options.get_new_option(name)
+                        if new_name:
+                            new_sym = get_sym(new_name)
+                            if new_sym and new_sym.nodes:
+                                is_inv = self._deprecated_options.is_inversion(name)
+                                if is_inv:
+                                    _deprecated_unset_val = "y"
+                                self._info(
+                                    "{}:{} {} was replaced with {}{}".format(
+                                        filename,
+                                        linenr,
+                                        self.config_prefix + name,
+                                        self.config_prefix + new_name,
+                                        " and inverted" if is_inv else "",
+                                    )
+                                )
+                                sym = new_sym
+                                name = new_name
+                                value_is_default = False
 
                     if not sym or not sym.nodes:
                         self._undef_assign(name, "n", filename, linenr)
@@ -1468,7 +1566,7 @@ class Kconfig(object):
                         value_is_default = False
                         continue
 
-                    val = "n"
+                    val = _deprecated_unset_val if _deprecated_unset_val is not None else "n"
 
                 #############################################
                 # Done parsing the assignment. Set the value.
@@ -1655,7 +1753,7 @@ class Kconfig(object):
         else:
             return ""
 
-    def write_autoconf(self, filename=None, header=None):
+    def write_autoconf(self, filename=None, header=None, write_deprecated=False):
         r"""
         Writes out symbol values as a C header file, matching the format used
         by include/generated/autoconf.h in the kernel.
@@ -1686,6 +1784,11 @@ class Kconfig(object):
           will be used if it was set, and no header otherwise. See the
           Kconfig.header_header attribute.
 
+        write_deprecated (default: False):
+          If True and deprecated option rename files have been loaded via
+          load_rename_files(), deprecated #define aliases are appended to
+          the header output.
+
         Returns a string with a message saying that the header got saved, or
         that there were no changes to it. This is meant to reduce boilerplate
         in tools, which can do e.g. print(kconf.write_autoconf()).
@@ -1693,11 +1796,11 @@ class Kconfig(object):
         if filename is None:
             filename = os.getenv("KCONFIG_AUTOHEADER", "include/generated/autoconf.h")
 
-        if self._write_if_changed(filename, self._autoconf_contents(header)):
+        if self._write_if_changed(filename, self._autoconf_contents(header, write_deprecated=write_deprecated)):
             return f"Kconfig header saved to '{filename}'"
         return f"No change to Kconfig header in '{filename}'"
 
-    def _autoconf_contents(self, header):
+    def _autoconf_contents(self, header, write_deprecated=False):
         # write_autoconf() helper. Returns the contents to write as a string,
         # with 'header' or KCONFIG_AUTOHEADER_HEADER at the beginning.
 
@@ -1712,9 +1815,12 @@ class Kconfig(object):
             if header_string:
                 add(header_string)
 
+        if write_deprecated and self._deprecated_options and self._deprecated_options.has_entries:
+            add(self._deprecated_options.deprecated_header_contents(self))
+
         return "".join(chunks)
 
-    def write_config(self, filename=None, header=None, save_old=True, verbose=None):
+    def write_config(self, filename=None, header=None, save_old=True, verbose=None, write_deprecated=False):
         r"""
         Writes out symbol values in the .config format. The format matches the
         C implementation, including ordering.
@@ -1771,6 +1877,11 @@ class Kconfig(object):
 
           Will probably be removed in some future version.
 
+        write_deprecated (default: False):
+          If True and deprecated option rename files have been loaded via
+          load_rename_files(), a compatibility block with deprecated option
+          aliases is appended to the output.
+
         Returns a string with a message saying which file got saved. This is
         meant to reduce boilerplate in tools, which can do e.g.
         print(kconf.write_config()).
@@ -1781,7 +1892,7 @@ class Kconfig(object):
         if filename is None:
             filename = standard_config_filename()
 
-        contents = self._config_contents(header)
+        contents = self._config_contents(header, write_deprecated=write_deprecated)
         if self._contents_eq(filename, contents):
             return f"No change to configuration in '{filename}'"
 
@@ -1796,7 +1907,7 @@ class Kconfig(object):
     def return_config(self):
         return self._config_contents(None)
 
-    def _config_contents(self, header):
+    def _config_contents(self, header, write_deprecated=False):
         # write_config() helper. Returns the contents to write as a string,
         # with 'header' or KCONFIG_CONFIG_HEADER at the beginning.
         #
@@ -1845,6 +1956,8 @@ class Kconfig(object):
                         break
                 else:
                     # No more nodes
+                    if write_deprecated and self._deprecated_options and self._deprecated_options.has_entries:
+                        add(self._deprecated_options.deprecated_config_contents(self))
                     return "".join(chunks)
 
             # Generate configuration output for the node
@@ -2085,6 +2198,12 @@ class Kconfig(object):
 
             # 'sym' has a new value. Flag it.
             _touch_dep_file(path, sym.name)
+
+            # Also flag deprecated aliases so source files using old names
+            # get rebuilt when the new symbol's value changes.
+            if self._deprecated_options:
+                for dep_name in self._deprecated_options.get_deprecated_option(sym.name):
+                    _touch_dep_file(path, dep_name)
 
         # Remember the current values as the "new old" values.
         #

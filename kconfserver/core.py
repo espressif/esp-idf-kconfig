@@ -9,7 +9,6 @@ import argparse
 import json
 import os
 import sys
-import tempfile
 from json import JSONDecodeError
 from typing import Dict
 from typing import List
@@ -97,15 +96,8 @@ def run_server(kconfig, sdkconfig, sdkconfig_rename, default_version=MAX_PROTOCO
     sdkconfig_renames_from_env = os.environ.get("COMPONENT_SDKCONFIG_RENAMES")
     if sdkconfig_renames_from_env:
         sdkconfig_renames += sdkconfig_renames_from_env.split(";")
-    deprecated_options = kconfgen.DeprecatedOptions(config.config_prefix, path_rename_files=sdkconfig_renames)
-    f_o = tempfile.NamedTemporaryFile(mode="w+b", delete=False)
-    try:
-        with open(sdkconfig, mode="rb") as f_i:
-            f_o.write(f_i.read())
-        f_o.close()  # need to close as DeprecatedOptions will reopen, and Windows only allows one open file
-        deprecated_options.replace(sdkconfig_in=f_o.name, sdkconfig_out=sdkconfig)
-    finally:
-        os.unlink(f_o.name)
+    if sdkconfig_renames:
+        config.load_rename_files(sdkconfig_renames)
     config.load_config(sdkconfig)
 
     print("Server running, waiting for requests on stdin...", file=sys.stderr)
@@ -184,7 +176,7 @@ def run_server(kconfig, sdkconfig, sdkconfig_rename, default_version=MAX_PROTOCO
             else:
                 sdkconfig = req["save"]
 
-        error = handle_request(deprecated_options, config, req)
+        error = handle_request(config, req)
 
         after = kconfgen.get_json_values(config)
         after_ranges = get_ranges(config)
@@ -234,7 +226,7 @@ def get_sym_default_value_dict(config: kconfiglib.Kconfig) -> Dict[str, bool]:
     return defaults
 
 
-def handle_request(deprecated_options, config, req):
+def handle_request(config, req):
     if "version" not in req:
         return ["All requests must have a 'version'"]
 
@@ -265,7 +257,7 @@ def handle_request(deprecated_options, config, req):
     if "save" in req:
         try:
             print("Saving config to %s..." % req["save"], file=sys.stderr)
-            kconfgen.write_config(deprecated_options, config, req["save"])
+            kconfgen.write_config(config, req["save"])
         except Exception as e:
             error += ["Failed to save to %s: %s" % (req["save"], e)]
 
