@@ -34,7 +34,10 @@ dynamic = ['version']
 dependencies = [
     "windows-curses; sys_platform == 'win32' and python_version < '3.13'",
     # older versions does not support Python 3.13: https://github.com/zephyrproject-rtos/windows-curses/issues/69
-    "windows-curses>=2.4.1; sys_platform == 'win32' and python_version >= '3.13'",
+    "windows-curses>=2.4.1; sys_platform == 'win32' and python_version == '3.13'",
+    # 2.4.2 is the first version that supports Python 3.14 on Windows
+    # see: https://github.com/zephyrproject-rtos/windows-curses/issues/76
+    "windows-curses>=2.4.2; sys_platform == 'win32' and python_version >= '3.14'",
     "rich",
     "pyparsing",
 ]
