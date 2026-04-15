@@ -1,0 +1,14 @@
+mainmenu "Promptless Symbol Test"
+
+    config PROMPTLESS_STRING
+        string
+        default "default_val"
+
+    config PROMPTLESS_BOOL
+        bool
+        default y
+
+    config NORMAL_DISABLED
+        bool "Normal disabled symbol"
+        depends on NONEXISTENT
+        default n

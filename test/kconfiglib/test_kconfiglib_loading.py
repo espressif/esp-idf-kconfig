@@ -618,6 +618,35 @@ class TestDisabledSymbols(TestBase):
         assert area["data"]["choices"]["CHOICE"]["value"] == "SYM2"
         kconfig.report.reset()
 
+    def test_promptless_symbol_not_in_disabled_area(self):
+        """
+        Promptless symbols with user-set values should NOT be reported in
+        DisabledSymbolArea — they belong in DefaultValuesArea instead.
+        Only symbols with a prompt that is invisible due to unmet dependencies
+        should appear in DisabledSymbolArea.
+        """
+        kconfig = Kconfig(os.path.join(KCONFIG_PATH, "Kconfig.promptless_user_value"))
+        kconfig.load_config(os.path.join(SDKCONFIGS_PATH, "sdkconfig.promptless_user_value"))
+        report_json = kconfig.report._return_json()
+
+        disabled_area = next(
+            (area for area in report_json["areas"] if area["title"] == "Disabled Symbols/Choices With User-Set Value"),
+            None,
+        )
+        assert disabled_area is not None, "DisabledSymbolArea should still exist (NORMAL_DISABLED is there)"
+
+        assert "PROMPTLESS_STRING" not in disabled_area["data"]["symbols"], (
+            "Promptless symbols should not appear in DisabledSymbolArea"
+        )
+        assert "PROMPTLESS_BOOL" not in disabled_area["data"]["symbols"], (
+            "Promptless symbols should not appear in DisabledSymbolArea"
+        )
+        assert "NORMAL_DISABLED" in disabled_area["data"]["symbols"], (
+            "Symbols disabled by dependencies should still appear in DisabledSymbolArea"
+        )
+
+        kconfig.report.reset()
+
 
 @pytest.mark.parametrize("version", ["1", "2"], indirect=True)
 class TestDefaultPragmaRegression(TestBase):
