@@ -463,6 +463,7 @@ class Kconfig(object):
         "_deprecated_options",
         "allowed_multi_def_choices",
         "allowed_multi_def_syms",
+        "promptless_no_warn",
         "choices",
         "comments",
         "comment_default_value",
@@ -754,6 +755,16 @@ class Kconfig(object):
         except ValueError:
             self._warn("Malformed KCONFIG_DEFAULTS_POLICY environment variable. Using default policy.")
             self.defaults_policy = DefaultsPolicy.USE_SDKCONFIG
+
+        """
+        promptless_no_warn:
+            Set of promptless symbol names whose report entries in
+            DefaultValuesArea should be suppressed. Populated from the
+            KCONFIG_PROMPTLESS_NO_WARN environment variable (semicolon-separated
+            list of symbol names).
+        """
+        _ignored_raw = os.environ.get("KCONFIG_PROMPTLESS_NO_WARN", "")
+        self.promptless_no_warn: set = set(name.strip() for name in _ignored_raw.split(";") if name.strip())
 
         """
         report:
@@ -1597,8 +1608,8 @@ class Kconfig(object):
                             sym._loaded_as_default = False
                         sym.present_in_current_sdkconfig = True
                         if all(node.prompt is None for node in sym.nodes):
-                            # User-set value assignment to promptless symbol
-                            self.report.add_record(DefaultValuesArea, sym_or_choice=sym, promptless=True)
+                            if sym.name not in self.promptless_no_warn:
+                                self.report.add_record(DefaultValuesArea, sym_or_choice=sym, promptless=True)
                 # If value is supposed to be a default and symbol has a prompt, save it for later
                 elif any(node.prompt is not None for node in sym.nodes):
                     sym.present_in_current_sdkconfig = True
@@ -1618,7 +1629,8 @@ class Kconfig(object):
                         sym._sdkconfig_value = val
                         sym._loaded_as_default = True
                     if is_main_sdkconfig and sym.str_value != sym._sdkconfig_value:
-                        self.report.add_record(DefaultValuesArea, sym_or_choice=sym, promptless=True)
+                        if sym.name not in self.promptless_no_warn:
+                            self.report.add_record(DefaultValuesArea, sym_or_choice=sym, promptless=True)
 
                 value_is_default = False
 
