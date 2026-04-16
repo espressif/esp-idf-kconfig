@@ -160,8 +160,12 @@ class DefaultValuesArea(Area):
     """
     Area for reporting any problems with default values:
     * Different values between sdkconfig and Kconfig files
-    * Promptless default values with different values between sdkconfig and Kconfig files
-      This is normally not a problem, but a feature. However, devs may want to know about it.
+    * Promptless symbols with different values between sdkconfig and Kconfig files
+      This may be intentional, but e.g. if a promptless symbol is attempted to be
+      user-set via sdkconfig.defaults, it is something users should care about,
+      because it won't work (promptless symbols cannot be user-set).
+      There are some exceptions in a KCONFIG_PROMPTLESS_NO_WARN
+      environment variable.
     """
 
     def __init__(self, report: "KconfigReport", verbosity: str):
@@ -633,7 +637,7 @@ class MultipleAssignmentArea(Area):
 
 class DisabledSymbolArea(Area):
     """
-    This area reports symbols that are set via sdkconfig.defaults, but are not visible.
+    This area reports symbols that are set via sdkconfig[.defaults], but are not visible.
     """
 
     def __init__(self):
@@ -890,9 +894,15 @@ class KconfigReport:
         """
         # we cannot use BOOL_TO_STR here because it would lead to a circular import
         bool_to_str = {0: "n", 2: "y"}
-        # Print a notification if symbol/choice has a user value, but is not visible.
+        # Report symbols that have a user value but are not visible due to
+        # unmet dependencies (i.e. they have a prompt whose condition is false).
+        # Promptless symbols always have visibility 0 by design and are already
+        # handled by DefaultValuesArea during config loading — they should not
+        # appear here.
         for sym in self.kconfig.defined_syms:
             if sym._user_value is not None and sym.visibility == 0:
+                if all(node.prompt is None for node in sym.nodes):
+                    continue
                 str_value = bool_to_str[sym._user_value] if sym._user_value in bool_to_str else sym._user_value
                 self.add_record(DisabledSymbolArea, sym_or_choice=sym, user_value=str_value)
 
