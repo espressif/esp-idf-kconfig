@@ -12,11 +12,9 @@
 import argparse
 import json
 import os.path
-import re
 import sys
 import tempfile
 import textwrap
-from collections import OrderedDict
 from typing import Any
 from typing import Dict
 from typing import List
@@ -27,6 +25,7 @@ from typing import Union
 import esp_idf_kconfig.gen_kconfig_doc as gen_kconfig_doc
 import esp_kconfiglib.core as kconfiglib
 from esp_idf_kconfig import __version__
+from esp_kconfiglib.constants import build_idf_min_config_header
 from esp_kconfiglib.deprecated import DeprecatedOptions
 
 
@@ -44,82 +43,16 @@ def write_config(config: kconfiglib.Kconfig, filename: str, write_deprecated: bo
     config.write_config(filename, header=CONFIG_HEADING, write_deprecated=write_deprecated)
 
 
-def min_config_with_labels(config: kconfiglib.Kconfig, header: str) -> str:
-    """Return minimal config containing menu labels."""
-    all_options = config._config_contents("").splitlines()
-    min_options = config._min_config_contents("").splitlines()
-
-    end_regex = re.compile(r"^# end of (.*)$").match
-    label_path: OrderedDict[str, bool] = OrderedDict()
-    output = [header]
-    possibly_label = False
-    current = None
-    comments = []
-    config_has_default_value = False
-
-    for line in all_options:
-        end_match = end_regex(line)
-        if end_match:
-            current = end_match.group(1)
-            label = None
-            while label != current and label_path:
-                label, used = label_path.popitem()
-                if used and label != current:
-                    comments.append(label)
-            if used:
-                output.append(f"{line}\n")
-            current = next(reversed(label_path.keys())) if label_path else None
-        elif line == "#":
-            possibly_label = not possibly_label
-        elif possibly_label:
-            current = line[2:]
-            label_path[current] = False
-        elif line in min_options:
-            for label, used in label_path.items():
-                if not used:
-                    output.append(f"\n#\n# {label}\n#\n")
-                label_path[label] = True
-
-            if line.strip() == config.comment_default_value:
-                config_has_default_value = True
-            else:
-                comment_value_is_default = f"{config.comment_default_value}\n" if config_has_default_value else ""
-                output.append(f"{comment_value_is_default}{line}\n")
-                config_has_default_value = False
-        else:
-            config_has_default_value = False
-    for comment in comments:
-        output.remove(f"\n#\n# {comment}\n#\n")
-    return "".join(output)
-
-
 def write_min_config(config: kconfiglib.Kconfig, filename: str, write_deprecated: bool = True) -> None:
-    """Write a minimal (savedefconfig) configuration file."""
-    idf_version = os.environ.get("IDF_VERSION", "")
-    target_symbol = config.syms["IDF_TARGET"]
-    write_target = target_symbol.str_value != "esp32"
-
-    CONFIG_HEADING = textwrap.dedent(
-        f"""\
-    # This file was generated using idf.py save-defconfig. It can be edited manually.
-    # Espressif IoT Development Framework (ESP-IDF) {idf_version} Project Minimal Configuration
-    #
-    {target_symbol.config_string if write_target else ""}\
     """
-    )
+    Write a minimal (savedefconfig) configuration file.
 
-    if os.environ.get("ESP_IDF_KCONFIG_MIN_LABELS", False) == "1":
-        lines = min_config_with_labels(config, CONFIG_HEADING).splitlines()
-    else:
-        lines = config._min_config_contents(header=CONFIG_HEADING).splitlines()
-
-    unset_match = re.compile(r"# {}([^ ]+) is not set".format(config.config_prefix)).match
-    for idx, line in enumerate(lines):
-        match = unset_match(line)
-        if match:
-            lines[idx] = f"{config.config_prefix}{match.group(1)}=n"
-    lines[-1] += "\n"
-    config._write_if_changed(filename, "\n".join(lines))
+    Builds the ESP-IDF header and delegates to
+    :meth:`Kconfig.write_min_config`.
+    """
+    header = build_idf_min_config_header(config)
+    use_labels = os.environ.get("ESP_IDF_KCONFIG_MIN_LABELS", "") == "1"
+    config.write_min_config(filename, header=header, labels=use_labels, normalize_unset=True)
 
 
 def write_header(config: kconfiglib.Kconfig, filename: str, write_deprecated: bool = True) -> None:

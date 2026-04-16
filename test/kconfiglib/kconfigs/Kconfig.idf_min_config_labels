@@ -1,0 +1,31 @@
+mainmenu "Test IDF minimal config with labels"
+
+    config IDF_TARGET
+        string "IDF target"
+        default "esp32"
+
+    menu "Engine"
+        config MOTORS_ENABLED
+            bool "Motors enabled"
+            default n
+
+        config FUEL
+            string "Fuel"
+            default "kerosene"
+
+        menu "Advanced"
+            config TURBO
+                bool "Turbo"
+                default n
+        endmenu
+    endmenu
+
+    menu "Navigation"
+        config GPS
+            bool "GPS"
+            default y
+
+        config COMPASS
+            bool "Compass"
+            default y
+    endmenu

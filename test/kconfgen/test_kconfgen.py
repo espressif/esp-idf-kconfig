@@ -6,11 +6,14 @@ import subprocess
 import textwrap
 from dataclasses import asdict
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Optional
 
 import pytest
 
 from esp_kconfiglib import DefaultsPolicy
+from esp_kconfiglib import Kconfig
+from kconfgen.core import write_min_config
 
 KCONFIG_PARSER_VERSIONS = ["1", "2"]
 
@@ -625,3 +628,61 @@ class TestChooseDefaultValue(KconfgenBaseTestCase):
     def test_ignore_sdkconfig(self, runner):
         self.args.env = f"KCONFIG_DEFAULTS_POLICY={DefaultsPolicy.USE_KCONFIG.value}"
         runner(self.args, TestChooseDefaultValue.input, "CONFIG_FOO=y")
+
+
+@pytest.mark.parametrize("set_parser_version", KCONFIG_PARSER_VERSIONS, indirect=True)
+class TestSaveDefconfigIdfHeader(KconfgenBaseTestCase):
+    """ESP-IDF minimal header produced by :func:`kconfgen.core.write_min_config`."""
+
+    KCONFIG_MINIMAL = textwrap.dedent(
+        """
+        mainmenu "Test"
+
+            config IDF_TARGET
+                string "IDF target"
+                default "esp32"
+
+            config EXTRA
+                bool "extra"
+                default n
+        """
+    )
+
+    def test_header_contains_banner_and_idf_version(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("IDF_VERSION", "7.8.9")
+        kpath = os.path.join(str(tmp_path), "Kconfig")
+        with open(kpath, "w", encoding="utf-8") as f:
+            f.write(self.KCONFIG_MINIMAL)
+
+        kconf = Kconfig(kpath)
+        kconf.syms["EXTRA"].set_value("y")
+        out = os.path.join(str(tmp_path), "sdkconfig.defaults")
+        write_min_config(kconf, out)
+        text = Path(out).read_text(encoding="utf-8")
+
+        assert "idf.py save-defconfig" in text
+        assert "(ESP-IDF) 7.8.9 Project Minimal Configuration" in text
+        # Default IDF_TARGET is esp32 -> not duplicated into the header block.
+        header_block, _, rest = text.partition("CONFIG_EXTRA=y")
+        assert "CONFIG_IDF_TARGET" not in header_block
+
+    def test_header_prepends_idf_target_when_not_esp32(self, tmp_path, monkeypatch):
+        monkeypatch.delenv("IDF_VERSION", raising=False)
+        kpath = os.path.join(str(tmp_path), "Kconfig")
+        with open(kpath, "w", encoding="utf-8") as f:
+            f.write(self.KCONFIG_MINIMAL)
+
+        kconf = Kconfig(kpath)
+        sdk = os.path.join(str(tmp_path), "sdkconfig")
+        with open(sdk, "w", encoding="utf-8") as f:
+            f.write('CONFIG_IDF_TARGET="esp32c3"\n')
+        kconf.load_config(sdk)
+        kconf.syms["EXTRA"].set_value("y")
+
+        out = os.path.join(str(tmp_path), "sdkconfig.defaults")
+        write_min_config(kconf, out)
+        text = Path(out).read_text(encoding="utf-8")
+
+        assert 'CONFIG_IDF_TARGET="esp32c3"' in text
+        # Header injects the target assignment before the rest of the file body.
+        assert text.index("CONFIG_IDF_TARGET") < text.index("CONFIG_EXTRA=y")

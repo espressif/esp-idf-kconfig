@@ -1,0 +1,17 @@
+mainmenu "Test IDF minimal config"
+
+    config IDF_TARGET
+        string "IDF target"
+        default "esp32"
+
+    config MOTORS_ENABLED
+        bool "Motors enabled"
+        default n
+
+    config CREW
+        bool "Crew"
+        default n
+
+    config FUEL
+        string "Fuel"
+        default "kerosene"
