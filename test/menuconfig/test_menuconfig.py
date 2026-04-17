@@ -478,3 +478,19 @@ class TestChoiceDefaultMenuLabels(MenuconfigTestBase):
                 os.environ.pop("KCONFIG_CONFIG", None)
             else:
                 os.environ["KCONFIG_CONFIG"] = prev_kconfig_config
+
+
+@pytest.mark.parametrize("version", ["1", "2"], indirect=True)
+class TestMenuconfigSdkconfigDefaultsPath(MenuconfigTestBase):
+    """Default ``sdkconfig.defaults`` path next to ``sdkconfig`` (menuconfig ``[D]``)."""
+
+    def test_default_minconf_filename(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Menuconfig derives the default minimal-config path from ``KCONFIG_CONFIG``."""
+        sdkconfig = tmp_path / "sdkconfig"
+        sdkconfig.write_text("", encoding="utf-8")
+        monkeypatch.setenv("KCONFIG_CONFIG", str(sdkconfig))
+
+        from esp_kconfiglib.core import standard_config_filename
+
+        expected = os.path.join(os.path.dirname(standard_config_filename()), "sdkconfig.defaults")
+        assert expected == str(tmp_path / "sdkconfig.defaults")

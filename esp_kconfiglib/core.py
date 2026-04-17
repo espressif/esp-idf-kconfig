@@ -1996,7 +1996,7 @@ class Kconfig(object):
                 add(f"\n#\n# {node.prompt[0]}\n#\n")
                 after_end_comment = False
 
-    def write_min_config(self, filename, header=None):
+    def write_min_config(self, filename, header=None, labels=False, normalize_unset=False):
         """
         Writes out a "minimal" configuration file, omitting symbols whose value
         matches their default value. The format matches the one produced by
@@ -2024,18 +2024,47 @@ class Kconfig(object):
           be used if it was set, and no header otherwise. See the
           Kconfig.config_header attribute.
 
+        labels (default: False):
+          When True, emit menu section labels (``# Menu`` /
+          ``# end of Menu``) around groups of non-default symbols, using
+          the same MenuNode tree walk as write_config().
+
+        normalize_unset (default: False):
+          When True, rewrite ``# CONFIG_FOO is not set`` lines to
+          ``CONFIG_FOO=n`` in order to help users understand the generated file.
+
         Returns a string with a message saying the minimal configuration got
         saved, or that there were no changes to it. This is meant to reduce
         boilerplate in tools, which can do e.g.
         print(kconf.write_min_config()).
         """
-        if self._write_if_changed(filename, self._min_config_contents(header)):
+        contents = self._min_config_contents(header, labels=labels)
+
+        if normalize_unset:
+            unset_match = re.compile(r"# {}([^ ]+) is not set".format(self.config_prefix)).match
+            lines = contents.splitlines()
+            for idx, line in enumerate(lines):
+                match = unset_match(line)
+                if match:
+                    lines[idx] = f"{self.config_prefix}{match.group(1)}=n"
+            if lines:
+                lines[-1] += "\n"
+            contents = "\n".join(lines)
+
+        if self._write_if_changed(filename, contents):
             return f"Minimal configuration saved to '{filename}'"
         return f"No change to minimal configuration in '{filename}'"
 
-    def _min_config_contents(self, header):
-        # write_min_config() helper. Returns the contents to write as a string,
-        # with 'header' or KCONFIG_CONFIG_HEADER at the beginning.
+    def _min_config_contents(self, header, labels=False):
+        """
+        write_min_config() helper. Returns the contents to write as a string,
+        with 'header' or KCONFIG_CONFIG_HEADER at the beginning.
+
+        When labels=True, uses the same MenuNode tree walk as
+        _config_contents() to emit menu section labels around groups of
+        non-default symbols (only for sections that actually contain at
+        least one such symbol).
+        """
 
         if header is None:
             header = self.config_header
@@ -2043,28 +2072,112 @@ class Kconfig(object):
         chunks = [header]  # "".join()ed later
         add = chunks.append
 
+        if labels:
+            return self._min_config_contents_with_labels(chunks, add)
+
         for sym in self.unique_defined_syms:
-            # Skip symbols that cannot be changed. Only check
-            # non-choice symbols, as selects don't affect choice
-            # symbols.
-            if not sym.choice and sym.visibility <= expr_value(sym.rev_dep):
-                continue
-
-            # Skip symbols whose value matches their default
-            if sym.str_value == sym._str_default():
-                continue
-
-            if (
-                sym.choice
-                and sym.choice._selection_from_defaults() is sym
-                and sym.orig_type == BOOL
-                and sym.bool_value == 2
-            ):
+            if not self._is_min_config_sym(sym):
                 continue
 
             add(sym.config_string)
 
         return "".join(chunks)
+
+    def _is_min_config_sym(self, sym):
+        """
+        Return True if 'sym' should be included in the minimal config
+        (i.e. its value differs from the default). Shared by
+        _min_config_contents() and _min_config_contents_with_labels().
+        """
+
+        if not sym.choice and sym.visibility <= expr_value(sym.rev_dep):
+            return False
+        if sym.str_value == sym._str_default():
+            return False
+        if (
+            sym.choice
+            and sym.choice._selection_from_defaults() is sym
+            and sym.orig_type == BOOL
+            and sym.bool_value == 2
+        ):
+            return False
+        return True
+
+    def _min_config_contents_with_labels(self, chunks, add):
+        """
+        Tree-walk variant of _min_config_contents that emits menu section
+        labels (same format as _config_contents) around groups of
+        non-default symbols.
+
+        Uses a deferred label stack: menu labels are only emitted when
+        the first minimal symbol inside that section is encountered.
+        `# end of ...` markers are emitted only for sections that had
+        content.
+        """
+
+        for sym in self.unique_defined_syms:
+            sym._visited = False
+
+        # Each entry: [prompt_text, emitted: bool]
+        label_stack = []
+        after_end_comment = False
+
+        node = self.top_node
+        while 1:
+            if node.list:
+                node = node.list
+            elif node.next:
+                node = node.next
+            else:
+                while node.parent:
+                    node = node.parent
+
+                    if (
+                        node.item == MENU
+                        and expr_value(node.dep)
+                        and expr_value(node.visibility)
+                        and node is not self.top_node
+                    ):
+                        if label_stack:
+                            prompt, emitted = label_stack.pop()
+                            if emitted:
+                                add(f"# end of {prompt}\n")
+                                after_end_comment = True
+
+                    if node.next:
+                        node = node.next
+                        break
+                else:
+                    return "".join(chunks)
+
+            item = node.item
+
+            if item.__class__ is Symbol:
+                if item._visited:
+                    continue
+                item._visited = True
+
+                if not self._is_min_config_sym(item):
+                    continue
+
+                conf_string = item.config_string
+                if not conf_string:
+                    continue
+
+                # Emit deferred labels for all ancestor menus not yet printed
+                for entry in label_stack:
+                    if not entry[1]:
+                        entry[1] = True
+                        add(f"\n#\n# {entry[0]}\n#\n")
+                        after_end_comment = False
+
+                if after_end_comment:
+                    after_end_comment = False
+                    add("\n")
+                add(conf_string)
+
+            elif item == MENU and expr_value(node.dep) and expr_value(node.visibility) and node is not self.top_node:
+                label_stack.append([node.prompt[0], False])
 
     def node_iter(self, unique_syms=False):
         """
