@@ -186,13 +186,16 @@ See the https://github.com/zephyrproject-rtos/windows-curses repository.
 """
 
 import errno
+import json
 import locale
 import os
 import re
 import sys
 import textwrap
+from typing import Optional
 from typing import Union
 
+from kconfiglib.constants import build_idf_min_config_header
 from kconfiglib.core import AND
 from kconfiglib.core import BOOL
 from kconfiglib.core import BOOL_TO_STR
@@ -204,6 +207,7 @@ from kconfiglib.core import OR
 from kconfiglib.core import STRING
 from kconfiglib.core import TYPE_TO_STR
 from kconfiglib.core import Choice
+from kconfiglib.core import Kconfig
 from kconfiglib.core import MenuNode
 from kconfiglib.core import Symbol
 from kconfiglib.core import expr_str
@@ -278,7 +282,7 @@ _MAIN_HELP_LINES = """
 [Space/Enter] Toggle/enter  [ESC] Leave menu           [S] Save
 [O] Load                    [?] Symbol info            [/] Jump to symbol
 [F] Toggle show-help mode   [C] Toggle show-name mode  [A] Toggle show-all mode
-[Q] Quit (prompts for save) [D] Save minimal config (advanced)
+[Q] Quit (prompts for save) [D] Save minimal config
 """[1:-1].split("\n")
 
 # Lines of help text shown at the bottom of the information dialog
@@ -675,6 +679,71 @@ def _style_attr(fg_color, bg_color, attribs, color_attribs={}):
 #
 
 
+def _idf_version_from_build_config_env() -> str:
+    """
+    If ``IDF_VERSION`` is not in the environment, try ``build/config.env`` (JSON)
+    """
+
+    try:
+        config_path = os.path.abspath(standard_config_filename())
+        project_dir = os.path.dirname(config_path)
+        build_env_path = os.path.join(project_dir, "build", "config.env")
+        with open(build_env_path, encoding="utf-8") as f:
+            data = json.load(f)
+        if isinstance(data, dict):
+            val = data.get("IDF_VERSION")
+            if isinstance(val, str):
+                return val
+    except (OSError, ValueError, TypeError):
+        pass
+    return ""
+
+
+def _idf_min_config_save_header(kconf: Kconfig) -> str:
+    """Build the ESP-IDF minimal-config file header (same pattern as kconfgen ``write_min_config``)."""
+
+    idf_version = os.environ.get("IDF_VERSION", "")
+    if not idf_version:
+        idf_version = _idf_version_from_build_config_env()
+    return build_idf_min_config_header(kconf, idf_version=idf_version)
+
+
+def _min_config_labels_preference() -> Optional[bool]:
+    """
+    Whether to include menu section labels in sdkconfig.defaults.
+
+    If ``ESP_IDF_KCONFIG_MIN_LABELS`` is already present in the environment, no
+    dialog is shown: returns True when its value is ``\"1\"``, False otherwise.
+
+    If it is not set, shows a dialog: (Y)es returns True; (N)o returns False;
+    (C)ancel or ESC returns None (abort save). The environment is not modified.
+    """
+
+    if "ESP_IDF_KCONFIG_MIN_LABELS" in os.environ:
+        return os.environ.get("ESP_IDF_KCONFIG_MIN_LABELS", "") == "1"
+
+    c = _key_dialog(
+        "Minimal configuration",
+        textwrap.dedent(
+            """
+               Include menu section labels in sdkconfig.defaults?
+
+             When enabled, config options are grouped by the menus
+            they belong to, and menu names are included as comments.
+              This is useful for complex sdkconfig.defaults files.
+
+                             (Y)es  (N)o  (C)ancel
+            """
+        ),
+        "ync",
+    )
+    if c is None or c == "c":
+        return None
+    if c == "y":
+        return True
+    return False
+
+
 def _main():
     menuconfig(standard_kconfig(__doc__))
 
@@ -700,8 +769,8 @@ def menuconfig(kconf):
     # Load existing configuration and set _conf_changed True if it is outdated
     _conf_changed = _load_config()
 
-    # Filename to save minimal configuration to
-    _minconf_filename = "defconfig"
+    # Filename to save minimal configuration to (next to the sdkconfig file)
+    _minconf_filename = os.path.join(os.path.dirname(standard_config_filename()), "sdkconfig.defaults")
 
     # Any visible items in the top menu?
     _show_all = False
@@ -964,7 +1033,20 @@ def _menuconfig_main_loop():
                 _conf_changed = False
 
         elif c in ("d", "D"):
-            filename = _save_dialog(_kconf.write_min_config, _minconf_filename, "minimal configuration")
+            use_labels = _min_config_labels_preference()
+            if use_labels is None:
+                continue
+            save_desc = "minimal configuration (with menu labels)" if use_labels else "minimal configuration"
+            filename = _save_dialog(
+                lambda fn, ul=use_labels: _kconf.write_min_config(
+                    fn,
+                    header=_idf_min_config_save_header(_kconf),
+                    labels=ul,
+                    normalize_unset=True,
+                ),
+                _minconf_filename,
+                save_desc,
+            )
             if filename:
                 _minconf_filename = filename
 
