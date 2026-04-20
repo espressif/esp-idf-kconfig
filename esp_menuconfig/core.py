@@ -695,6 +695,7 @@ _minconf_filename = None
 _show_all = None
 _show_help = False
 _show_name = False
+_write_deprecated = False
 
 
 def _colorize_message(message: Optional[str]) -> Optional[Text]:
@@ -772,7 +773,21 @@ def _min_config_labels_preference() -> Optional[bool]:
 
 
 def _main():
-    menuconfig(standard_kconfig(__doc__))
+    kconf = standard_kconfig(__doc__)
+
+    # Reuse kconfgen's deprecated rename-file loader so the standalone TUI
+    # discovers rename files via the same conventions as `kconfgen` itself.
+    # SDKCONFIG_RENAME plays the role of kconfgen's `--sdkconfig-rename` arg
+    # because the standalone entry point exposes no CLI for it.
+    from esp_kconfiglib.deprecated import load_rename_files_from_env
+
+    load_rename_files_from_env(
+        kconf,
+        sdkconfig_rename=os.environ.get("SDKCONFIG_RENAME"),
+        list_separator=os.environ.get("SDKCONFIG_RENAMES_LIST_SEPARATOR", "space"),
+    )
+
+    menuconfig(kconf)
 
 
 def menuconfig(kconf: "Kconfig", headless: bool = False) -> None:
@@ -793,8 +808,10 @@ def menuconfig(kconf: "Kconfig", headless: bool = False) -> None:
     global _show_all
     global _show_help
     global _show_name
+    global _write_deprecated
 
     _kconf = kconf
+    _write_deprecated = kconf.deprecated_options is not None and kconf.deprecated_options.has_entries
 
     # Filename to save configuration to
     _conf_filename = standard_config_filename()
