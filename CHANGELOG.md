@@ -1,3 +1,9 @@
+## v2.5.4 (2026-04-21)
+
+### Bug Fixes
+
+- align [D] save minimal config with save-defconfig
+
 ## v2.5.3 (2026-02-25)
 
 ### Bug Fixes
