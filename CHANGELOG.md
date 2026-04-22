@@ -20,6 +20,25 @@
 </div>
 <hr>
 
+## v3.8.0 (2026-04-17)
+
+### ✨ New Features
+
+- **kconfig**: add KCONFIG_PROMPTLESS_NO_WARN envvar *(Jan Beran - 048b648)*
+- **deps**: add windows-curses support for Python 3.14 on Windows *(Jan Beran - a62154f)*
+- **kconfig**: move deprecated option handling into esp_kconfiglib *(Jan Beran - 08ecea2)*
+
+### 🐛 Bug Fixes
+
+- **report**: exclude promptless symbols from DisabledSymbolArea *(Jan Beran - 7b0a9d7)*
+- **deprecated**: duplicate rename mappings use last target and report *(Jan Beran - af4fc7f)*
+- align [D] save minimal config with save-defconfig *(Jan Beran - 48584aa)*
+
+### 🔧 Code Refactoring
+
+- use KconfigExpression instead of infix_notation *(Jan Beran - 8d70fa3)*
+
+
 ## v3.7.0 (2026-03-25)
 
 ### ✨ New Features
