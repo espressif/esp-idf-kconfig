@@ -26,21 +26,13 @@ import esp_idf_kconfig.gen_kconfig_doc as gen_kconfig_doc
 import esp_kconfiglib.core as kconfiglib
 from esp_idf_kconfig import __version__
 from esp_kconfiglib.constants import build_idf_min_config_header
+from esp_kconfiglib.constants import build_idf_sdkconfig_header
 from esp_kconfiglib.deprecated import DeprecatedOptions
 
 
 def write_config(config: kconfiglib.Kconfig, filename: str, write_deprecated: bool = True) -> None:
     """Write symbol values in sdkconfig format, optionally with deprecated compatibility block."""
-    idf_version = os.environ.get("IDF_VERSION", "")
-    CONFIG_HEADING = textwrap.dedent(
-        f"""\
-    #
-    # Automatically generated file. DO NOT EDIT.
-    # Espressif IoT Development Framework (ESP-IDF) {idf_version} Project Configuration
-    #
-    """
-    )
-    config.write_config(filename, header=CONFIG_HEADING, write_deprecated=write_deprecated)
+    config.write_config(filename, header=build_idf_sdkconfig_header(), write_deprecated=write_deprecated)
 
 
 def write_min_config(config: kconfiglib.Kconfig, filename: str, write_deprecated: bool = True) -> None:

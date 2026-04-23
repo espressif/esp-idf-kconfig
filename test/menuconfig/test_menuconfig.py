@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: 2025-2026 Espressif Systems (Shanghai) CO LTD
 # SPDX-License-Identifier: Apache-2.0
 import os
+import shutil
 import sys
 from pathlib import Path
 from typing import Any
@@ -17,6 +18,7 @@ from esp_menuconfig import _restore_default
 from esp_menuconfig import menuconfig
 from esp_menuconfig.core import _change_node
 from esp_menuconfig.core import _node_str
+from esp_menuconfig.core import reload_sdkconfig_file
 
 TEST_FILES_PATH = os.path.abspath(os.path.dirname(__file__))
 KCONFIGS_PATH = os.path.join(TEST_FILES_PATH, "kconfigs")
@@ -77,7 +79,7 @@ class TestNeedsSave(MenuconfigTestBase):
     def test_new_symbol_in_kconfig(self) -> None:
         # New symbol is added to the Kconfig file (or removed from sdkconfig file).
         # In other words, there is a symbol in Kconfig which is not in sdkconfig.
-        os.environ["KCONFIG_CONFIG"] = os.path.join(SDKCONFIGS_NEEDS_SAVE_PATH, "sdkconfig.change")
+        os.environ["KCONFIG_CONFIG"] = os.path.join(SDKCONFIGS_NEEDS_SAVE_PATH, "sdkconfig.new_kconfig_symbol")
         kconfig = Kconfig(os.path.join(KCONFIGS_PATH, "Kconfig"))
         menuconfig(kconfig, headless=True)
         self.assert_and_print_actual(True, kconfig)
@@ -126,6 +128,28 @@ class TestNeedsSave(MenuconfigTestBase):
         kconfig.load_config(os.path.join(SDKCONFIGS_NEEDS_SAVE_PATH, "sdkconfig.userset_choice"))
         menuconfig(kconfig, headless=True)
         self.assert_and_print_actual(False, kconfig)
+
+
+@pytest.mark.parametrize("version", ["1", "2"], indirect=True)
+class TestBaselineSyncAfterSave(MenuconfigTestBase):
+    """
+    write_config() does not refresh Symbol._sdkconfig_value / _loaded_as_default.
+    Menuconfig must reload the main sdkconfig after a successful save so _needs_save()
+    stays false when the user saved and made no further edits (quit must not ask again).
+    """
+
+    def test_sync_after_write_clears_needs_save(self, tmp_path: Path) -> None:
+        src = os.path.join(SDKCONFIGS_NEEDS_SAVE_PATH, "sdkconfig.new_kconfig_symbol")
+        dst = tmp_path / "sdkconfig"
+        shutil.copy(src, dst)
+        os.environ["KCONFIG_CONFIG"] = str(dst)
+        kconfig = Kconfig(os.path.join(KCONFIGS_PATH, "Kconfig"))
+        menuconfig(kconfig, headless=True)
+        assert _needs_save() is True
+        kconfig.write_config(str(dst))
+        assert _needs_save() is True
+        reload_sdkconfig_file(str(dst))
+        assert _needs_save() is False
 
 
 @pytest.mark.parametrize("version", ["1", "2"], indirect=True)
