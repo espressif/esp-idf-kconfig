@@ -20,6 +20,13 @@
 </div>
 <hr>
 
+## v3.8.1 (2026-04-24)
+
+### 🐛 Bug Fixes
+
+- **menuconfig**: Dont show save dialog on exit right after save *(Jan Beran - 1a493b7)*
+
+
 ## v3.8.0 (2026-04-17)
 
 ### ✨ New Features
