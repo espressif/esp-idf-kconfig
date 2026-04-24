@@ -200,6 +200,7 @@ from rich.console import Console
 from rich.text import Text
 
 from esp_kconfiglib.constants import build_idf_min_config_header
+from esp_kconfiglib.constants import build_idf_sdkconfig_header
 from esp_kconfiglib.core import AND
 from esp_kconfiglib.core import BOOL
 from esp_kconfiglib.core import BOOL_TO_STR
@@ -937,6 +938,31 @@ def _needs_save():
     return False
 
 
+def idf_sdkconfig_header() -> Optional[str]:
+    """Build the sdkconfig file header for :meth:`Kconfig.write_config`."""
+
+    if "IDF_TARGET" not in os.environ and "IDF_INIT_VERSION" not in os.environ:
+        return None
+    idf_version = os.environ.get("IDF_VERSION", "")
+    if not idf_version:
+        idf_version = _idf_version_from_build_config_env()
+    return build_idf_sdkconfig_header(idf_version=idf_version)
+
+
+def reload_sdkconfig_file(filename: str) -> None:
+    """
+    Reload the main sdkconfig after a successful write_config().
+
+    write_config() updates the file on disk but does not refresh Symbol._sdkconfig_value,
+    Symbol._loaded_as_default, or missing_syms. Without reloading, _needs_save() can still
+    return True after an explicit Save (S), so the quit dialog asks to save again even when
+    nothing changed since the save.
+    """
+    if not _kconf:
+        return
+    _kconf.load_config(filename, replace=True, is_main_sdkconfig=True)
+
+
 # Global variables used below:
 #
 #   _stdscr:
@@ -1074,10 +1100,19 @@ def _menuconfig_main_loop():
             _load_dialog()
 
         elif c in ("s", "S"):
-            filename = _save_dialog(_kconf.write_config, _conf_filename, "configuration")
+            filename = _save_dialog(
+                lambda filepath: _kconf.write_config(
+                    filepath,
+                    header=idf_sdkconfig_header(),
+                    write_deprecated=False,
+                ),
+                _conf_filename,
+                "configuration",
+            )
             if filename:
                 _conf_filename = filename
                 _conf_changed = False
+                reload_sdkconfig_file(_conf_filename)
 
         elif c in ("d", "D"):
             use_labels = _min_config_labels_preference()
@@ -1085,8 +1120,8 @@ def _menuconfig_main_loop():
                 continue
             save_desc = "minimal configuration (with menu labels)" if use_labels else "minimal configuration"
             filename = _save_dialog(
-                lambda fn, ul=use_labels: _kconf.write_min_config(
-                    fn,
+                lambda filepath, ul=use_labels: _kconf.write_min_config(
+                    filepath,
                     header=_idf_min_config_save_header(_kconf),
                     labels=ul,
                     normalize_unset=True,
@@ -1170,8 +1205,17 @@ def _quit_dialog():
 
         if c == "y":
             # Returns a message to print
-            msg = _try_save(_kconf.write_config, _conf_filename, "configuration")
+            msg = _try_save(
+                lambda filepath: _kconf.write_config(
+                    filepath,
+                    header=idf_sdkconfig_header(),
+                    write_deprecated=False,
+                ),
+                _conf_filename,
+                "configuration",
+            )
             if msg:
+                reload_sdkconfig_file(_conf_filename)
                 return msg
 
         elif c == "n":

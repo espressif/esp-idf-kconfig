@@ -47,6 +47,28 @@ MIN_CONFIG_HEADER_TEMPLATE = (
 )
 
 
+# Template for ESP-IDF-style sdkconfig file header (sdkconfig).
+SDKCONFIG_HEADER_TEMPLATE = (
+    "#\n"
+    "# Automatically generated file. DO NOT EDIT.\n"
+    "# Espressif IoT Development Framework (ESP-IDF) {idf_version} Project Configuration\n"
+    "#\n"
+)
+
+
+def build_idf_sdkconfig_header(idf_version: str = "") -> str:
+    """
+    Build the ESP-IDF sdkconfig header from ``SDKCONFIG_HEADER_TEMPLATE``.
+
+    Reads ``IDF_VERSION`` from the environment when *idf_version* is not given
+    (or empty).
+    """
+
+    if not idf_version:
+        idf_version = os.environ.get("IDF_VERSION", "")
+    return SDKCONFIG_HEADER_TEMPLATE.format(idf_version=idf_version)
+
+
 def build_idf_min_config_header(config: "Kconfig", idf_version: str = "") -> str:
     """
     Build the ESP-IDF minimal-config header from ``MIN_CONFIG_HEADER_TEMPLATE``.
