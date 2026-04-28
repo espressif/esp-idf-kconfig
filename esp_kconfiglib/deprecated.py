@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Espressif Systems (Shanghai) CO LTD
 # SPDX-License-Identifier: Apache-2.0
 
+import os
 import re
 from collections import defaultdict
 from typing import TYPE_CHECKING
@@ -19,6 +20,33 @@ from .report import MiscArea
 if TYPE_CHECKING:
     from .core import Kconfig
     from .core import Symbol
+
+
+def load_rename_files_from_env(
+    config: "Kconfig",
+    sdkconfig_rename: Optional[str] = None,
+    list_separator: str = "space",
+) -> None:
+    """Load ``sdkconfig.rename`` files into ``config`` from a CLI path plus env vars.
+
+    Combines the optional ``sdkconfig_rename`` path (typically a CLI argument) with
+    paths read from the ``COMPONENT_SDKCONFIG_RENAMES`` environment variable, and
+    invokes :py:meth:`Kconfig.load_rename_files` exactly once with the combined
+    list. Does nothing if no source provides any path.
+
+    ``COMPONENT_SDKCONFIG_RENAMES`` is split using a separator selected by
+    ``list_separator``: ``"space"`` (default) or ``"semicolon"``, matching the
+    ``--list-separator`` choice exposed by ``kconfgen``.
+    """
+    sep = ";" if list_separator == "semicolon" else " "
+    sdkconfig_renames: List[str] = []
+    if sdkconfig_rename:
+        sdkconfig_renames.append(sdkconfig_rename)
+    component_renames = os.environ.get("COMPONENT_SDKCONFIG_RENAMES")
+    if component_renames:
+        sdkconfig_renames += component_renames.split(sep)
+    if sdkconfig_renames:
+        config.load_rename_files(sdkconfig_renames)
 
 
 class DeprecatedOptions:

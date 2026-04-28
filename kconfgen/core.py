@@ -28,6 +28,7 @@ from esp_idf_kconfig import __version__
 from esp_kconfiglib.constants import build_idf_min_config_header
 from esp_kconfiglib.constants import build_idf_sdkconfig_header
 from esp_kconfiglib.deprecated import DeprecatedOptions
+from esp_kconfiglib.deprecated import load_rename_files_from_env
 
 
 def write_config(config: kconfiglib.Kconfig, filename: str, write_deprecated: bool = True) -> None:
@@ -393,6 +394,12 @@ def main():
     )
 
     parser.add_argument(
+        "--menuconfig",
+        help="Launch interactive menuconfig before generating output files",
+        action="store_true",
+    )
+
+    parser.add_argument(
         "--output",
         nargs=2,
         action="append",
@@ -458,14 +465,11 @@ def main():
     )
     kconfig_encoding = config._encoding
 
-    sdkconfig_renames_sep = ";" if args.list_separator == "semicolon" else " "
-    sdkconfig_renames = [args.sdkconfig_rename] if args.sdkconfig_rename else []
-    sdkconfig_renames_from_env = os.environ.get("COMPONENT_SDKCONFIG_RENAMES")
-    if sdkconfig_renames_from_env:
-        sdkconfig_renames += sdkconfig_renames_from_env.split(sdkconfig_renames_sep)
-
-    if sdkconfig_renames:
-        config.load_rename_files(sdkconfig_renames)
+    load_rename_files_from_env(
+        config,
+        sdkconfig_rename=args.sdkconfig_rename,
+        list_separator=args.list_separator,
+    )
 
     if len(args.defaults) > 0:
 
@@ -505,6 +509,12 @@ def main():
 
     if args.config and os.path.exists(args.config):
         config.load_config(args.config, replace=False, print_report=print_report)
+
+    if args.menuconfig:
+        # Local import keeps non-interactive kconfgen runs free of curses.
+        from esp_menuconfig import menuconfig as run_menuconfig
+
+        run_menuconfig(config)
 
     write_deprecated = not args.dont_write_deprecated
 
