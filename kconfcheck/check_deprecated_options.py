@@ -1,6 +1,7 @@
-# SPDX-FileCopyrightText: 2024-2025 Espressif Systems (Shanghai) CO LTD
+# SPDX-FileCopyrightText: 2024-2026 Espressif Systems (Shanghai) CO LTD
 # SPDX-License-Identifier: Apache-2.0
 import os
+import sys
 from typing import List
 from typing import Optional
 from typing import Set
@@ -58,7 +59,7 @@ def _prepare_deprecated_options(
     project_path = os.environ.get("IDF_PATH", None)
     if not project_path:
         project_path = os.getcwd()
-        print(f"kconfcheck: IDF_PATH is not set. Using {project_path} as a fallback.")
+        print(f"kconfcheck: IDF_PATH is not set. Using {project_path} as a fallback.", file=sys.stderr)
     for root, _, filenames in os.walk(project_path):
         for filename in filenames:
             if filename == "sdkconfig.rename":
@@ -73,7 +74,7 @@ def check_deprecated_options(
     ignore_dirs: Tuple = tuple(),
 ) -> Optional[bool]:
     if file_full_path in ignore_dirs:
-        print(f"{file_full_path}: Ignored")
+        print(f"{file_full_path}: Ignored", file=sys.stderr)
         return None
     used_options = _parse_path(file_full_path, "=")
     used_deprecated_options = deprecated_options.intersection(used_options)

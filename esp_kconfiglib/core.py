@@ -6172,7 +6172,7 @@ class Choice:
         self.kconfig._parsing_kconfigs = parsing_kconfigs
 
     def _handle_interactive_choice(self) -> Tuple[Dict[str, Tuple[str, str]], Dict[str, str]]:
-        print(f"Choose {self.name} has following possible selections:")
+        print(f"Choice {self.name} has following possible selections:")
         selections = list()
         for i, sym in enumerate(self.syms, start=1):
             print(
@@ -8043,7 +8043,7 @@ def _lineno_fn(kconf, _):
 
 
 def _info_fn(kconf, _, msg):
-    print(f"{kconf.filename}:{kconf.linenr}: {msg}")
+    print(f"{kconf.filename}:{kconf.linenr}: {msg}", file=sys.stderr)
 
     return ""
 
