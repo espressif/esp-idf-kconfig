@@ -2,12 +2,13 @@
 #
 # Command line tool to check kconfig files
 #
-# SPDX-FileCopyrightText: 2018-2025 Espressif Systems (Shanghai) CO LTD
+# SPDX-FileCopyrightText: 2018-2026 Espressif Systems (Shanghai) CO LTD
 # SPDX-License-Identifier: Apache-2.0
 
 import argparse
 import os
 import re
+import sys
 from typing import Optional
 from typing import Tuple
 
@@ -131,7 +132,7 @@ class LineRuleChecker(BaseChecker):
                 if suppress_errors:
                     # just print but no failure
                     e = InputError(self.path_in_idf, line_number, rule[1], line)
-                    print(f"NOERROR: {e}")
+                    print(f"NOERROR: {e}", file=sys.stderr)
                 else:
                     errors.append(rule[1])
                 if rule[2]:
@@ -657,7 +658,7 @@ def validate_file(file_full_path: str, verbose: bool = False, replace: bool = Fa
                     # The line is correct therefore we echo it to the output file
                     f_o.write(line)
                 except InputError as e:
-                    print(e)
+                    print(e, file=sys.stderr)
                     fail = True
                     f_o.write(e.suggested_line)
         except UnicodeDecodeError:
@@ -667,7 +668,7 @@ def validate_file(file_full_path: str, verbose: bool = False, replace: bool = Fa
                 try:
                     checker.finalize()
                 except InputError as e:
-                    print(e)
+                    print(e, file=sys.stderr)
                     fail = True
 
     if replace:
@@ -689,7 +690,7 @@ def validate_file(file_full_path: str, verbose: bool = False, replace: bool = Fa
                 os.remove(suggestions_full_path)
             except Exception:
                 # It is not a serious error if the file cannot be deleted
-                print(f"{suggestions_full_path} cannot be deleted!")
+                print(f"{suggestions_full_path} cannot be deleted!", file=sys.stderr)
         return True
 
 
@@ -782,5 +783,5 @@ def main() -> int:
         return 1
 
     if not files:
-        print("WARNING: no files specified.")
+        print("WARNING: no files specified.", file=sys.stderr)
     return 0

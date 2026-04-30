@@ -24,7 +24,7 @@ MAX_PROTOCOL_VERSION = 3
 
 def main():
     parser = argparse.ArgumentParser(
-        description="kconfserver.py v%s - Config Generation Tool" % __version__,
+        description=f"kconfserver.py v{__version__} - Config Generation Tool",
         prog=os.path.basename(sys.argv[0]),
     )
 
@@ -64,20 +64,25 @@ def main():
 
     if args.version < MIN_PROTOCOL_VERSION:
         print(
-            "Version %d is older than minimum supported protocol version %d. Client is much older than ESP-IDF version?"
-            % (args.version, MIN_PROTOCOL_VERSION)
+            f"Version {args.version} is older than minimum supported protocol version {MIN_PROTOCOL_VERSION}. "
+            "Client is much older than ESP-IDF version?",
+            file=sys.stderr,
         )
 
     if args.version > MAX_PROTOCOL_VERSION:
         print(
-            "Version %d is newer than maximum supported protocol version %d. Client is newer than ESP-IDF version?"
-            % (args.version, MAX_PROTOCOL_VERSION)
+            f"Version {args.version} is newer than maximum supported protocol version {MAX_PROTOCOL_VERSION}. "
+            "Client is newer than ESP-IDF version?",
+            file=sys.stderr,
         )
 
     try:
         args.env = [(name, value) for (name, value) in (e.split("=", 1) for e in args.env)]
     except ValueError:
-        print("--env arguments must each contain =. To unset an environment variable, use 'ENV='")
+        print(
+            "--env arguments must each contain =. To unset an environment variable, use 'ENV='",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
     for name, value in args.env:
@@ -131,7 +136,7 @@ def run_server(kconfig, sdkconfig, sdkconfig_rename, default_version=MAX_PROTOCO
             resp,
             sys.stdout,
         )
-    print("\n")
+    sys.stdout.write("\n")
     sys.stdout.flush()
 
     while True:
@@ -146,7 +151,7 @@ def run_server(kconfig, sdkconfig, sdkconfig_rename, default_version=MAX_PROTOCO
                 "error": [f"JSON formatting error: {e}"],
             }
             json.dump(response, sys.stdout)
-            print("\n")
+            sys.stdout.write("\n")
             sys.stdout.flush()
             continue
         before = kconfgen.get_json_values(config)
@@ -212,7 +217,7 @@ def run_server(kconfig, sdkconfig, sdkconfig_rename, default_version=MAX_PROTOCO
                 print(f"Error: {err}", file=sys.stderr)
             response["error"] = error
         json.dump(response, sys.stdout)
-        print("\n")
+        sys.stdout.write("\n")
         sys.stdout.flush()
 
 
@@ -232,18 +237,18 @@ def handle_request(config, req):
 
     if req["version"] < MIN_PROTOCOL_VERSION or req["version"] > MAX_PROTOCOL_VERSION:
         return [
-            "Unsupported request version %d. Server supports versions %d-%d"
-            % (req["version"], MIN_PROTOCOL_VERSION, MAX_PROTOCOL_VERSION)
+            f"Unsupported request version {req['version']}. "
+            f"Server supports versions {MIN_PROTOCOL_VERSION}-{MAX_PROTOCOL_VERSION}"
         ]
 
     error = []
 
     if "load" in req:
-        print("Loading config from %s..." % req["load"], file=sys.stderr)
+        print(f"Loading config from {req['load']}...", file=sys.stderr)
         try:
             config.load_config(req["load"])
         except Exception as e:
-            error += ["Failed to load from %s: %s" % (req["load"], e)]
+            error += [f"Failed to load from {req['load']}: {e}"]
 
     if "set" in req:
         handle_set(config, error, req["set"])
@@ -256,10 +261,10 @@ def handle_request(config, req):
 
     if "save" in req:
         try:
-            print("Saving config to %s..." % req["save"], file=sys.stderr)
+            print(f"Saving config to {req['save']}...", file=sys.stderr)
             kconfgen.write_config(config, req["save"])
         except Exception as e:
-            error += ["Failed to save to %s: %s" % (req["save"], e)]
+            error += [f"Failed to save to {req['save']}: {e}"]
 
     return error
 
@@ -274,7 +279,7 @@ def handle_reset(config: kconfiglib.Kconfig, error: List[str], to_reset: List[st
     # Reset the whole configuration to default values
     if "all" in to_reset:
         if kconfiglib._recursively_perform_action(config.top_node, kconfiglib._restore_default):
-            print("Reset the whole configuration to default values")
+            print("Reset the whole configuration to default values", file=sys.stderr)
         else:
             error.append("Failed to reset the whole configuration to default values")
         return
@@ -303,13 +308,13 @@ def handle_reset(config: kconfiglib.Kconfig, error: List[str], to_reset: List[st
 
     for sym in syms:
         if kconfiglib._restore_default(sym.nodes[0]):
-            print(f"Reset {sym.name} to default value")
+            print(f"Reset {sym.name} to default value", file=sys.stderr)
         else:
             error.append(f"Failed to reset {sym.name} to default value")
 
     for menu in menus:
         if kconfiglib._recursively_perform_action(menu, kconfiglib._restore_default):
-            print(f"Reset menu {menu.id} to default values")
+            print(f"Reset menu {menu.id} to default values", file=sys.stderr)
         else:
             error.append(f"Failed to reset menu {menu.id} to default values")
 
@@ -317,7 +322,7 @@ def handle_reset(config: kconfiglib.Kconfig, error: List[str], to_reset: List[st
 def handle_set(config, error, to_set):
     missing = [k for k in to_set if k not in config.syms]
     if missing:
-        error.append("The following config symbol(s) were not found: %s" % (", ".join(missing)))
+        error.append(f"The following config symbol(s) were not found: {', '.join(missing)}")
     # replace name keys with the full config symbol for each key:
     to_set = dict((config.syms[k], v) for (k, v) in to_set.items() if k not in missing)
 
@@ -337,14 +342,14 @@ def handle_set(config, error, to_set):
                 elif val is False:
                     sym.set_value(0)
                 else:
-                    error.append("Boolean symbol %s only accepts true/false values" % sym.name)
+                    error.append(f"Boolean symbol {sym.name} only accepts true/false values")
             elif sym.type == kconfiglib.HEX:
                 try:
                     if not isinstance(val, int):
                         val = int(val, 16)  # input can be a decimal JSON value or a string of hex digits
                     sym.set_value(hex(val))
                 except ValueError:
-                    error.append("Hex symbol %s can accept a decimal integer or a string of hex digits, only")
+                    error.append(f"Hex symbol {sym.name} can accept a decimal integer or a string of hex digits, only")
             elif sym.type == kconfiglib.FLOAT:
                 if not kconfiglib.is_float(str(val)):
                     error.append(f"Float symbol {sym.name} requires a valid float value")
@@ -353,13 +358,12 @@ def handle_set(config, error, to_set):
                     sym.set_value(str(val))
             else:
                 sym.set_value(str(val))
-            print("Set %s" % sym.name)
+            print(f"Set {sym.name}", file=sys.stderr)
             del to_set[sym]
 
     if len(to_set):
         error.append(
-            "The following config symbol(s) were not visible so were not updated: %s"
-            % (", ".join(s.name for s in to_set))
+            f"The following config symbol(s) were not visible so were not updated: {', '.join(s.name for s in to_set)}"
         )
 
 

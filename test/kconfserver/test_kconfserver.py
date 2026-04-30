@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2024-2025 Espressif Systems (Shanghai) CO LTD
+# SPDX-FileCopyrightText: 2024-2026 Espressif Systems (Shanghai) CO LTD
 # SPDX-License-Identifier: Apache-2.0
 import json
 import os
@@ -8,12 +8,24 @@ import tempfile
 import pexpect
 import pytest
 
+_TEST_DIR = os.path.dirname(os.path.abspath(__file__))  # .../test/kconfserver
+_REPO_ROOT = os.path.abspath(os.path.join(_TEST_DIR, "..", ".."))
+
+
+def _child_env():
+    """env for kconfserver subprocess with cwd=test/kconfserver; repo root must be on PYTHONPATH."""
+    env = os.environ.copy()
+    prev = env.get("PYTHONPATH", "")
+    env["PYTHONPATH"] = _REPO_ROOT + (os.pathsep + prev if prev else "")
+    return env
+
+
 PROTOCOL_VERSIONS = [1, 2, 3]
 KCONFIG_PARSER_VERSIONS = [1, 2]
 
 
 def parse_testcases(version):
-    with open(f"testcases_v{version}.txt", "r") as f:
+    with open(os.path.join(_TEST_DIR, f"testcases_v{version}.txt"), "r") as f:
         cases = [line for line in f.readlines() if line.strip()]
     if len(cases) % 3 != 0:
         pytest.fail("testcases.txt has wrong number of non-empty lines. Should be 3 lines per test case.")
@@ -44,11 +56,13 @@ def send_request(p, req):
     return expect_json(p)
 
 
-def spawn_kconfserver(sdkconfig_path, kconfigs_src, kconfig_projbuilds_src):
+def spawn_kconfserver(sdkconfig_path):
+    # cwd=test dir so --kconfig Kconfig stays stable; absolute paths change menu node IDs in responses.
+    # Empty COMPONENT_*_SOURCE_FILE= matches IDF when no generated kconfigs; test Kconfig does not source them.
     cmd = (
         f"coverage run -m kconfserver "
-        f"--env COMPONENT_KCONFIGS_SOURCE_FILE={kconfigs_src} "
-        f"--env COMPONENT_KCONFIGS_PROJBUILD_SOURCE_FILE={kconfig_projbuilds_src} "
+        f"--env COMPONENT_KCONFIGS_SOURCE_FILE= "
+        f"--env COMPONENT_KCONFIGS_PROJBUILD_SOURCE_FILE= "
         f"--env COMPONENT_KCONFIGS= --env COMPONENT_KCONFIGS_PROJBUILD= "
         f"--kconfig Kconfig --config {sdkconfig_path}"
     )
@@ -58,30 +72,24 @@ def spawn_kconfserver(sdkconfig_path, kconfigs_src, kconfig_projbuilds_src):
         timeout=30,
         echo=False,
         use_poll=True,
-        env=os.environ.copy(),
+        cwd=_TEST_DIR,
+        env=_child_env(),
     )
 
 
 @pytest.fixture
 def temp_files():
-    # Create temporary sdkconfig copy
     with tempfile.NamedTemporaryFile(mode="w", delete=False) as temp:
         sdkconfig_path = temp.name
-        with open("sdkconfig") as orig:
+        with open(os.path.join(_TEST_DIR, "sdkconfig")) as orig:
             temp.write(orig.read())
 
-    # Other temp files
-    kconfigs_src = tempfile.NamedTemporaryFile(delete=False).name
-    kconfig_projbuilds_src = tempfile.NamedTemporaryFile(delete=False).name
+    yield sdkconfig_path
 
-    yield sdkconfig_path, kconfigs_src, kconfig_projbuilds_src
-
-    # Cleanup
-    for path in (sdkconfig_path, kconfigs_src, kconfig_projbuilds_src):
-        try:
-            os.remove(path)
-        except OSError:
-            pass
+    try:
+        os.remove(sdkconfig_path)
+    except OSError:
+        pass
 
 
 @pytest.fixture
@@ -90,8 +98,8 @@ def server(request, temp_files):
     parser_version = request.param
     os.environ["KCONFIG_PARSER_VERSION"] = str(parser_version)
 
-    sdkconfig_path, kconfigs_src, kconfig_projbuilds_src = temp_files
-    p = spawn_kconfserver(sdkconfig_path, kconfigs_src, kconfig_projbuilds_src)
+    sdkconfig_path = temp_files
+    p = spawn_kconfserver(sdkconfig_path)
 
     # Consume banner and initial state
     p.expect(r"Server running.+\r?\n")
