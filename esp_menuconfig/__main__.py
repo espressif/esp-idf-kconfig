@@ -4,27 +4,20 @@ import os
 import sys
 
 
-def _main():
-    """Entry point that dispatches to legacy or textual based on env var."""
-    from . import _use_legacy
+def _main() -> None:
+    """Entry point for ``python -m esp_menuconfig``."""
+    from esp_kconfiglib.core import standard_kconfig
+    from esp_kconfiglib.deprecated import load_rename_files_from_env
 
-    if _use_legacy():
-        from .core import _main as _legacy_main
+    from . import menuconfig
 
-        _legacy_main()
-    else:
-        from esp_kconfiglib.core import standard_kconfig
-        from esp_kconfiglib.deprecated import load_rename_files_from_env
-
-        from . import menuconfig
-
-        kconf = standard_kconfig()
-        load_rename_files_from_env(
-            kconf,
-            sdkconfig_rename=os.environ.get("SDKCONFIG_RENAME"),
-            list_separator=os.environ.get("SDKCONFIG_RENAMES_LIST_SEPARATOR", "space"),
-        )
-        menuconfig(kconf)
+    kconf = standard_kconfig()
+    load_rename_files_from_env(
+        kconf,
+        sdkconfig_rename=os.environ.get("SDKCONFIG_RENAME"),
+        list_separator=os.environ.get("SDKCONFIG_RENAMES_LIST_SEPARATOR", "space"),
+    )
+    menuconfig(kconf)
 
 
 if __name__ == "__main__":

@@ -12,19 +12,32 @@ import pytest
 
 from esp_kconfiglib import Kconfig
 from esp_kconfiglib.core import Choice
+from esp_kconfiglib.core import MenuNode
 from esp_kconfiglib.core import Symbol
 from esp_kconfiglib.core import _restore_default
 from esp_menuconfig import _needs_save
 from esp_menuconfig import menuconfig
-from esp_menuconfig.core import _change_node
-from esp_menuconfig.core import _node_str
-from esp_menuconfig.core import reload_sdkconfig_file
+from esp_menuconfig import reload_sdkconfig_file
+from esp_menuconfig.formatting import node_str
+from esp_menuconfig.model import ChangeResult
+from esp_menuconfig.model import MenuConfigState
 
 TEST_FILES_PATH = os.path.abspath(os.path.dirname(__file__))
 KCONFIGS_PATH = os.path.join(TEST_FILES_PATH, "kconfigs")
 SDKCONFIGS_PATH = os.path.join(TEST_FILES_PATH, "sdkconfigs")
 SDKCONFIGS_NEEDS_SAVE_PATH = os.path.join(SDKCONFIGS_PATH, "test_needs_save")
 SDKCONFIGS_CHOICE_DEFAULT_PATH = os.path.join(SDKCONFIGS_PATH, "test_choice_defaults")
+
+
+def _make_state(kconf: "Kconfig") -> MenuConfigState:
+    """Create a MenuConfigState without loading config from KCONFIG_CONFIG."""
+    return MenuConfigState(
+        kconf=kconf,
+        conf_filename="",
+        minconf_filename="",
+        conf_changed=False,
+        write_deprecated=False,
+    )
 
 
 class MenuconfigTestBase:
@@ -161,7 +174,7 @@ class TestChoicesDefault(MenuconfigTestBase):
 
     def _change_node_monkeypatch(self, sc: Union["Symbol", "Choice"]) -> None:
         """
-        Cannot use _change_node() from menuconfig (does not work in headless mode)
+        Cannot use change_node() from model (does not work in headless mode)
         -> using monkeypatch method without menuconfig-related TUI functionality.
         """
         if len(sc.assignable) == 1:
@@ -210,7 +223,6 @@ class TestChoicesDefault(MenuconfigTestBase):
         sym = kconfig.syms["QUX"]
         self._change_node_monkeypatch(sym)
 
-        # Check if the value was changed correctly
         assert kconfig.syms["BAZ"].has_active_default_value() is False
         assert kconfig.syms["QUX"].has_active_default_value() is False
         assert kconfig.syms["BAZ"].str_value == "n", (
@@ -282,15 +294,17 @@ class TestIndirectlySetValues(MenuconfigTestBase):
         - "set default" option sets the target to given values but allows user to change it
         - correct precedence (user-set > indirectly set > default for "set default")
         """
-
         kconfig = Kconfig(os.path.join(KCONFIGS_PATH, "Kconfig.indirect_sets"))
         kconfig.load_config(os.path.join(SDKCONFIGS_PATH, "test_indirect_sets", "sdkconfig"))
+
+        state = _make_state(kconfig)
 
         sym = kconfig.syms["SET_TARGET"]
         assert sym.str_value == "4"  # indirectly set value has absolute precedence
         assert sym._user_value == "2"  # user-set value is preserved, but ignored
 
-        assert _change_node(sym.nodes[0]) is False, "Changing indirectly set value should not be allowed, but it was."
+        result = state.change_node(sym.nodes[0])
+        assert result == ChangeResult.NO_CHANGE, "Changing indirectly set value should not be allowed, but it was."
 
         # Turn off source, which indirectly sets the value. User-set value of the target should be restored.
         kconfig.syms["SET_SOURCE"].set_value("n")
@@ -310,115 +324,82 @@ class TestIndirectlySetValues(MenuconfigTestBase):
 
 class TestSetRiskyConfig:
     """
-    Test if menuconfig correctly handles 'warning' option for symbols: key_dialog should be called
-    to confirm changing the value of a risky symbol, but only if the symbol is not already user-set.
+    Test if menuconfig correctly handles 'warning' option for symbols: change_node() should return
+    NEEDS_WARNING to confirm changing the value of a risky symbol, but only if the symbol is
+    not already user-set.
     """
 
-    @pytest.fixture
-    def monkeypatch_menuconfig(self):
-        """
-        Fixture to monkeypatch menuconfig core functions for testing.
-        Provides mock implementations for key_dialog, input_dialog, and update_menu.
-        """
-        import esp_menuconfig.core
-
-        # Store original functions
-        original_key_dialog = esp_menuconfig.core._key_dialog
-        original_input_dialog = esp_menuconfig.core._input_dialog
-        original_update_menu = esp_menuconfig.core._update_menu
-
-        # Track if key_dialog was called
-        mock_state = {"key_dialog_called": False}
-
-        def mock_key_dialog(title, text, keys):
-            mock_state["key_dialog_called"] = True
-            assert title == "Set dangerous option?"
-            assert keys == "yn"
-            assert "This symbol has a following warning:" in text
-            return "y"
-
-        def mock_input_dialog(title, initial_text, info_text=None):
-            return "999"  # New, "user-set" value for the int symbol
-
-        def reset_key_dialog_called():
-            mock_state["key_dialog_called"] = False
-
-        # Apply monkeypatches
-        esp_menuconfig.core._key_dialog = mock_key_dialog
-        esp_menuconfig.core._input_dialog = mock_input_dialog
-        esp_menuconfig.core._update_menu = lambda: None  # Disable menu updates in tests
-
-        # Yield the mock state tracker
-        yield {
-            "key_dialog_called": lambda: mock_state["key_dialog_called"],
-            "reset_key_dialog_called": reset_key_dialog_called,
-        }
-
-        # Restore original functions
-        esp_menuconfig.core._key_dialog = original_key_dialog
-        esp_menuconfig.core._input_dialog = original_input_dialog
-        esp_menuconfig.core._update_menu = original_update_menu
-
     @pytest.mark.parametrize("parser_version", (1, 2))
-    def test_set_risky_config(self, monkeypatch_menuconfig: Dict[str, Any], parser_version: int) -> None:
+    def test_risky_symbol_returns_needs_warning(self, parser_version: int) -> None:
         kconfig = Kconfig(os.path.join(KCONFIGS_PATH, "Kconfig.warning"), parser_version=parser_version)
         kconfig.load_config(os.path.join(SDKCONFIGS_PATH, "test_warning", "sdkconfig.warning"))
 
-        # key = symbol name, value = (key_dialog should be printed, new value after changing)
-        sym_names = {
-            "RISKY_BOOL": (True, "y"),
-            "RISKY_INT": (True, "999"),
-            "ALREADY_USER_SET_RISKY_INT": (False, "999"),
-        }
+        state = _make_state(kconfig)
 
-        for sym_name in sym_names:
-            assert kconfig.syms[sym_name].warning != "", f"Symbol {sym_name} should be marked as risky, but is not."
+        # RISKY_BOOL: has warning, default value → should return NEEDS_WARNING
+        sym = kconfig.syms["RISKY_BOOL"]
+        assert sym.warning != ""
+        result = state.change_node(sym.nodes[0])
+        assert result == ChangeResult.NEEDS_WARNING
 
-        for sym_name, (should_call_key_dialog, new_value) in sym_names.items():
-            sym = kconfig.syms[sym_name]
-            monkeypatch_menuconfig["reset_key_dialog_called"]()
-            assert _change_node(sym.nodes[0]) is True, f"Changing value of symbol {sym_name} should be allowed."
-            assert sym.str_value == new_value, (
-                f"Value of symbol {sym_name} should be changed to {new_value}, but is {sym.str_value}."
-            )
-            assert monkeypatch_menuconfig["key_dialog_called"]() is should_call_key_dialog, (
-                f"key_dialog should {'be' if should_call_key_dialog else 'not be'} called when changing "
-                f"the value of symbol {sym_name}, but it was"
-                f"{' not' if not monkeypatch_menuconfig['key_dialog_called']() else ''}."
-            )
+        # After force_change_node (simulating user confirming), it should toggle
+        result = state.force_change_node(sym.nodes[0])
+        assert result == ChangeResult.TOGGLED
+        assert sym.str_value == "y"
+
+    @pytest.mark.parametrize("parser_version", (1, 2))
+    def test_risky_int_returns_needs_input_via_warning(self, parser_version: int) -> None:
+        kconfig = Kconfig(os.path.join(KCONFIGS_PATH, "Kconfig.warning"), parser_version=parser_version)
+        kconfig.load_config(os.path.join(SDKCONFIGS_PATH, "test_warning", "sdkconfig.warning"))
+
+        state = _make_state(kconfig)
+
+        # RISKY_INT: has warning, default value → NEEDS_WARNING
+        sym = kconfig.syms["RISKY_INT"]
+        assert sym.warning != ""
+        result = state.change_node(sym.nodes[0])
+        assert result == ChangeResult.NEEDS_WARNING
+
+        # After force (user confirmed warning), it needs input for the int value
+        result = state.force_change_node(sym.nodes[0])
+        assert result == ChangeResult.NEEDS_INPUT
+
+        # ALREADY_USER_SET_RISKY_INT: has warning, but already user-set → NEEDS_INPUT directly
+        sym = kconfig.syms["ALREADY_USER_SET_RISKY_INT"]
+        assert sym.warning != ""
+        result = state.change_node(sym.nodes[0])
+        assert result == ChangeResult.NEEDS_INPUT
 
 
 @pytest.mark.parametrize("version", ["1", "2"], indirect=True)
 class TestFloatInput(MenuconfigTestBase):
-    @pytest.fixture
-    def monkeypatch_float_input(self):
-        import esp_menuconfig.core
-
-        original_input_dialog = esp_menuconfig.core._input_dialog
-        original_update_menu = esp_menuconfig.core._update_menu
-
-        def mock_input_dialog(title, initial_text, info_text=None):
-            return "1.25"
-
-        esp_menuconfig.core._input_dialog = mock_input_dialog
-        esp_menuconfig.core._update_menu = lambda: None
-
-        yield
-
-        esp_menuconfig.core._input_dialog = original_input_dialog
-        esp_menuconfig.core._update_menu = original_update_menu
-
-    def test_float_value_change(self, monkeypatch_float_input: Dict[str, Any]) -> None:
+    def test_float_value_change(self) -> None:
         kconfig = Kconfig(os.path.join(KCONFIGS_PATH, "Kconfig.float"))
-        menuconfig(kconfig, headless=True)
+
+        state = _make_state(kconfig)
 
         sym = kconfig.syms["FLOAT_VALUE"]
         assert sym.str_value == "1.0"
-        assert _change_node(sym.nodes[0]) is True
+
+        result = state.change_node(sym.nodes[0])
+        assert result == ChangeResult.NEEDS_INPUT
+
+        # Simulate user entering value via set_val
+        state.set_val(sym, "1.25")
         assert sym.str_value == "1.25"
 
         sdkconfig = kconfig._config_contents(None)
         assert "CONFIG_FLOAT_VALUE=1.25" in sdkconfig
+
+
+def _node_str_wrapper(node: MenuNode) -> str:
+    """Wrapper matching the old _node_str() interface for tests."""
+    return node_str(
+        node,
+        show_name=False,
+        has_visible_child_fn=lambda n: n.list is not None,
+        kconf=node.kconfig,
+    )
 
 
 @pytest.mark.parametrize("version", ["1", "2"], indirect=True)
@@ -468,22 +449,22 @@ class TestChoiceDefaultMenuLabels(MenuconfigTestBase):
             for name in ("FOO", "BAR", "BAZ", "QUX"):
                 assert name in sym_nodes, f"missing menu node for {name}"
 
-            named_parent = _node_str(named_choice_node)
+            named_parent = _node_str_wrapper(named_choice_node)
             assert "(default value)" in named_parent
             assert "prompt for named choice" in named_parent
 
-            default_line = _node_str(sym_nodes[named_default_selection])
-            other_line = _node_str(sym_nodes[named_sym_to_leave_default])
+            default_line = _node_str_wrapper(sym_nodes[named_default_selection])
+            other_line = _node_str_wrapper(sym_nodes[named_sym_to_leave_default])
             assert "(default selection)" in default_line
             assert "(default value)" not in default_line
             assert "(default selection)" not in other_line
             assert "(default value)" not in other_line
 
-            unnamed_parent = _node_str(unnamed_choice_node)
+            unnamed_parent = _node_str_wrapper(unnamed_choice_node)
             assert "(default value)" in unnamed_parent
 
-            baz_line = _node_str(sym_nodes["BAZ"])
-            qux_line = _node_str(sym_nodes["QUX"])
+            baz_line = _node_str_wrapper(sym_nodes["BAZ"])
+            qux_line = _node_str_wrapper(sym_nodes["QUX"])
             assert "(default selection)" in baz_line
             assert "(default value)" not in baz_line
             assert "(default selection)" not in qux_line
@@ -491,10 +472,10 @@ class TestChoiceDefaultMenuLabels(MenuconfigTestBase):
 
             kconfig.syms[named_sym_to_leave_default].set_value("y")
 
-            named_parent_after = _node_str(named_choice_node)
+            named_parent_after = _node_str_wrapper(named_choice_node)
             assert "(default value)" not in named_parent_after
-            foo_after = _node_str(sym_nodes["FOO"])
-            bar_after = _node_str(sym_nodes["BAR"])
+            foo_after = _node_str_wrapper(sym_nodes["FOO"])
+            bar_after = _node_str_wrapper(sym_nodes["BAR"])
             assert "(default selection)" not in foo_after
             assert "(default selection)" not in bar_after
         finally:

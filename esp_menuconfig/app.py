@@ -217,7 +217,7 @@ class MenuConfigApp(App[str]):
             try:
                 self.state.kconf.write_min_config(
                     filename,
-                    header=_idf_min_config_save_header(self.state.kconf),
+                    header=idf_min_config_save_header(self.state.kconf),
                     labels=use_labels,
                     normalize_unset=True,
                 )

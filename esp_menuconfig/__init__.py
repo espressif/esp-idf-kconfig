@@ -1,15 +1,6 @@
 # SPDX-FileCopyrightText: 2025-2026 Espressif Systems (Shanghai) CO LTD
 # SPDX-License-Identifier: Apache-2.0
-"""
-ESP-IDF menuconfig entry point.
-
-Dispatches between the legacy curses-based implementation and the new
-Textual-based one based on the ``KCONFIG_LEGACY_MENUCONFIG`` environment
-variable:
-
-- Unset, "0", or "n" (case-insensitive) → Textual (new)
-- Anything else → curses (legacy)
-"""
+"""ESP-IDF menuconfig — Textual-based configuration interface."""
 
 from __future__ import annotations
 
@@ -51,33 +42,8 @@ def _resolve_theme() -> Optional[str]:
     return _LEGACY_STYLE_MAP.get(first_token, first_token)
 
 
-def _use_legacy() -> bool:
-    val = os.environ.get("KCONFIG_LEGACY_MENUCONFIG", "").strip().lower()
-    return val not in ("", "0", "n")
-
-
 def menuconfig(kconf: "Kconfig", headless: bool = False) -> None:
-    """
-    Launch the configuration interface, returning after the user exits.
-
-    Dispatches to the Textual-based UI by default, or falls back to the
-    legacy curses-based UI when ``KCONFIG_LEGACY_MENUCONFIG`` is set to a
-    truthy value.
-    """
-    global _module_state
-
-    if _use_legacy():
-        from .core import menuconfig as _legacy_menuconfig
-
-        _legacy_menuconfig(kconf, headless=headless)
-        # Legacy sets its own module-level _kconf; bridge _needs_save via core
-        _module_state = None
-        return
-
-    _textual_menuconfig(kconf, headless=headless)
-
-
-def _textual_menuconfig(kconf: "Kconfig", headless: bool = False) -> None:
+    """Launch the Textual configuration interface, returning after the user exits."""
     global _module_state
 
     from rich.console import Console
@@ -97,12 +63,10 @@ def _textual_menuconfig(kconf: "Kconfig", headless: bool = False) -> None:
         write_deprecated=write_deprecated,
     )
 
-    # Load existing config
     conf_changed, load_msg = state.load_config()
     state.conf_changed = conf_changed
     print(load_msg, file=sys.stderr)
 
-    # Check for empty config
     if not state.shown:
         state.show_all = True
         state.shown = state.shown_nodes(state.cur_menu)
@@ -115,12 +79,6 @@ def _textual_menuconfig(kconf: "Kconfig", headless: bool = False) -> None:
 
     kconf.warn = False
     _module_state = state
-
-    # Sync legacy global for tests that inspect esp_menuconfig.core._write_deprecated
-    from . import core as _core_module
-
-    _core_module._write_deprecated = state.write_deprecated
-    _core_module._kconf = kconf
 
     if headless:
         return
@@ -139,11 +97,6 @@ def _needs_save() -> bool:
     """Check if config has unsaved changes."""
     if _module_state is not None:
         return _module_state.needs_save()
-    # Fall back to legacy module-level check
-    if _use_legacy():
-        from .core import _needs_save as _legacy_needs_save
-
-        return bool(_legacy_needs_save())
     return False
 
 
@@ -151,7 +104,3 @@ def reload_sdkconfig_file(filename: str) -> None:
     """Reload sdkconfig after a save to sync _needs_save() state."""
     if _module_state is not None:
         _module_state.reload_sdkconfig_file(filename)
-    else:
-        from .core import reload_sdkconfig_file as _legacy_reload
-
-        _legacy_reload(filename)
