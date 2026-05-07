@@ -40,6 +40,7 @@ dependencies = [
     "windows-curses>=2.4.2; sys_platform == 'win32' and python_version >= '3.14'",
     "rich",
     "pyparsing",
+    "textual>=1.0.0",
 ]
 [project.urls]
 Homepage = "https://github.com/espressif/esp-idf-kconfig"

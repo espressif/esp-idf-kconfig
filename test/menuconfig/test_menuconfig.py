@@ -13,8 +13,8 @@ import pytest
 from esp_kconfiglib import Kconfig
 from esp_kconfiglib.core import Choice
 from esp_kconfiglib.core import Symbol
+from esp_kconfiglib.core import _restore_default
 from esp_menuconfig import _needs_save
-from esp_menuconfig import _restore_default
 from esp_menuconfig import menuconfig
 from esp_menuconfig.core import _change_node
 from esp_menuconfig.core import _node_str
