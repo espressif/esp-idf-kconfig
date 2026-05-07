@@ -10,6 +10,7 @@ import math
 import os
 import re
 import sys
+import typing
 from glob import iglob
 from os.path import dirname
 from os.path import exists
@@ -18,6 +19,7 @@ from os.path import islink
 from os.path import join
 from os.path import realpath
 from typing import Any
+from typing import Callable
 from typing import Dict
 from typing import List
 from typing import Optional
@@ -1832,7 +1834,14 @@ class Kconfig(object):
 
         return "".join(chunks)
 
-    def write_config(self, filename=None, header=None, save_old=True, verbose=None, write_deprecated=False):
+    def write_config(
+        self,
+        filename: Optional[str] = None,
+        header: Optional[str] = None,
+        save_old: bool = True,
+        verbose: Optional[bool] = None,
+        write_deprecated: bool = False,
+    ) -> str:
         r"""
         Writes out symbol values in the .config format. The format matches the
         C implementation, including ordering.
@@ -7308,7 +7317,7 @@ def expr_value(expr: Union[Symbol, Choice, Tuple]) -> int:
     )
 
 
-def standard_sc_expr_str(sc):
+def standard_sc_expr_str(sc: Union[Symbol, Choice]) -> str:
     """
     Standard symbol/choice printing function. Uses plain Kconfig syntax, and
     displays choices as <choice> (or <choice NAME>, for named choices).
@@ -7318,7 +7327,7 @@ def standard_sc_expr_str(sc):
     if sc.__class__ is Symbol:
         if sc.is_constant and sc.name not in STR_TO_BOOL:
             return f'"{escape(sc.name)}"'
-        return sc.name
+        return sc.name if sc.name else ""
 
     return f"<choice {sc.name}>" if sc.name else "<choice>"
 
@@ -7345,7 +7354,10 @@ def _parenthesize(expr, type_, sc_expr_str_fn):
     return expr_str(expr, sc_expr_str_fn)
 
 
-def expr_str(expr, sc_expr_str_fn=standard_sc_expr_str):
+@typing.no_type_check  # mypy cannot work with "if expr.__class__ is not tuple:"
+def expr_str(
+    expr: Union[Symbol, Choice, Tuple], sc_expr_str_fn: Callable[[Union[Symbol, Choice]], str] = standard_sc_expr_str
+) -> str:
     """
     Returns the string representation of the expression 'expr', as in a Kconfig
     file.
