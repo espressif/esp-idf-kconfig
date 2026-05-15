@@ -20,6 +20,18 @@
 </div>
 <hr>
 
+## v3.9.0 (2026-05-15)
+
+### ✨ New Features
+
+- **kconfgen**: add --menuconfig mode *(Jan Beran - 9a7bd0c)*
+- **menuconfig**: make menuconfig deprecated-aware *(Jan Beran - 67921f2)*
+
+### 🐛 Bug Fixes
+
+- ensure status messages are printed to stderr *(Jan Beran - adc71ce)*
+
+
 ## v3.8.1 (2026-04-24)
 
 ### 🐛 Bug Fixes
