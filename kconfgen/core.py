@@ -524,7 +524,7 @@ def main():
         config.load_config(args.config, replace=False, print_report=print_report)
 
     if args.menuconfig:
-        # Local import keeps non-interactive kconfgen runs free of curses.
+        # Local import keeps non-interactive kconfgen runs free of textual.
         from esp_menuconfig import menuconfig as run_menuconfig
 
         run_menuconfig(config)

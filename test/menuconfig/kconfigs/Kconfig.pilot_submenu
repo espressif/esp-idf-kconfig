@@ -1,0 +1,11 @@
+mainmenu "Pilot submenu fixture"
+
+    config TOP_BOOL
+        bool "Top-level bool"
+        default y
+
+    menu "Inner menu"
+        config INNER_BOOL
+            bool "Inner bool"
+            default n
+    endmenu

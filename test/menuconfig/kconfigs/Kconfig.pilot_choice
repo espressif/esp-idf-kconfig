@@ -1,0 +1,12 @@
+mainmenu "Pilot choice fixture"
+
+    choice
+        prompt "Pick one"
+        default OPTION_A
+
+        config OPTION_A
+            bool "Option A"
+
+        config OPTION_B
+            bool "Option B"
+    endchoice

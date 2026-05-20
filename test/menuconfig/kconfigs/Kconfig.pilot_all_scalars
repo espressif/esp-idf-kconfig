@@ -1,0 +1,22 @@
+mainmenu "Pilot smoke test"
+
+    config BOOL_SYM
+        bool "A bool"
+        default y
+
+    config INT_SYM
+        int "An int"
+        range 0 10
+        default 1
+
+    config HEX_SYM
+        hex "A hex"
+        default 0x10
+
+    config STRING_SYM
+        string "A string"
+        default "hello"
+
+    config FLOAT_SYM
+        float "A float"
+        default 1.0
