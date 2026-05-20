@@ -20,6 +20,13 @@
 </div>
 <hr>
 
+## v3.10.0 (2026-05-20)
+
+### ✨ New Features
+
+- **kconfcheck**: scope sdkconfig.rename enforcement to project subtrees *(Jan Beran - 915de39)*
+
+
 ## v3.9.0 (2026-05-15)
 
 ### ✨ New Features
