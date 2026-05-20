@@ -17,7 +17,8 @@ def _main() -> None:
         sdkconfig_rename=os.environ.get("SDKCONFIG_RENAME"),
         list_separator=os.environ.get("SDKCONFIG_RENAMES_LIST_SEPARATOR", "space"),
     )
-    menuconfig(kconf)
+    headless = os.environ.get("MENUCONFIG_HEADLESS") == "1"
+    menuconfig(kconf, headless=headless)
 
 
 if __name__ == "__main__":

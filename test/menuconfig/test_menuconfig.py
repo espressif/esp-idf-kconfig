@@ -499,3 +499,48 @@ class TestMenuconfigSdkconfigDefaultsPath(MenuconfigTestBase):
 
         expected = os.path.join(os.path.dirname(standard_config_filename()), "sdkconfig.defaults")
         assert expected == str(tmp_path / "sdkconfig.defaults")
+
+
+class TestMenuconfigHeadlessEnvVar:
+    """``_main()`` should pass ``headless=True`` when ``MENUCONFIG_HEADLESS=1``."""
+
+    @pytest.fixture
+    def patched_main(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Dict[str, Any]:
+        sdkconfig = tmp_path / "sdkconfig"
+        sdkconfig.write_text("", encoding="utf-8")
+        monkeypatch.setenv("KCONFIG_CONFIG", str(sdkconfig))
+
+        captured: Dict[str, Any] = {}
+
+        def fake_standard_kconfig() -> Kconfig:
+            kconf = Kconfig(os.path.join(KCONFIGS_PATH, "Kconfig"))
+            captured["kconf"] = kconf
+            return kconf
+
+        def fake_menuconfig(kconf: Kconfig, headless: bool = False) -> None:
+            captured["headless"] = headless
+
+        monkeypatch.setattr("esp_kconfiglib.core.standard_kconfig", fake_standard_kconfig)
+        monkeypatch.setattr("esp_menuconfig.menuconfig", fake_menuconfig)
+        return captured
+
+    @pytest.mark.parametrize("env_val, expected_headless", [("1", True), ("0", False), ("", False)])
+    def test_headless_env_var(
+        self,
+        patched_main: Dict[str, Any],
+        monkeypatch: pytest.MonkeyPatch,
+        env_val: str,
+        expected_headless: bool,
+    ) -> None:
+        monkeypatch.delenv("SDKCONFIG_RENAME", raising=False)
+        monkeypatch.delenv("COMPONENT_SDKCONFIG_RENAMES", raising=False)
+        if env_val:
+            monkeypatch.setenv("MENUCONFIG_HEADLESS", env_val)
+        else:
+            monkeypatch.delenv("MENUCONFIG_HEADLESS", raising=False)
+
+        from esp_menuconfig.__main__ import _main
+
+        _main()
+
+        assert patched_main["headless"] is expected_headless
