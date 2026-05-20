@@ -751,16 +751,25 @@ def main() -> int:
     files = [os.path.abspath(file_path) for file_path in args.files]
 
     if args.check == "deprecated":
-        files, deprecated_options, ignore_dirs = _prepare_deprecated_options(
-            args.includes, args.exclude_submodules, files
-        )
+        # Reuse the project-root cache built during classification so check_deprecated_options
+        # does not redo the same upward CMakeLists.txt walks for every file.
+        (
+            files,
+            global_deprecated,
+            local_deprecated,
+            ignore_dirs,
+            project_root_cache,
+            abs_idf_path,
+        ) = _prepare_deprecated_options(args.includes, args.exclude_submodules, files)
 
     for full_path in files:
         file_ok: Optional[bool] = False
         if args.check == "syntax":
             file_ok = validate_file(full_path, args.verbose, args.replace)
         elif args.check == "deprecated":
-            file_ok = check_deprecated_options(full_path, deprecated_options, ignore_dirs)
+            file_ok = check_deprecated_options(
+                full_path, global_deprecated, local_deprecated, ignore_dirs, project_root_cache, abs_idf_path
+            )
         else:
             raise argparse.ArgumentError(None, f"Unknown check type: {args.check} passed to --check argument.")
 

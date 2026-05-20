@@ -51,3 +51,56 @@ To run the checker manually, use the following command:
 .. code-block:: console
 
     python -m kconfcheck <path_to_kconfig_file>
+
+Deprecated Options Checking
+---------------------------
+
+The ``kconfcheck`` tool also provides a ``check-deprecated-kconfig-options`` pre-commit hook that verifies whether ``sdkconfig.defaults`` or ``sdkconfig.ci`` files reference deprecated Kconfig option names (i.e., names that appear in ``sdkconfig.rename`` files as the left hand side - see :ref:`deprecated-options` for more details).
+
+.. warning::
+
+  Please bear in mind that the checker has its limits and won't be able to catch all deprecated options. The checker will catch options that are deprecated in the ESP-IDF root rename file, any of the built-in component rename files, or in the project's own rename files.
+
+  The checker also skips target-specific rename files (e.g., ``sdkconfig.rename.esp32``) used by the ESP-IDF build system.
+
+To use the hook, add the following to your ``.pre-commit-config.yaml``:
+
+.. code-block:: yaml
+
+    - repo: https://github.com/espressif/esp-idf-kconfig.git
+      rev: <version>
+      hooks:
+        - id: check-deprecated-kconfig-options
+
+The hook can also be run manually:
+
+.. code-block:: console
+
+    python -m kconfcheck --check deprecated [files...]
+
+``sdkconfig.rename`` file scope
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Rename files are classified into **global** and **local** scopes to prevent false positives when independent projects (e.g., examples, test apps) coincidentally use config options of the same name and one project decides to deprecate it.
+
+**Global scope** — rename files at the IDF root or anywhere under ``components/``. These apply when checking any file in the tree.
+
+**Local scope** — rename files located under a *project root*. A directory is considered a project root if it contains a ``CMakeLists.txt`` with a ``project(`` call. Local renames only apply to files within the same project subtree.
+
+When checking a file at path ``P``:
+
+1. The checker walks up from ``P`` to find its nearest project root ancestor (if any).
+2. The effective deprecated set is computed as the union of ``global_deprecated`` and ``local_deprecated[project_root]``.
+3. If ``P`` is not under any project root, only the global set is used.
+
+.. note::
+
+  The global deprecated set (IDF root and ``components/``) is collected once when the checker
+  starts. Per-project local sets are computed on demand: only the first time a file from a
+  given project is processed does the checker walk that project's subtree. Projects whose
+  files are not being checked are never scanned, so a typical pre-commit run touching only a
+  few files remains fast even on large codebases.
+
+This means that a deprecated option defined in ``examples/project_a/sdkconfig.rename`` will not cause failures in ``examples/project_b/sdkconfig.defaults``.
+
+Rename files that have no project root ancestor and are not under ``components/`` or at the IDF root level (e.g., shared example components without a ``project()`` call) are skipped by the pre-commit hook. Their deprecated names are not enforced anywhere.
