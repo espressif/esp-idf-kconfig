@@ -30,6 +30,7 @@ from typing import Union
 from esp_kconfiglib.constants import DEP_OP_BEGIN
 from esp_kconfiglib.constants import DEP_OP_END
 from esp_kconfiglib.constants import HEADER_TREE_SUFFIX
+from esp_kconfiglib.constants import INVALID_BOOL_LITERALS
 from esp_kconfiglib.constants import SDKCONFIG_DEFAULT_PRAGMA
 from esp_kconfiglib.constants import DefaultsPolicy
 from esp_kconfiglib.report import PRAGMA_PREFIX
@@ -3484,7 +3485,7 @@ class Kconfig(object):
 
         return expr
 
-    def _parse_props(self, node):
+    def _parse_props(self, node: "MenuNode") -> None:
         # Parses and adds properties to the MenuNode 'node' (type, 'prompt',
         # 'default's, etc.) Properties are later copied up to symbols and
         # choices in a separate pass after parsing, in e.g.
@@ -3564,13 +3565,13 @@ class Kconfig(object):
 
                 is_default = self._check_token(_T_DEFAULT)
 
-                if node.item.orig_type and node.item.orig_type is not BOOL:
+                if node.item.orig_type and node.item.orig_type is not BOOL:  # type: ignore[union-attr]
                     kind = "set default" if is_default else "set"
                     self.report.add_record(
                         MiscArea,
                         message=(
-                            f"{node.item.name} of type "
-                            f"{TYPE_TO_STR[node.item.orig_type]} "
+                            f"{node.item.name} of type "  # type: ignore[union-attr]
+                            f"{TYPE_TO_STR[node.item.orig_type]} "  # type: ignore[union-attr]
                             f"(defined at {self.filename}:{node.linenr}) "
                             f"has '{kind}' option, which is only supported for "
                             "boolean symbols. Option ignored."
@@ -3594,13 +3595,13 @@ class Kconfig(object):
 
                 if node.item and node.item.__class__ is Symbol:
                     self._warn(
-                        f'config {node.item.name} {_locs(node.item)} has a "visible if" option, '
+                        f'config {node.item.name} {_locs(node.item)} has a "visible if" option, '  # type: ignore[union-attr]
                         "which is not supported for configs"
                     )
 
                 elif node.item and node.item.__class__ is Choice:
                     self._warn(
-                        f'choice {node.item.name} {_locs(node.item)} has a "visible if" option, '
+                        f'choice {node.item.name} {_locs(node.item)} has a "visible if" option, '  # type: ignore[union-attr]
                         "which is not supported for choices"
                     )
                 else:
@@ -3612,25 +3613,26 @@ class Kconfig(object):
                         self._parse_error("expected '=' after 'env'")
 
                     env_var = self._expect_str_and_eol()
-                    node.item.env_var = env_var
+                    sym_name = node.item.name  # type: ignore[union-attr]
+                    node.item.env_var = env_var  # type: ignore[union-attr]
 
                     if env_var in os.environ:
                         node.defaults.append((self._lookup_const_sym(os.environ[env_var]), self.y))
                     else:
                         self._warn(
-                            f"{node.item.name} has 'option env=\"{env_var}\"', "
+                            f"{sym_name} has 'option env=\"{env_var}\"', "
                             f"but the environment variable {env_var} is not set",
                             self.filename,
                             self.linenr,
                         )
 
-                    if env_var != node.item.name:
+                    if env_var != sym_name:
                         self._warn(
                             "Kconfiglib expands environment variables "
                             "in strings directly, meaning you do not "
                             "need 'option env=...' \"bounce\" symbols. "
                             "For compatibility with the C tools, "
-                            f"rename {node.item.name} to {env_var} (so that the symbol name "
+                            f"rename {sym_name} to {env_var} (so that the symbol name "
                             "matches the environment variable name).",
                             self.filename,
                             self.linenr,
@@ -3638,11 +3640,11 @@ class Kconfig(object):
 
                 elif self._check_token(_T_DEFCONFIG_LIST):
                     if not self.defconfig_list:
-                        self.defconfig_list = node.item
+                        self.defconfig_list = node.item  # type: ignore[assignment]
                     else:
                         self._warn(
                             "'option defconfig_list' set on multiple "
-                            f"symbols ({self.defconfig_list.name} and {node.item.name}). "
+                            f"symbols ({self.defconfig_list.name} and {node.item.name}). "  # type: ignore[union-attr]
                             f"Only {self.defconfig_list.name} will be used.",
                             self.filename,
                             self.linenr,
@@ -3652,7 +3654,7 @@ class Kconfig(object):
                     if node.item.__class__ is not Symbol:
                         self._parse_error("the 'allnoconfig_y' option is only valid for symbols")
 
-                    node.item.is_allnoconfig_y = True
+                    node.item.is_allnoconfig_y = True  # type: ignore[union-attr]
 
                 else:
                     self._parse_error("unrecognized option")
@@ -3665,7 +3667,7 @@ class Kconfig(object):
                 if self._tokens[1] is None:
                     self._parse_error("expected warning message")
                 if node.warning:
-                    self.kconfig.report.add_record(
+                    self.report.add_record(
                         MiscArea,
                         message=(
                             node.item.name_and_loc  # type: ignore[union-attr]
@@ -3678,7 +3680,34 @@ class Kconfig(object):
             else:
                 # Reuse the tokens for the non-property line later
                 self._reuse_tokens = True
-                return
+                break
+
+        self._sanitize_bool_literal_defaults(node)
+
+    def _sanitize_bool_literal_defaults(self, node: "MenuNode") -> None:
+        """
+        Replaces invalid bool literals (see INVALID_BOOL_LITERALS in constants.py) with 'n' in the
+        "default <value>" option for a symbol.
+        """
+        if node.item.__class__ is not Symbol or node.item.orig_type != BOOL:  # type: ignore[union-attr]
+            return
+        if not node.defaults:
+            return
+
+        sanitized = []
+        for value, cond in node.defaults:
+            if isinstance(value, Symbol) and value.name in INVALID_BOOL_LITERALS:
+                self.report.add_record(
+                    MiscArea,
+                    message=(
+                        f"{node.item.name_and_loc}: 'default {value.name}' is not a valid bool value "  # type: ignore[union-attr]
+                        "(only 'y' and 'n' are allowed). Value is treated as 'n'."
+                    ),
+                )
+                sanitized.append((self.n, cond))
+            else:
+                sanitized.append((value, cond))
+        node.defaults = sanitized
 
     def _set_type(self, symbol_or_choice, new_type):
         # Sets the type of 'sc' (symbol or choice) to 'new_type'

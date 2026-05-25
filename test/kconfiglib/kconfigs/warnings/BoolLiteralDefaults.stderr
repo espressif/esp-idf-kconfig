@@ -1,0 +1,8 @@
+'default false' is not a valid bool value
+'default true' is not a valid bool value
+'default 0' is not a valid bool value
+'default 1' is not a valid bool value
+'default yes' is not a valid bool value
+'default no' is not a valid bool value
+'default Yes' is not a valid bool value
+'default No' is not a valid bool value

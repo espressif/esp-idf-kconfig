@@ -1,0 +1,28 @@
+# default:
+# CONFIG_BOOL_DEFAULT_FALSE is not set
+# default:
+# CONFIG_BOOL_DEFAULT_TRUE is not set
+# default:
+# CONFIG_BOOL_DEFAULT_ZERO is not set
+# default:
+# CONFIG_BOOL_DEFAULT_ONE is not set
+# default:
+# CONFIG_BOOL_DEFAULT_QUOTED_FALSE is not set
+# default:
+# CONFIG_BOOL_DEFAULT_QUOTED_TRUE is not set
+# default:
+# CONFIG_BOOL_DEFAULT_QUOTED_ZERO is not set
+# default:
+# CONFIG_BOOL_DEFAULT_QUOTED_ONE is not set
+# default:
+# CONFIG_BOOL_DEFAULT_YES is not set
+# default:
+# CONFIG_BOOL_DEFAULT_NO is not set
+# default:
+# CONFIG_BOOL_DEFAULT_CYES is not set
+# default:
+# CONFIG_BOOL_DEFAULT_CNO is not set
+# default:
+CONFIG_BOOL_DEFAULT_Y=y
+# default:
+# CONFIG_BOOL_DEFAULT_N is not set

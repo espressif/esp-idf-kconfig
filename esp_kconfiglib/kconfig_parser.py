@@ -401,6 +401,7 @@ class Parser:
                     node.defaults.append((value, expr))
                 else:
                     node.defaults.append((value, self.kconfig.y))
+            self.kconfig._sanitize_bool_literal_defaults(node)
 
         # set help
         # NOTE: some special characters may not be supported.

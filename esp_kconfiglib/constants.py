@@ -4,6 +4,7 @@
 import os
 from enum import Enum
 from typing import TYPE_CHECKING
+from typing import FrozenSet
 
 if TYPE_CHECKING:
     from esp_kconfiglib.core import Kconfig
@@ -30,6 +31,24 @@ class DefaultsPolicy(Enum):
 # Start and end comment for deprecated options written into sdkconfig
 DEP_OP_BEGIN = "# Deprecated options for backward compatibility"
 DEP_OP_END = "# End of deprecated options"
+
+# The only correct form for bool literals in Kconfig is "y" and "n".
+# Note: TRUE/FALSE/YES/NO are deliberately excluded - although strange, they are
+# valid Kconfig symbol names and may exist as Kconfig symbols.
+INVALID_BOOL_LITERALS: FrozenSet[str] = frozenset(
+    {
+        "true",
+        "True",
+        "false",
+        "False",
+        "yes",
+        "Yes",
+        "no",
+        "No",
+        "1",
+        "0",
+    }
+)
 
 # This pragma marks config options that have default value in sdkconfig file:
 SDKCONFIG_DEFAULT_PRAGMA = "# default:"
