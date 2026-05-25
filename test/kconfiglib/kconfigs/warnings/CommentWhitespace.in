@@ -1,0 +1,10 @@
+mainmenu "Comment whitespace handling"
+
+# Comments are allowed to have leading/trailing whitespace without warning.
+comment "  leading and trailing whitespace  "
+
+comment "    indented text    "
+
+config DUMMY
+    bool "dummy"
+    default n
