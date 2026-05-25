@@ -2310,7 +2310,7 @@ class Kconfig(object):
             # (though it's likely to keep working).
             val = sym.str_value
 
-            # n tristate values do not get written to auto.conf and autoconf.h,
+            # n values do not get written to auto.conf and autoconf.h,
             # making a missing symbol logically equivalent to n
 
             if sym._write_to_conf:
