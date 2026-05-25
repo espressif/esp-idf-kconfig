@@ -20,6 +20,17 @@
 </div>
 <hr>
 
+## v3.11.0 (2026-05-25)
+
+### ✨ New Features
+
+- **menuconfig**: add Textual-based menuconfig UI *(Jan Beran - dd04f1f)*
+
+### 🗑️ Removals
+
+- **menuconfig**: drop legacy curses-based menuconfig *(Jan Beran - 3fae83c)*
+
+
 ## v3.10.0 (2026-05-20)
 
 ### ✨ New Features
