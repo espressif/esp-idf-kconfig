@@ -340,7 +340,8 @@ class Parser:
                 self.kconfig._warn(node.item.name_and_loc + " defined with multiple prompts in single location")  # type: ignore
             prompt_str = prompt[0]
 
-            if prompt_str != prompt_str.strip():
+            # Other items (like e.g. comments) can have leading or trailing whitespace in their prompt
+            if node.item.__class__ in (Symbol, Choice) and prompt_str != prompt_str.strip():
                 self.kconfig._warn(node.item.name_and_loc + " has leading or trailing whitespace in its prompt")  # type: ignore
                 prompt_str = prompt_str.strip()
 
@@ -400,6 +401,7 @@ class Parser:
                     node.defaults.append((value, expr))
                 else:
                     node.defaults.append((value, self.kconfig.y))
+            self.kconfig._sanitize_bool_literal_defaults(node)
 
         # set help
         # NOTE: some special characters may not be supported.

@@ -1,0 +1,62 @@
+mainmenu "Bool-literal defaults regression"
+
+# Legacy bool-ish literals used as defaults on bool symbols.
+# Both parsers must accept these, warn the user, and resolve to 'n'.
+
+config BOOL_DEFAULT_FALSE
+    bool "bare 'false'"
+    default false
+
+config BOOL_DEFAULT_TRUE
+    bool "bare 'true'"
+    default true
+
+config BOOL_DEFAULT_ZERO
+    bool "bare 0"
+    default 0
+
+config BOOL_DEFAULT_ONE
+    bool "bare 1"
+    default 1
+
+config BOOL_DEFAULT_QUOTED_FALSE
+    bool "quoted \"false\""
+    default "false"
+
+config BOOL_DEFAULT_QUOTED_TRUE
+    bool "quoted \"true\""
+    default "true"
+
+config BOOL_DEFAULT_QUOTED_ZERO
+    bool "quoted \"0\""
+    default "0"
+
+config BOOL_DEFAULT_QUOTED_ONE
+    bool "quoted \"1\""
+    default "1"
+
+config BOOL_DEFAULT_YES
+    bool "bare 'yes'"
+    default yes
+
+config BOOL_DEFAULT_NO
+    bool "bare 'no'"
+    default no
+
+config BOOL_DEFAULT_CYES
+    bool "capitalized 'Yes'"
+    default Yes
+
+config BOOL_DEFAULT_CNO
+    bool "capitalized 'No'"
+    default No
+
+# Sanity controls: legitimate spellings must keep working with no warning.
+
+config BOOL_DEFAULT_Y
+    bool "bare y"
+    default y
+
+config BOOL_DEFAULT_N
+    bool "bare n"
+    default n
