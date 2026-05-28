@@ -6,11 +6,17 @@ IDF environment detection and KCONFIG_PARSER_VERSION toggling.
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 import subprocess
+import sys
 from pathlib import Path
 from typing import Tuple
+
+logger = logging.getLogger(__name__)
+
+_idf_targets_cache: Tuple[str, ...] = ()
 
 
 def get_idf_path() -> Path:
@@ -94,6 +100,5 @@ def get_python_version() -> str:
     """
     Return the Python version string (e.g. '3.14.1').
     """
-    import sys
 
     return f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"

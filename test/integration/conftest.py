@@ -135,28 +135,33 @@ def idf_py(idf_path: Path) -> Callable[..., subprocess.CompletedProcess]:  # typ
 
 @pytest.fixture
 def test_app_copy(
-    request: pytest.FixtureRequest,
     idf_path: Path,
     tmp_path: Path,
-) -> Path:
+) -> Callable[[str], Path]:
     """
-    Copy an example app to a temp directory and return the path.
+    Return a callable that copies an IDF example to a temp directory.
+    Equivalent to the ESP-IDF test fixture of the same name.
 
-    The ``request.param`` must be the path relative to IDF_PATH
-    (e.g. ``"examples/get-started/hello_world"``).
+    Usage inside a test::
+
+        app = test_app_copy("examples/get-started/hello_world")
     """
-    rel_path: str = request.param
-    src = idf_path / rel_path
-    if not src.is_dir():
-        pytest.skip(f"Example {rel_path} not found at {src}")
 
-    dst = tmp_path / Path(rel_path).name
+    def _copy(rel_path: str) -> Path:
+        src = idf_path / rel_path
+        if not src.is_dir():
+            pytest.fail(f"Example {rel_path} not found at {src}")
 
-    def _ignore(directory: str, contents: list) -> list:  # type: ignore[type-arg]
-        return [c for c in contents if c in IGNORE_COPY]
+        dst = tmp_path / Path(rel_path).name
 
-    shutil.copytree(str(src), str(dst), ignore=_ignore)
-    return dst
+        shutil.copytree(
+            str(src),
+            str(dst),
+            ignore=lambda directory, contents: [c for c in contents if c in IGNORE_COPY],
+        )
+        return dst
+
+    return _copy
 
 
 @pytest.fixture

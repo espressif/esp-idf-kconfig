@@ -204,6 +204,8 @@ test_kconfcheck_venv:
     - cd "$CI_PROJECT_DIR"
     - python -V
     - python -m pip install -e .[dev] --prefer-binary
+  artifacts:
+    paths: [] # no coverage artifacts in integration tests
 
 integration_fast:
   extends: .integration_template
@@ -212,7 +214,7 @@ integration_fast:
       - PYTHON_VERSION: ["3.14"]
         IDF_BRANCH: ["master"]
   script:
-    - $RUN_TESTS test/integration -m fast
+    - $RUN_TESTS test/integration -m "fast or cmakev2_fast"
 
 # Compatibility runs against IDF release branches. Manual to avoid load on
 # the runner pool; trigger when a change might affect older IDF revisions.
@@ -226,7 +228,7 @@ integration_fast_compat:
     - when: manual
       allow_failure: true
   script:
-    - $RUN_TESTS test/integration -m fast
+    - $RUN_TESTS test/integration -m "fast or cmakev2_fast"
 
 # Windows fast integration tests (windows-vm shell executor, PowerShell).
 .integration_template_windows:
@@ -281,6 +283,8 @@ integration_fast_windows:
       - PYTHON_VERSION: ["3.14"]
         IDF_BRANCH: ["master"]
   script:
+    # Only the classic `fast` tier here; cmakev2 (cmakev2_fast) is intentionally
+    # not run on Windows for now to keep the slow windows-vm jobs short.
     - pytest -vv test/integration -m fast
 
 # Compatibility runs against IDF release branches. Manual to avoid load on
@@ -295,6 +299,8 @@ integration_fast_windows_compat:
     - when: manual
       allow_failure: true
   script:
+    # cmakev2 (cmakev2_fast) is intentionally not run on Windows for now to keep
+    # the slow windows-vm jobs short.
     - pytest -vv test/integration -m fast
 # -----------------------------------------------------------------------------------------------------
 
