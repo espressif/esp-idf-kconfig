@@ -4,9 +4,14 @@
 
 from __future__ import annotations
 
+import os
+import platform
 import re
+import shutil
+import subprocess
 from typing import TYPE_CHECKING
 from typing import Callable
+from typing import List
 from typing import Optional
 
 from textual.app import ComposeResult
@@ -17,10 +22,12 @@ from textual.events import Key
 from textual.screen import ModalScreen
 from textual.screen import Screen
 from textual.widgets import Button
+from textual.widgets import Footer
 from textual.widgets import Input
 from textual.widgets import Label
 from textual.widgets import OptionList
 from textual.widgets import Static
+from textual.widgets import TextArea
 
 from .formatting import JUMP_TO_HELP_LINES
 from .formatting import info_str
@@ -253,10 +260,54 @@ class LoadScreen(ModalScreen[Optional[str]]):
         self.dismiss(None)
 
 
-class InfoScreen(Screen[None]):
+def _copy_via_system_tool(text: str) -> bool:
+    """
+    Copy text to the system clipboard using an OS-native helper.
+
+    OSC 52 (the escape sequence written by ``App.copy_to_clipboard``) is
+    not honoured by several common terminals (e.g. GNOME Terminal, xterm,
+    Konsole with default settings), so we also try to shell out to a
+    native clipboard tool.
+
+    Returns True if a tool was available and exited cleanly.
+    """
+    candidates: List[List[str]] = []
+    system = platform.system()
+    if system == "Darwin":
+        candidates.append(["pbcopy"])
+    elif system == "Windows":
+        candidates.append(["clip"])
+    else:
+        if os.environ.get("WAYLAND_DISPLAY"):
+            candidates.append(["wl-copy"])
+        candidates.append(["xclip", "-selection", "clipboard"])
+        candidates.append(["xsel", "--clipboard", "--input"])
+
+    for cmd in candidates:
+        if shutil.which(cmd[0]) is None:
+            continue
+        try:
+            subprocess.run(
+                cmd,
+                input=text.encode("utf-8"),
+                check=True,
+                timeout=1,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            return True
+        except (subprocess.CalledProcessError, OSError, subprocess.TimeoutExpired):
+            continue
+    return False
+
+
+class InfoScreen(ModalScreen[None]):
     """Fullscreen information display for a symbol/choice/menu/comment."""
 
     DEFAULT_CSS = """
+    InfoScreen {
+        background: $surface;
+    }
     InfoScreen #info-title {
         dock: top;
         height: 1;
@@ -266,15 +317,29 @@ class InfoScreen(Screen[None]):
     }
     InfoScreen #info-body {
         height: 1fr;
-        overflow-y: auto;
         border: thick $primary;
         padding: 1 2;
     }
     """
 
     BINDINGS = [
-        Binding("escape,q,h,left,backspace", "dismiss_screen", "Return", show=True),
+        Binding(
+            "escape,q,h,left,backspace",
+            "dismiss_screen",
+            "Return",
+            show=True,
+            priority=True,
+            key_display="←",
+        ),
         Binding("slash", "jump_to", "Search", show=True),
+        Binding(
+            "c",
+            "copy_text",
+            "Copy",
+            show=True,
+            priority=True,
+            tooltip="Copy the selected text, or the whole info text if nothing is selected",
+        ),
     ]
 
     def __init__(self, node: MenuNode, state: MenuConfigState, from_jump_to: bool = False) -> None:
@@ -285,7 +350,29 @@ class InfoScreen(Screen[None]):
 
     def compose(self) -> ComposeResult:
         yield Static(info_title(self.node), id="info-title")
-        yield Static(info_str(self.node, self._state.kconf), id="info-body")
+        yield TextArea(
+            info_str(self.node, self._state.kconf),
+            id="info-body",
+            read_only=True,
+            show_cursor=False,
+        )
+        yield Footer()
+
+    def on_mount(self) -> None:
+        self.query_one("#info-body", TextArea).focus()
+
+    def action_copy_text(self) -> None:
+        body = self.query_one("#info-body", TextArea)
+        text = body.selected_text or body.text
+        if _copy_via_system_tool(text):
+            self.notify(f"{'Selection' if body.selected_text else 'Info text'} copied to clipboard")
+        else:
+            self.app.copy_to_clipboard(text)
+            self.notify(
+                "Sent the text to your terminal's clipboard. If pasting doesn't work, "
+                "install a clipboard helper (wl-copy, xclip, or xsel) and try again.",
+                severity="warning",
+            )
 
     def action_dismiss_screen(self) -> None:
         self.app.pop_screen()
