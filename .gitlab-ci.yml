@@ -4,6 +4,7 @@ variables:
 stages:
   - codecheck
   - test
+  - integration
   - coverage
   - build_docs
   - deploy_docs
@@ -170,6 +171,131 @@ test_kconfcheck_venv:
   script:
     - cd test/kconfcheck/
     - $RUN_TESTS
+# -----------------------------------------------------------------------------------------------------
+
+# INTEGRATION TESTS
+# -----------------------------------------------------------------------------------------------------
+# Integration jobs install ESP-IDF first, source `export.{sh,ps1}`, and then
+# `pip install -e .[dev]` into IDF's active Python venv. Pytest therefore
+# runs from inside IDF's venv, which gives `sys.executable` the right value
+# for invoking `idf.py` and removes the need for PATH-resolution helpers.
+#
+# Integration jobs do not collect coverage: `idf.py` spawns many Python
+# subprocesses and the `coverage[toml]` .pth startup hook is fragile across
+# cwds and platforms. Coverage is tracked by the unit-test suites instead.
+.integration_template:
+  extends: .common_template
+  stage: integration
+  variables:
+    IDF_TOOLS_PATH: "$CI_PROJECT_DIR/.cache/espressif"
+    IDF_PATH: "$CI_PROJECT_DIR/idf"
+    RUN_TESTS: "pytest -vv"
+    COVERAGE_PROCESS_START: ""
+    COVERAGE_RCFILE: ""
+    COVERAGE_FILE: ""
+  cache:
+    - key: "esp-idf-tools-${IDF_BRANCH}-${PYTHON_VERSION}"
+      paths: [.cache/espressif/]
+  allow_failure: true
+  before_script:
+    - apt-get update && apt-get install -y -q git cmake ninja-build ccache libusb-1.0-0
+    - git clone --depth=1 --recurse-submodules --shallow-submodules -b "$IDF_BRANCH" https://github.com/espressif/esp-idf.git "$IDF_PATH"
+    - cd "$IDF_PATH" && ./install.sh && . ./export.sh
+    - cd "$CI_PROJECT_DIR"
+    - python -V
+    - python -m pip install -e .[dev] --prefer-binary
+
+integration_fast:
+  extends: .integration_template
+  parallel:
+    matrix:
+      - PYTHON_VERSION: ["3.14"]
+        IDF_BRANCH: ["master"]
+  script:
+    - $RUN_TESTS test/integration -m fast
+
+# Compatibility runs against IDF release branches. Manual to avoid load on
+# the runner pool; trigger when a change might affect older IDF revisions.
+integration_fast_compat:
+  extends: .integration_template
+  parallel:
+    matrix:
+      - PYTHON_VERSION: ["3.14"]
+        IDF_BRANCH: ["release/v6.0", "release/v6.1"]
+  rules:
+    - when: manual
+      allow_failure: true
+  script:
+    - $RUN_TESTS test/integration -m fast
+
+# Windows fast integration tests (windows-vm shell executor, PowerShell).
+.integration_template_windows:
+  stage: integration
+  tags:
+    - windows-vm
+    - brew
+  variables:
+    # IDF_PATH / IDF_TOOLS_PATH are intentionally NOT set here; the
+    # windows-vm runner provides CI_PROJECT_DIR as a *relative* path
+    # (e.g. 'builds/espressif/esp-idf-kconfig'), which would otherwise
+    # cause nested path duplication when used with git clone / cd.
+    # They are derived from an absolutised CI_PROJECT_DIR in before_script.
+    PYTHONUNBUFFERED: "1"
+    GIT_SUBMODULE_STRATEGY: none
+  cache:
+    - key: "esp-idf-tools-windows-${IDF_BRANCH}-${PYTHON_VERSION}"
+      paths: [.cache/espressif/]
+  allow_failure: true
+  before_script:
+    - git config --global core.longpaths true
+    - git config --global core.autocrlf false
+    # Normalise paths. The windows-vm runner exposes CI_PROJECT_DIR as a
+    # relative path; resolve it (and the derived IDF paths) to absolute so
+    # `git clone` / `cd` work regardless of the current working directory.
+    - $env:CI_PROJECT_DIR = (Get-Location).Path
+    - $env:IDF_PATH       = Join-Path $env:CI_PROJECT_DIR 'idf'
+    - $env:IDF_TOOLS_PATH = Join-Path $env:CI_PROJECT_DIR '.cache\espressif'
+    - Write-Host "CI_PROJECT_DIR=$env:CI_PROJECT_DIR  IDF_PATH=$env:IDF_PATH  IDF_TOOLS_PATH=$env:IDF_TOOLS_PATH"
+    # Make the requested Python the first one on PATH. IDF's install.ps1
+    # creates its venv with whichever `python` it finds first; without this
+    # step it picks the runner's system Python (3.10) and the matrix
+    # PYTHON_VERSION value is ignored. uv is preinstalled on windows-vm.
+    - uv python install $env:PYTHON_VERSION
+    - $env:PATH = (Split-Path (uv python find $env:PYTHON_VERSION) -Parent) + ';' + $env:PATH
+    - python -V
+    # Install IDF (it creates its own Python venv on top of the 3.14 we
+    # just put on PATH), then `pip install` esp-idf-kconfig into that
+    # active venv so `sys.executable` is IDF's python when pytest runs.
+    - git clone --depth=1 --recurse-submodules --shallow-submodules -b $env:IDF_BRANCH https://github.com/espressif/esp-idf.git $env:IDF_PATH
+    - cd $env:IDF_PATH
+    - .\install.ps1
+    - .\export.ps1
+    - cd $env:CI_PROJECT_DIR
+    - python -V
+    - python -m pip install -e .[dev] --prefer-binary
+
+integration_fast_windows:
+  extends: .integration_template_windows
+  parallel:
+    matrix:
+      - PYTHON_VERSION: ["3.14"]
+        IDF_BRANCH: ["master"]
+  script:
+    - pytest -vv test/integration -m fast
+
+# Compatibility runs against IDF release branches. Manual to avoid load on
+# the small windows-vm runner pool; trigger as needed.
+integration_fast_windows_compat:
+  extends: .integration_template_windows
+  parallel:
+    matrix:
+      - PYTHON_VERSION: ["3.14"]
+        IDF_BRANCH: ["release/v6.0", "release/v6.1"]
+  rules:
+    - when: manual
+      allow_failure: true
+  script:
+    - pytest -vv test/integration -m fast
 # -----------------------------------------------------------------------------------------------------
 
 # CODE COVERAGE

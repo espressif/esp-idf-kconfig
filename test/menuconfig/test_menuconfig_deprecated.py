@@ -157,8 +157,9 @@ class TestMainEnvVarLoading:
             captured["kconf"] = kconf
             return kconf
 
-        def fake_menuconfig(kconf: Kconfig) -> None:
+        def fake_menuconfig(kconf: Kconfig, headless: bool = False) -> None:
             captured["menuconfig_called_with"] = kconf
+            captured["headless"] = headless
 
         monkeypatch.setattr("esp_kconfiglib.core.standard_kconfig", fake_standard_kconfig)
         monkeypatch.setattr("esp_menuconfig.menuconfig", fake_menuconfig)
