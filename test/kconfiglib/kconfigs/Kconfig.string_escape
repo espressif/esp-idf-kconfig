@@ -1,0 +1,9 @@
+mainmenu "String escape round-trip"
+
+config GREETING
+    string "Greeting"
+    default "he said \"hi\""
+
+config WINPATH
+    string "Path"
+    default "C:\\tmp"

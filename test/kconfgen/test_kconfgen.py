@@ -143,8 +143,6 @@ class TestCmake(KconfgenBaseTestCase):
     )
 
     def test_string_escape(self, runner):
-        if os.environ.get("KCONFIG_PARSER_VERSION") == "2":
-            pytest.skip("Kconfiglib v2 does not support character escaping")
         in_text = """
         mainmenu "Test"
 
@@ -169,8 +167,6 @@ class TestJson(KconfgenBaseTestCase):
         self.args = Args(output="json")
 
     def test_string_escape(self, runner):
-        if os.environ.get("KCONFIG_PARSER_VERSION") == "2":
-            pytest.skip("Kconfiglib v2 does not support character escaping")
         in_text = """
         mainmenu "Test"
 
@@ -384,8 +380,6 @@ class TestHeader(KconfgenBaseTestCase):
         self.args = Args(output="header")
 
     def test_string_escape(self, runner):
-        if os.environ.get("KCONFIG_PARSER_VERSION") == "2":
-            pytest.skip("Kconfiglib v2 does not support character escaping")
         in_text = """
         mainmenu "Test"
 
