@@ -45,6 +45,7 @@ dev = [
     "pre-commit",
     "pexpect",
     "pytest",
+    "pytest-rerunfailures",
     "coverage[toml]",
 ]
 docs = [
