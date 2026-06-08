@@ -20,6 +20,17 @@
 </div>
 <hr>
 
+## v3.11.1 (2026-06-08)
+
+### 🐛 Bug Fixes
+
+- **parser**: make string escapes match between v1 and v2 parsers *(Jan Beran - 1c2ffb8)*
+- **menuconfig**: enable headless mode in _main() *(Jan Beran - 45aea8a)*
+- **menuconfig**: make info screen scrollable and copyable *(Jan Beran - 4a4ccd5)*
+- **parser**: warn and treat legacy bool defaults as n *(Jan Beran - 1fa7412)*
+- allow comment entry to have leading and trailing whitespaces *(Jan Beran - 4838986)*
+
+
 ## v3.11.0 (2026-05-25)
 
 ### ✨ New Features
