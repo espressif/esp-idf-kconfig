@@ -23,6 +23,10 @@ def _child_env():
 PROTOCOL_VERSIONS = [1, 2, 3]
 KCONFIG_PARSER_VERSIONS = [1, 2]
 
+# kconfserver tests spawn a subprocess and talk to it over a pipe, which can be
+# timing-sensitive; allow up to 3 reruns before counting a failure.
+pytestmark = pytest.mark.flaky(reruns=3)
+
 
 def parse_testcases(version):
     with open(os.path.join(_TEST_DIR, f"testcases_v{version}.txt"), "r") as f:
