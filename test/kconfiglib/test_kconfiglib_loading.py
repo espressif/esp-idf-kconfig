@@ -710,3 +710,18 @@ class TestDefaultPragmaRegression(TestBase):
         assert tested_symbol.str_value == "y"
 
         kconfig.report.reset()
+
+
+@pytest.mark.parametrize("version", ["1", "2"], indirect=True)
+class TestStringEscapes(TestBase):
+    """
+    Backslash escapes in a string default must be unescaped on read identically
+    by both parsers (\\" becomes a literal quote, \\\\ becomes a single backslash).
+    """
+
+    def test_escaped_values_are_unescaped(self):
+        kconfig = Kconfig(os.path.join(KCONFIG_PATH, "Kconfig.string_escape"))
+        assert kconfig.syms["GREETING"].str_value == 'he said "hi"'
+        assert kconfig.syms["WINPATH"].str_value == "C:\\tmp"
+
+        kconfig.report.reset()

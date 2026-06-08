@@ -44,6 +44,7 @@ from .core import MenuNode
 from .core import Symbol
 from .core import Variable
 from .core import is_float
+from .core import unescape
 
 ParserElement.enable_packrat(cache_size_limit=None)  # Speeds up parsing by caching intermediate results
 
@@ -658,7 +659,12 @@ class Parser:
                     return self.kconfig.y
                 else:
                     if (expr.startswith(("'", '"')) or not expr.isupper()) and not is_numeric(expr):
-                        sym = self.kconfig._lookup_const_sym(expr[1:-1] if expr.startswith(("'", '"')) else expr)
+                        # Quoted literals are unescaped (\\x -> x) so the value
+                        # matches the legacy parser; bare symbols pass through.
+                        if expr.startswith(("'", '"')):
+                            sym = self.kconfig._lookup_const_sym(unescape(expr[1:-1]))
+                        else:
+                            sym = self.kconfig._lookup_const_sym(expr)
                     else:
                         sym = self.kconfig._lookup_sym(expr)
                     return sym

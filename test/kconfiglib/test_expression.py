@@ -37,6 +37,10 @@ VALID_EXPRESSIONS = [
     ("0XABCD", ["0XABCD"]),
     ('"hello"', ['"hello"']),
     ("'hello'", ["'hello'"]),
+    # strings with backslash escapes are a single token (escapes resolved on read)
+    ('"he said \\"hi\\""', ['"he said \\"hi\\""']),
+    ('"C:\\\\tmp"', ['"C:\\\\tmp"']),
+    ("'a\\'b'", ["'a\\'b'"]),
     ("4.4", ["4.4"]),
     ("5.3.1", ["5.3.1"]),
     ("-3.14", ["-3.14"]),
