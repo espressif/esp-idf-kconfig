@@ -1,9 +1,9 @@
 # SPDX-FileCopyrightText: 2026 Espressif Systems (Shanghai) CO LTD
 # SPDX-License-Identifier: Apache-2.0
 """
-Curated example lists for the fast and full integration tests (both ESP_IDF build systems).
+Curated example lists for the fast and full integration tests (both ESP-IDF build systems).
 
-Single source of truth for which IDF examples are tested and on which targets.
+NOTE: Full integration tests are not yet implemented for neither build system.
 """
 
 from __future__ import annotations
@@ -46,26 +46,71 @@ class ExampleEntry:
 # ---------------------------------------------------------------------------
 # Classic CMake fast integration tests (per-MR)
 # ---------------------------------------------------------------------------
-FAST_TARGETS: Tuple[str, ...] = ()
-"""Default targets for the classic-CMake fast integration tests."""
+# Curated list of primary targets to test:
+# * esp32: staple chip
+# * esp32c6: BT, LP core...
+# * esp32p4: most problematic due to second chip for WiFi etc.
+FAST_TARGETS: Tuple[str, ...] = ("esp32", "esp32c6", "esp32p4")
 
-FAST_EXAMPLES: Tuple[ExampleEntry, ...] = ()
-"""Classic-CMake fast integration tests (per-MR). Concrete entries are added in a follow-up MR."""
+FAST_EXAMPLES: Tuple[ExampleEntry, ...] = (
+    ExampleEntry(
+        path="examples/get-started/hello_world",  # baseline
+        fast_targets=("esp32",),
+    ),
+    ExampleEntry(
+        path="examples/get-started/blink",  # baseline, but with components
+        fast_targets=FAST_TARGETS,
+    ),
+    ExampleEntry(
+        path="examples/openthread/ot_br",  # repeated regressions in this project
+        fast_targets=("esp32c6",),  # doesn't really matter, problems weren't chip specific
+    ),
+    ExampleEntry(
+        path="examples/system/ulp/lp_core/build_system",  # LP core test
+        fast_targets=("esp32c6",),
+    ),
+    ExampleEntry(
+        path="examples/wifi/getting_started/softAP",  # WiFi test
+        fast_targets=FAST_TARGETS,
+    ),
+    ExampleEntry(
+        path="examples/bluetooth/nimble/bleprph",
+        fast_targets=("esp32", "esp32c6"),  # esp32p4 is not supported
+    ),
+)
+
+
+# ---------------------------------------------------------------------------
+# cmakev2 fast integration tests (per-MR)
+# ---------------------------------------------------------------------------
+CMAKEV2_FAST_EXAMPLES: Tuple[ExampleEntry, ...] = (
+    ExampleEntry(
+        path="examples/build_system/cmakev2/get-started/hello_world",
+        fast_targets=("esp32",),
+        build_system="cmakev2",
+    ),
+    ExampleEntry(
+        path="examples/build_system/cmakev2/features/conditional_component",
+        fast_targets=FAST_TARGETS,
+        build_system="cmakev2",
+    ),
+    ExampleEntry(
+        path="examples/build_system/cmakev2/features/multi_config",
+        fast_targets=FAST_TARGETS,
+        build_system="cmakev2",
+    ),
+)
+
 
 # ---------------------------------------------------------------------------
 # Classic CMake full (manual)
 # ---------------------------------------------------------------------------
 FULL_EXAMPLES: Tuple[ExampleEntry, ...] = FAST_EXAMPLES
-"""Classic-CMake full integration tests, manual (superset of ``FAST_EXAMPLES``)."""
+"""Full tier is a superset of fast; extra entries added in a follow-up MR."""
 
-# ---------------------------------------------------------------------------
-# cmakev2 fast integration tests (per-MR)
-# ---------------------------------------------------------------------------
-CMAKEV2_FAST_EXAMPLES: Tuple[ExampleEntry, ...] = ()
-"""cmakev2 fast integration tests (per-MR). Concrete entries are added in a follow-up MR."""
 
 # ---------------------------------------------------------------------------
 # cmakev2 full (manual)
 # ---------------------------------------------------------------------------
 CMAKEV2_FULL_EXAMPLES: Tuple[ExampleEntry, ...] = CMAKEV2_FAST_EXAMPLES
-"""cmakev2 full integration tests, manual (superset of ``CMAKEV2_FAST_EXAMPLES``)."""
+"""Full tier is a superset of cmakev2 fast; extra entries added in a follow-up MR."""

@@ -2,13 +2,6 @@
 
 Integration tests verify that esp-idf-kconfig works correctly with ESP-IDF. They require a working ESP-IDF environment.
 
-> **Current scope:** infrastructure only.
-> Only one test exists today — a sanity check that runs `idf.py --version`.
-> The `cmakev2_*` markers, the `ExampleEntry.build_system` field, and the
-> `*_EXAMPLES` tuples are pre-declared scaffolding; concrete example projects,
-> the cmakev2 wiring, and the cmakev2 CI jobs are to be added later.
-> Anything tagged *(planned)* below does not run yet.
-
 ## Prerequisites
 
 1. Clone ESP-IDF and install tools:
@@ -22,19 +15,17 @@ Integration tests verify that esp-idf-kconfig works correctly with ESP-IDF. They
 ## Running locally
 
 ```bash
-# Fast integration tests (classic CMake) — currently just the idf.py --version sanity test
+# Fast integration tests (classic CMake)
 pytest test/integration -m fast -v
 
-# Fast integration tests (cmakev2) — runs only the shared sanity test today;
-# real cmakev2 coverage is planned for later
+# Fast integration tests (cmakev2)
 pytest test/integration -m cmakev2_fast -v
-
-# Full integration tests (all examples × all supported targets, manual)
-# *(planned: empty for now)*
-pytest test/integration -m full -v
 
 # Specific parser version only
 INTEGRATION_PARSER_VERSIONS=2 pytest test/integration -m fast -v
+
+# Run only build tests
+pytest test/integration/test_build.py -v
 ```
 
 ## Environment variables
@@ -58,14 +49,11 @@ cells that only differ in `IDF_BRANCH`.
 
 | Marker | Status | Description |
 |---|---|---|
-| `-m fast` | **running** — per-MR (automatic on Linux and Windows after unit tests) | classic CMake fast integration tests (currently only the `idf.py --version` sanity test) |
-| `-m cmakev2_fast` | *planned* — no CI job yet; selector currently picks up only the shared sanity test | cmakev2 fast integration tests |
-| `-m full` | *planned* — manual; no concrete examples yet | classic CMake full integration tests (all examples × all supported targets) |
-| `-m cmakev2_full` | *planned* — manual; no concrete examples yet | cmakev2 full integration tests (all examples × all supported targets) |
+| `-m fast` | **running** — per-MR (automatic on Linux and Windows after unit tests) | classic CMake fast integration tests |
+| `-m cmakev2_fast` | **running** — same as `fast` | cmakev2 fast integration tests |
+| `-m full` | *planned* — manual; concrete examples to be populated later | classic CMake full integration tests (all examples × all supported targets) |
+| `-m cmakev2_full` | *planned* — manual; concrete examples to be populated in later | cmakev2 full integration tests (all examples × all supported targets) |
 
-The concrete example list and cmakev2 selection logic are to be added later.
-Until then, `ExampleEntry.build_system` is dead data and `CMAKEV2_*_EXAMPLES`
-are empty tuples (see `fixtures/examples.py`).
 
 ## CI platforms
 
