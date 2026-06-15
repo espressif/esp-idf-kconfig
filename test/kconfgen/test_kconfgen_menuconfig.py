@@ -46,8 +46,9 @@ def captured_menuconfig(monkeypatch: pytest.MonkeyPatch) -> List[Kconfig]:
 
 
 def _invoke_kconfgen(monkeypatch: pytest.MonkeyPatch, argv: List[str]) -> None:
-    monkeypatch.setattr("sys.argv", ["kconfgen", *argv])
-    kconfgen.core.main()
+    # ``main`` is a rich-click command; ``standalone_mode=False`` makes it return
+    # instead of raising SystemExit so the in-process assertions below can run.
+    kconfgen.core.main(argv, standalone_mode=False)
 
 
 class TestKconfgenMenuconfigFlag:

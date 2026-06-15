@@ -5,12 +5,16 @@
 # SPDX-FileCopyrightText: 2018-2026 Espressif Systems (Shanghai) CO LTD
 # SPDX-License-Identifier: Apache-2.0
 
-import argparse
 import os
 import re
 import sys
 from typing import Optional
 from typing import Tuple
+
+import rich_click as click
+from esp_pylib.cli_options import OptionEatAll
+from esp_pylib.logger import log
+from rich.markup import escape
 
 from .check_deprecated_options import _prepare_deprecated_options
 from .check_deprecated_options import check_deprecated_options
@@ -62,7 +66,8 @@ class BaseChecker(object):
 
     def finalize(self):
         """
-        Abstract method for finalizing the checker
+        Abstract method for finalizing the checker.
+        Return InputError if the checker found something wrong.
         """
         pass
 
@@ -311,7 +316,7 @@ class IndentAndNameChecker(BaseChecker):
             self.check_common_prefix("", "EOF")
         if len(self.prefix_stack) != 0:
             if self.debug:
-                print(self.prefix_stack)
+                log.debug(str(self.prefix_stack))
             raise RuntimeError("Prefix stack should be empty. Perhaps a menu/choice hasn't been closed")
 
     def del_from_level_stack(self, count):
@@ -322,7 +327,7 @@ class IndentAndNameChecker(BaseChecker):
 
     def update_level_for_inc_pattern(self, new_item):
         if self.debug:
-            print("level+", new_item, ": ", self.level_stack, end=" -> ")
+            log.debug(f"level+ {new_item} :  {self.level_stack} ->")
         # "config" and "menuconfig" don't have a closing pair. So if new_item is an item which need to be indented
         # outside the last "config" or "menuconfig" then we need to find to a parent where it belongs
         if new_item in [
@@ -348,13 +353,13 @@ class IndentAndNameChecker(BaseChecker):
 
         self.level_stack.append(new_item)
         if self.debug:
-            print(self.level_stack)
+            log.debug(str(self.level_stack))
         # The new indent is for the next line. Use the old one for the current line:
         return len(self.level_stack) - 1
 
     def update_level_for_dec_pattern(self, new_item):
         if self.debug:
-            print("level-", new_item, ": ", self.level_stack, end=" -> ")
+            log.debug(f"level- {new_item} :  {self.level_stack} ->")
         target = self.pair_dic[new_item]
         for i, item in enumerate(reversed(self.level_stack)):
             # find the matching beginning for the closing item in reverse-order search
@@ -363,11 +368,11 @@ class IndentAndNameChecker(BaseChecker):
             if item == target:
                 i += 1  # delete also the matching beginning
                 if self.debug:
-                    print("delete ", i, end=" -> ")
+                    log.debug(f"delete  {i} ->")
                 self.del_from_level_stack(i)
                 break
         if self.debug:
-            print(self.level_stack)
+            log.debug(str(self.level_stack))
         return len(self.level_stack)
 
     def check_name_sanity(self, line: str, line_number: int) -> None:
@@ -418,17 +423,17 @@ class IndentAndNameChecker(BaseChecker):
                 # this has nothing common with paths but the algorithm can be used for this also
                 self.prefix_stack[-1] = os.path.commonprefix([self.prefix_stack[-1], name])
             if self.debug:
-                print("prefix+", self.prefix_stack)
+                log.debug(f"prefix+ {self.prefix_stack}")
         m = self.re_new_stack.search(line)
         if m:
             self.prefix_stack.append(None)
             if self.debug:
-                print("prefix+", self.prefix_stack)
+                log.debug(f"prefix+ {self.prefix_stack}")
 
     def check_common_prefix(self, line, line_number):
         common_prefix = self.prefix_stack.pop()
         if self.debug:
-            print("prefix-", self.prefix_stack)
+            log.debug(f"prefix- {self.prefix_stack}")
         if common_prefix is None:
             return
         common_prefix_len = len(common_prefix)
@@ -621,12 +626,6 @@ class SDKRenameChecker(BaseChecker):
         self.renames[old_name] = new_name
 
 
-def valid_directory(path):
-    if not os.path.isdir(path):
-        raise argparse.ArgumentTypeError("{} is not a valid directory!".format(path))
-    return path
-
-
 def validate_file(file_full_path: str, verbose: bool = False, replace: bool = False) -> bool:
     # Even in case of in_place modification, create a new file with suggestions (original will be replaced later).
     suggestions_full_path = file_full_path + OUTPUT_SUFFIX
@@ -658,7 +657,7 @@ def validate_file(file_full_path: str, verbose: bool = False, replace: bool = Fa
                     # The line is correct therefore we echo it to the output file
                     f_o.write(line)
                 except InputError as e:
-                    print(e, file=sys.stderr)
+                    log.err(escape(str(e)))
                     fail = True
                     f_o.write(e.suggested_line)
         except UnicodeDecodeError:
@@ -668,89 +667,94 @@ def validate_file(file_full_path: str, verbose: bool = False, replace: bool = Fa
                 try:
                     checker.finalize()
                 except InputError as e:
-                    print(e, file=sys.stderr)
+                    log.err(escape(str(e)))
                     fail = True
+                except RuntimeError as e:
+                    # Something is seriously wrong, bail out
+                    log.die(escape(str(e)))
 
     if replace:
         os.replace(suggestions_full_path, file_full_path)
 
     if fail:
-        print(
+        log.print(
             "\t{} has been saved with suggestions for resolving the issues.\n"
             "\tPlease note that the suggestions can be wrong and "
             "you might need to re-run the checker several times "
-            "for solving all issues".format(suggestions_full_path if not replace else file_full_path)
+            "for solving all issues".format(suggestions_full_path if not replace else file_full_path),
+            markup=False,
         )
         return False
     else:
-        print("{}: OK".format(file_full_path))
+        log.print("{}: OK".format(file_full_path), markup=False)
         # If replace, file already removed
         if not replace:
             try:
                 os.remove(suggestions_full_path)
             except Exception:
                 # It is not a serious error if the file cannot be deleted
-                print(f"{suggestions_full_path} cannot be deleted!", file=sys.stderr)
+                log.note(f"{escape(suggestions_full_path)} cannot be deleted!")
         return True
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(description="Kconfig style checker")
-    parser.add_argument(
-        "--check",
-        "-c",
-        choices=["syntax", "deprecated"],
-        default="syntax",
-        help="Check syntax or deprecated options",
-    )
-    parser.add_argument(
-        "files",
-        nargs="*",
-        help="Kconfig files to check (full paths separated by space)",
-    )
-    parser.add_argument(
-        "--verbose",
-        "-v",
-        action="store_true",
-        help="Print more information (useful for debugging)",
-    )
-    parser.add_argument(
-        "--replace",
-        action="store_true",
-        help="[only for --check syntax] Apply the changes to the original files"
-        f" instead of creating {OUTPUT_SUFFIX} files",
-    )
-    parser.add_argument(
-        "--includes",
-        "-d",
-        nargs="*",
-        help="[only for --check deprecated] Paths for recursive search of sdkconfig files",
-        type=valid_directory,
-    )
-    parser.add_argument(
-        "--exclude-submodules",
-        nargs="*",
-        type=valid_directory,
-        help="[only for --check deprecated] Exclude ESP-IDF submodules",
-    )
-
-    args = parser.parse_args()
-
-    if args.check == "syntax" and (args.includes is not None or args.exclude_submodules is not None):
-        raise argparse.ArgumentError(
-            None, "--includes and --exclude-submodules are available only when using --check deprecated option."
+@click.command(
+    help="Kconfig style checker",
+    context_settings=dict(help_option_names=["-h", "--help"]),
+)
+@click.option(
+    "--check",
+    "-c",
+    "check",
+    type=click.Choice(["syntax", "deprecated"]),
+    default="syntax",
+    help="Check syntax or deprecated options",
+)
+@click.argument("files", nargs=-1, type=click.Path())
+@click.option(
+    "--verbose",
+    "-v",
+    is_flag=True,
+    default=False,
+    help="Print more information (useful for debugging)",
+)
+@click.option(
+    "--replace",
+    is_flag=True,
+    default=False,
+    help=f"[only for --check syntax] Apply the changes to the original files instead of creating {OUTPUT_SUFFIX} files",
+)
+@click.option(
+    "--includes",
+    "-d",
+    "includes",
+    cls=OptionEatAll,
+    multiple=True,
+    type=click.Path(exists=True, file_okay=False, dir_okay=True),
+    help="[only for --check deprecated] Paths for recursive search of sdkconfig files",
+)
+@click.option(
+    "--exclude-submodules",
+    cls=OptionEatAll,
+    multiple=True,
+    type=click.Path(exists=True, file_okay=False, dir_okay=True),
+    help="[only for --check deprecated] Exclude ESP-IDF submodules",
+)
+def main(check, files, verbose, replace, includes, exclude_submodules):
+    if check == "syntax" and (includes or exclude_submodules):
+        raise click.UsageError(
+            "--includes and --exclude-submodules are available only when using --check deprecated option."
         )
 
-    if args.check == "deprecated" and args.replace:
-        raise argparse.ArgumentError(None, "--replace is available only when using --check syntax option.")
+    if check == "deprecated" and replace:
+        raise click.UsageError("--replace is available only when using --check syntax option.")
 
     success_counter = 0
     failure_counter = 0
     ignored_counter = 0
 
-    files = [os.path.abspath(file_path) for file_path in args.files]
+    files = [os.path.abspath(file_path) for file_path in files]
 
-    if args.check == "deprecated":
+    if check == "deprecated":
         # Reuse the project-root cache built during classification so check_deprecated_options
         # does not redo the same upward CMakeLists.txt walks for every file.
         (
@@ -760,18 +764,16 @@ def main() -> int:
             ignore_dirs,
             project_root_cache,
             abs_idf_path,
-        ) = _prepare_deprecated_options(args.includes, args.exclude_submodules, files)
+        ) = _prepare_deprecated_options(includes, exclude_submodules, files)
 
     for full_path in files:
         file_ok: Optional[bool] = False
-        if args.check == "syntax":
-            file_ok = validate_file(full_path, args.verbose, args.replace)
-        elif args.check == "deprecated":
+        if check == "syntax":
+            file_ok = validate_file(full_path, verbose, replace)
+        elif check == "deprecated":
             file_ok = check_deprecated_options(
                 full_path, global_deprecated, local_deprecated, ignore_dirs, project_root_cache, abs_idf_path
             )
-        else:
-            raise argparse.ArgumentError(None, f"Unknown check type: {args.check} passed to --check argument.")
 
         if file_ok is None:
             ignored_counter += 1
@@ -784,13 +786,17 @@ def main() -> int:
         return "s" if cnt > 1 else ""
 
     if success_counter > 0:
-        print(f"{success_counter} file{_handle_plural(success_counter)} have been successfully checked.")
+        log.print(
+            f"{success_counter} file{_handle_plural(success_counter)} have been successfully checked.", markup=False
+        )
     if ignored_counter > 0:
-        print(f"{ignored_counter} file{_handle_plural(success_counter)} have been ignored.")
+        log.print(f"{ignored_counter} file{_handle_plural(ignored_counter)} have been ignored.", markup=False)
     if failure_counter > 0:
-        print(f"{failure_counter} file{_handle_plural(success_counter)} have errors. Please take a look at the log.")
-        return 1
+        log.print(
+            f"{failure_counter} file{_handle_plural(failure_counter)} have errors. Please take a look at the log.",
+            markup=False,
+        )
+        log.die("Some files have errors. Please take a look at the log.", exit_code=1)
 
     if not files:
-        print("WARNING: no files specified.", file=sys.stderr)
-    return 0
+        log.warn("no files specified.")

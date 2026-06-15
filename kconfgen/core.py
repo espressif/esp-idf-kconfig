@@ -9,7 +9,6 @@
 #
 # SPDX-FileCopyrightText: 2018-2026 Espressif Systems (Shanghai) CO LTD
 # SPDX-License-Identifier: Apache-2.0
-import argparse
 import json
 import os.path
 import sys
@@ -21,6 +20,11 @@ from typing import List
 from typing import Optional
 from typing import Set
 from typing import Union
+
+import rich_click as click
+from esp_pylib.excepthook import install_exception_reporting
+from esp_pylib.logger import log
+from rich.markup import escape
 
 import esp_idf_kconfig.gen_kconfig_doc as gen_kconfig_doc
 import esp_kconfiglib.core as kconfiglib
@@ -130,10 +134,9 @@ def get_json_values(config: kconfiglib.Kconfig) -> dict:
                 kconfiglib.HEX,
                 kconfiglib.FLOAT,
             ):
-                print(
-                    f"warning: {sym.name} has no value set in the configuration."
-                    " This can be caused e.g. by missing default value for the current chip version.",
-                    file=sys.stderr,
+                log.warn(
+                    f"{sym.name} has no value set in the configuration."
+                    " This can be caused e.g. by missing default value for the current chip version."
                 )
                 val: Optional[Union[str, bool, int, float]] = None
             elif sym.type == kconfiglib.BOOL:
@@ -312,8 +315,7 @@ def write_docs(config: kconfiglib.Kconfig, filename: str, write_deprecated: bool
     try:
         target = os.environ["IDF_TARGET"]
     except KeyError:
-        print("IDF_TARGET environment variable must be defined!", file=sys.stderr)
-        sys.exit(1)
+        log.die("IDF_TARGET environment variable must be defined!")
 
     visibility = gen_kconfig_doc.ConfigTargetVisibility(config, target)
     gen_kconfig_doc.write_docs(config, visibility, filename)
@@ -363,122 +365,122 @@ OUTPUT_FORMATS = {
 }
 
 
-def main():
-    parser = argparse.ArgumentParser(
-        description=f"kconfgen.py v{__version__} - Config Generation Tool",
-        prog=os.path.basename(sys.argv[0]),
-    )
+@click.command(
+    help=f"kconfgen v{__version__} - Config Generation Tool",
+    context_settings=dict(help_option_names=["-h", "--help"]),
+)
+@click.option(
+    "--config",
+    "sdkconfig_file",
+    default=None,
+    help="Project configuration settings",
+)
+@click.option(
+    "--defaults",
+    multiple=True,
+    help="Optional project defaults file, used if --config file doesn't exist. "
+    "Multiple files can be specified using multiple --defaults arguments.",
+)
+@click.option(
+    "--kconfig",
+    required=True,
+    help="Kconfig file with config item definitions",
+)
+@click.option(
+    "--sdkconfig-rename",
+    default=None,
+    help="File with deprecated Kconfig options",
+)
+@click.option(
+    "--dont-write-deprecated",
+    is_flag=True,
+    default=False,
+    help="Do not write compatibility statements for deprecated values",
+)
+@click.option(
+    "--menuconfig",
+    is_flag=True,
+    default=False,
+    help="Launch interactive menuconfig before generating output files",
+)
+@click.option(
+    "--output",
+    nargs=2,
+    multiple=True,
+    type=(str, str),
+    metavar="FORMAT FILENAME",
+    help="Write output file (format and output filename)",
+)
+@click.option(
+    "--env",
+    multiple=True,
+    metavar="NAME=VAL",
+    help="Environment to set when evaluating the config file",
+)
+@click.option(
+    "--env-file",
+    type=click.File("r"),
+    default=None,
+    help="Optional file to load environment variables from. Contents "
+    "should be a JSON object where each key/value pair is a variable.",
+)
+@click.option(
+    "--list-separator",
+    type=click.Choice(["space", "semicolon"]),
+    default="space",
+    help="Separator used in environment list variables (COMPONENT_SDKCONFIG_RENAMES)",
+)
+def main(
+    sdkconfig_file,
+    defaults,
+    kconfig,
+    sdkconfig_rename,
+    dont_write_deprecated,
+    menuconfig,
+    output,
+    env,
+    env_file,
+    list_separator,
+):
+    install_exception_reporting()
 
-    parser.add_argument("--config", help="Project configuration settings", nargs="?", default=None)
-
-    parser.add_argument(
-        "--defaults",
-        help="Optional project defaults file, used if --config file doesn't exist. "
-        "Multiple files can be specified using multiple --defaults arguments.",
-        nargs="?",
-        default=[],
-        action="append",
-    )
-
-    parser.add_argument("--kconfig", help="Kconfig file with config item definitions", required=True)
-
-    parser.add_argument(
-        "--sdkconfig-rename",
-        help="File with deprecated Kconfig options",
-        required=False,
-    )
-
-    parser.add_argument(
-        "--dont-write-deprecated",
-        help="Do not write compatibility statements for deprecated values",
-        action="store_true",
-    )
-
-    parser.add_argument(
-        "--menuconfig",
-        help="Launch interactive menuconfig before generating output files",
-        action="store_true",
-    )
-
-    parser.add_argument(
-        "--output",
-        nargs=2,
-        action="append",
-        help="Write output file (format and output filename)",
-        metavar=("FORMAT", "FILENAME"),
-        default=[],
-    )
-
-    parser.add_argument(
-        "--env",
-        action="append",
-        default=[],
-        help="Environment to set when evaluating the config file",
-        metavar="NAME=VAL",
-    )
-
-    parser.add_argument(
-        "--env-file",
-        type=argparse.FileType("r"),
-        help="Optional file to load environment variables from. Contents "
-        "should be a JSON object where each key/value pair is a variable.",
-    )
-
-    parser.add_argument(
-        "--list-separator",
-        choices=["space", "semicolon"],
-        default="space",
-        help="Separator used in environment list variables (COMPONENT_SDKCONFIG_RENAMES)",
-    )
-    args = parser.parse_args()
-
-    for fmt, _ in args.output:
+    for fmt, _ in output:
         if fmt not in OUTPUT_FORMATS.keys():
-            print(
-                f"Format '{fmt}' not recognized. Known formats: {list(OUTPUT_FORMATS.keys())}",
-                file=sys.stderr,
-            )
-            sys.exit(1)
+            log.die(f"Format '{escape(fmt)}' not recognized. Known formats: {escape(str(list(OUTPUT_FORMATS.keys())))}")
 
     try:
-        args.env = [(name, value) for (name, value) in (e.split("=", 1) for e in args.env)]
+        env_pairs = [(name, value) for (name, value) in (e.split("=", 1) for e in env)]
     except ValueError:
-        print(
-            "--env arguments must each contain =. To unset an environment variable, use 'ENV='",
-            file=sys.stderr,
-        )
-        sys.exit(1)
+        log.die("--env arguments must each contain =. To unset an environment variable, use 'ENV='")
 
-    for name, value in args.env:
+    for name, value in env_pairs:
         os.environ[name] = value
 
-    if args.env_file is not None:
-        env = json.load(args.env_file)
-        os.environ.update(env)
+    if env_file is not None:
+        env_vars = json.load(env_file)
+        os.environ.update(env_vars)
     parser_version = int(os.environ.get("KCONFIG_PARSER_VERSION", "1"))
     # TODO Once ESP-IDF will fully support kconfig report, we should switch to "quiet" as default
     #      to avoid printing the report several times during the build.
     print_report = os.environ.get("KCONFIG_REPORT_VERBOSITY", "default") != "quiet"
     config = kconfiglib.Kconfig(
-        args.kconfig,
+        kconfig,
         parser_version=parser_version,
         print_report=(
             print_report
-            and not (
-                args.config and os.path.exists(args.config)
-            )  # if sdkconfig file exists, we'll report after it is loaded
-            and len(args.defaults) == 0  # if defaults are loaded, report will be printed after that
+            and not (sdkconfig_file and os.path.exists(sdkconfig_file))  # report after sdkconfig loaded (if any)
+            and len(defaults) == 0  # if defaults are loaded, report will be printed after that
         ),
     )
     kconfig_encoding = config._encoding
 
     load_rename_files_from_env(
         config,
-        sdkconfig_rename=args.sdkconfig_rename,
-        list_separator=args.list_separator,
+        sdkconfig_rename=sdkconfig_rename,
+        list_separator=list_separator,
     )
 
-    if len(args.defaults) > 0:
+    if len(defaults) > 0:
 
         def _replace_empty_assignments(path_in, path_out):  # empty assignment: CONFIG_FOO=
             with open(path_in, "r", encoding=kconfig_encoding) as f_in, open(
@@ -488,15 +490,12 @@ def main():
                     line = line.strip()
                     if line.endswith("="):
                         line += "n"
-                        print(
-                            f"{path_out}:{line_num} line was updated to {line}",
-                            file=sys.stderr,
-                        )
+                        log.note(f"{path_out}:{line_num} line was updated to {line}")
                     f_out.write(line)
                     f_out.write("\n")
 
-        for name in args.defaults:
-            print(f"Loading defaults file {name}...", file=sys.stderr)
+        for name in defaults:
+            log.print(f"Loading defaults file {name}...", file=sys.stderr, markup=False)
             if not os.path.exists(name):
                 raise RuntimeError(f"Defaults file not found: {name}")
             try:
@@ -508,30 +507,27 @@ def main():
                 config.load_config(temp_file, replace=False)
 
                 for symbol, value in config.missing_syms:
-                    print(
-                        f"warning: unknown kconfig symbol '{symbol}' assigned to '{value}' in {name}",
-                        file=sys.stderr,
-                    )
+                    log.warn(f"unknown kconfig symbol '{escape(symbol)}' assigned to '{escape(str(value))}' in {name}")
             finally:
                 try:
                     os.remove(temp_file)
                 except OSError:
                     pass
-        if print_report and not (args.config and os.path.exists(args.config)):
+        if print_report and not (sdkconfig_file and os.path.exists(sdkconfig_file)):
             config.report.print_report()
 
-    if args.config and os.path.exists(args.config):
-        config.load_config(args.config, replace=False, print_report=print_report)
+    if sdkconfig_file and os.path.exists(sdkconfig_file):
+        config.load_config(sdkconfig_file, replace=False, print_report=print_report)
 
-    if args.menuconfig:
+    if menuconfig:
         # Local import keeps non-interactive kconfgen runs free of textual.
         from esp_menuconfig import menuconfig as run_menuconfig
 
         run_menuconfig(config)
 
-    write_deprecated = not args.dont_write_deprecated
+    write_deprecated = not dont_write_deprecated
 
-    for output_type, filename_or_path in args.output:
+    for output_type, filename_or_path in output:
         if output_type == "cdep_tree":
             write_cdep_tree(config, filename_or_path)
             continue
