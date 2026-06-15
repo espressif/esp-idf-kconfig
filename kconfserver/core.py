@@ -158,59 +158,65 @@ def run_server(kconfig, sdkconfig, sdkconfig_rename, default_version=MAX_PROTOCO
         before_ranges = get_ranges(config)
         before_visible = get_visible(config)
 
-        if req["version"] >= 3:
-            before_defaults = get_sym_default_value_dict(config)
-
-        if "load" in req:  # load a new sdkconfig
-            if req.get("version", default_version) == 1:
-                # for V1 protocol, send all items when loading new sdkconfig.
-                # (V2+ will only send changes, same as when setting an item)
-                before = {}
-                before_ranges = {}
-                before_visible = {}
-
-            # if no new filename is supplied, use existing sdkconfig path, otherwise update the path
-            if req["load"] is None:
-                req["load"] = sdkconfig
-            else:
-                sdkconfig = req["load"]
-
-        if "save" in req:
-            if req["save"] is None:
-                req["save"] = sdkconfig
-            else:
-                sdkconfig = req["save"]
-
-        error = handle_request(config, req)
-
-        after = kconfgen.get_json_values(config)
-        after_ranges = get_ranges(config)
-        after_visible = get_visible(config)
-        if req["version"] >= 3:
-            after_defaults = get_sym_default_value_dict(config)
-
-        values_diff = diff(before, after)
-        ranges_diff = diff(before_ranges, after_ranges)
-        visible_diff = diff(before_visible, after_visible)
-        if req["version"] >= 3:
-            defaults_diff = diff(before_defaults, after_defaults)
-
-        if req["version"] == 1:
-            # V1 response, invisible items have value None
-            for k in (k for (k, v) in visible_diff.items() if not v):
-                values_diff[k] = None
-            response = {"version": 1, "values": values_diff, "ranges": ranges_diff}
-        else:
-            # V2+ response, separate visibility values
+        if "version" not in req:
             response = {
-                "version": req["version"],
-                "values": values_diff,
-                "ranges": ranges_diff,
-                "visible": visible_diff,
+                "version": default_version,
             }
+            error = ["All requests must have a 'version'"]
+        else:
             if req["version"] >= 3:
-                # V3 onwards: send which values have default values
-                response["defaults"] = defaults_diff
+                before_defaults = get_sym_default_value_dict(config)
+
+            if "load" in req:  # load a new sdkconfig
+                if req.get("version", default_version) == 1:
+                    # for V1 protocol, send all items when loading new sdkconfig.
+                    # (V2+ will only send changes, same as when setting an item)
+                    before = {}
+                    before_ranges = {}
+                    before_visible = {}
+
+                # if no new filename is supplied, use existing sdkconfig path, otherwise update the path
+                if req["load"] is None:
+                    req["load"] = sdkconfig
+                else:
+                    sdkconfig = req["load"]
+
+            if "save" in req:
+                if req["save"] is None:
+                    req["save"] = sdkconfig
+                else:
+                    sdkconfig = req["save"]
+
+            error = handle_request(config, req)
+
+            after = kconfgen.get_json_values(config)
+            after_ranges = get_ranges(config)
+            after_visible = get_visible(config)
+            if req["version"] >= 3:
+                after_defaults = get_sym_default_value_dict(config)
+
+            values_diff = diff(before, after)
+            ranges_diff = diff(before_ranges, after_ranges)
+            visible_diff = diff(before_visible, after_visible)
+            if req["version"] >= 3:
+                defaults_diff = diff(before_defaults, after_defaults)
+
+            if req["version"] == 1:
+                # V1 response, invisible items have value None
+                for k in (k for (k, v) in visible_diff.items() if not v):
+                    values_diff[k] = None
+                response = {"version": 1, "values": values_diff, "ranges": ranges_diff}
+            else:
+                # V2+ response, separate visibility values
+                response = {
+                    "version": req["version"],
+                    "values": values_diff,
+                    "ranges": ranges_diff,
+                    "visible": visible_diff,
+                }
+                if req["version"] >= 3:
+                    # V3 onwards: send which values have default values
+                    response["defaults"] = defaults_diff
 
         if error:
             for err in error:
