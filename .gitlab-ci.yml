@@ -209,11 +209,14 @@ test_kconfcheck_venv:
 
 integration_fast:
   extends: .integration_template
-  parallel:
-    matrix:
-      - PYTHON_VERSION: ["3.14"]
-        IDF_BRANCH: ["master"]
+  variables:
+    PYTHON_VERSION: "3.14"
+    IDF_BRANCH: "master"
+  parallel: 3
   script:
+    # Shard across parallel jobs via INTEGRATION_SHARD_* (see test/integration/conftest.py).
+    - export INTEGRATION_SHARD_TOTAL=$CI_NODE_TOTAL
+    - export INTEGRATION_SHARD_INDEX=$((CI_NODE_INDEX - 1))
     - $RUN_TESTS test/integration -m "fast or cmakev2_fast"
 
 # Compatibility runs against IDF release branches. Manual to avoid load on
@@ -224,10 +227,14 @@ integration_fast_compat:
     matrix:
       - PYTHON_VERSION: ["3.14"]
         IDF_BRANCH: ["release/v6.0", "release/v6.1"]
+        SHARD: ["0", "1", "2"]
   rules:
     - when: manual
       allow_failure: true
   script:
+    # Shard across parallel jobs via INTEGRATION_SHARD_* (see test/integration/conftest.py).
+    - export INTEGRATION_SHARD_TOTAL=3
+    - export INTEGRATION_SHARD_INDEX=$SHARD
     - $RUN_TESTS test/integration -m "fast or cmakev2_fast"
 
 # Windows fast integration tests (windows-vm shell executor, PowerShell).
@@ -278,13 +285,16 @@ integration_fast_compat:
 
 integration_fast_windows:
   extends: .integration_template_windows
-  parallel:
-    matrix:
-      - PYTHON_VERSION: ["3.14"]
-        IDF_BRANCH: ["master"]
+  variables:
+    PYTHON_VERSION: "3.14"
+    IDF_BRANCH: "master"
+  parallel: 3
   script:
     # Only the classic `fast` tier here; cmakev2 (cmakev2_fast) is intentionally
     # not run on Windows for now to keep the slow windows-vm jobs short.
+    # Shard across parallel jobs via INTEGRATION_SHARD_* (see test/integration/conftest.py).
+    - $env:INTEGRATION_SHARD_TOTAL = $env:CI_NODE_TOTAL
+    - $env:INTEGRATION_SHARD_INDEX = [string]([int]$env:CI_NODE_INDEX - 1)
     - pytest -vv test/integration -m fast
 
 # Compatibility runs against IDF release branches. Manual to avoid load on
@@ -295,12 +305,16 @@ integration_fast_windows_compat:
     matrix:
       - PYTHON_VERSION: ["3.14"]
         IDF_BRANCH: ["release/v6.0", "release/v6.1"]
+        SHARD: ["0", "1", "2"]
   rules:
     - when: manual
       allow_failure: true
   script:
     # cmakev2 (cmakev2_fast) is intentionally not run on Windows for now to keep
     # the slow windows-vm jobs short.
+    # Shard across parallel jobs via INTEGRATION_SHARD_* (see test/integration/conftest.py).
+    - $env:INTEGRATION_SHARD_TOTAL = "3"
+    - $env:INTEGRATION_SHARD_INDEX = $env:SHARD
     - pytest -vv test/integration -m fast
 # -----------------------------------------------------------------------------------------------------
 
