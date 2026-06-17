@@ -4,8 +4,8 @@ import os
 
 import rich_click as click
 from esp_pylib.excepthook import install_exception_reporting
-from esp_pylib.logger import log
-from rich.markup import escape
+
+from esp_kconfiglib.errors import kconfig_error_handler
 
 
 @click.command()
@@ -30,7 +30,5 @@ def _main(kconfig: str) -> None:
 
 if __name__ == "__main__":
     install_exception_reporting()
-    try:
+    with kconfig_error_handler():
         _main(standalone_mode=False)
-    except Exception as e:
-        log.die(f"A fatal error occurred: {escape(str(e))}", exit_code=2)
