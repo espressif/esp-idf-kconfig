@@ -342,7 +342,7 @@ class Parser:
             prompt_str = prompt[0]
 
             # Other items (like e.g. comments) can have leading or trailing whitespace in their prompt
-            if node.item.__class__ in (Symbol, Choice) and prompt_str != prompt_str.strip():
+            if type(node.item) in (Symbol, Choice) and prompt_str != prompt_str.strip():
                 self.kconfig._warn(node.item.name_and_loc + " has leading or trailing whitespace in its prompt")  # type: ignore
                 prompt_str = prompt_str.strip()
 
@@ -377,7 +377,7 @@ class Parser:
         #####################
         # _parse_props() functionality
         #####################
-        if node.item.__class__ not in (Symbol, Choice):
+        if type(node.item) not in (Symbol, Choice):
             raise RuntimeError("Attempted to parse options for MenuNode item which is neither Symbol nor Choice.")
 
         if not options:  # choice can have no options
@@ -387,7 +387,7 @@ class Parser:
         if options["type"]:
             self.kconfig._set_type(node.item, self.str_to_kconfig_type[options["type"]])
         else:
-            if node.item.__class__ != Choice:  # Choices can have implicit type by their first child
+            if type(node.item) is not Choice:  # Choices can have implicit type by their first child
                 raise ValueError(
                     f"Config {sym_or_choice_name}, defined in {self.file_stack[-1]}:{node.linenr} has no type."
                 )
@@ -416,11 +416,11 @@ class Parser:
                 expr = self.parse_expression(depend)
                 node.dep = self.kconfig._make_and(node.dep, expr)
 
-        # NOTE: mypy does not recognize __class__ is <class> checks, thus many # type: ignore[union-attr]
-        #       rather than to sacrifice speed in favor of mypy.
+        # NOTE: type(obj) is Class is used for hot-path type checks (faster than isinstance).
+        #       mypy recognizes this pattern for type narrowing.
         # parse select
         if options["select"]:
-            if node.item.__class__ is Symbol and node.item.orig_type == BOOL:  # type: ignore[union-attr]
+            if type(node.item) is Symbol and node.item.orig_type == BOOL:  # type: ignore[union-attr]
                 for select in options["select"]:
                     target_sym = self.kconfigize_expr(select[0])
                     if len(select) > 1 and select[1]:
@@ -439,7 +439,7 @@ class Parser:
 
         # parse imply
         if options["imply"]:
-            if node.item.__class__ is Symbol and node.item.orig_type == BOOL:  # type: ignore[union-attr]
+            if type(node.item) is Symbol and node.item.orig_type == BOOL:  # type: ignore[union-attr]
                 for imply in options["imply"]:
                     target_sym = self.kconfigize_expr(imply[0])
                     if len(imply) > 1 and imply[1]:
@@ -474,7 +474,7 @@ class Parser:
 
         # parse set default (weak indirect value setting)
         if options["weak_set"]:
-            if node.item.__class__ is Symbol and node.item.orig_type == BOOL:  # type: ignore[union-attr]
+            if type(node.item) is Symbol and node.item.orig_type == BOOL:  # type: ignore[union-attr]
                 for set_entry in options["weak_set"]:
                     target_sym = self.kconfigize_expr(set_entry[0])
                     val = self.kconfigize_expr(set_entry[1])
@@ -492,7 +492,7 @@ class Parser:
 
         # parse set (indirect value setting)
         if options["set"]:
-            if node.item.__class__ is Symbol and node.item.orig_type == BOOL:  # type: ignore[union-attr]
+            if type(node.item) is Symbol and node.item.orig_type == BOOL:  # type: ignore[union-attr]
                 for set_entry in options["set"]:
                     target_sym = self.kconfigize_expr(set_entry[0])
                     val = self.kconfigize_expr(set_entry[1])
@@ -524,7 +524,7 @@ class Parser:
                 )
 
         if options["warning"]:
-            if node.item.__class__ is Symbol:
+            if type(node.item) is Symbol:
                 if len(options["warning"]) > 1:
                     self.kconfig.report.add_record(
                         MiscArea,
@@ -545,7 +545,7 @@ class Parser:
                         )
                         prompt_str = prompt_str.strip()
                     node.warning = prompt_str  # type: ignore[union-attr]
-            elif node.item.__class__ is Choice:
+            elif type(node.item) is Choice:
                 self.kconfig.report.add_record(
                     MiscArea,
                     message=(
@@ -556,13 +556,13 @@ class Parser:
 
         # ignore anything else, should not happen
 
-    # mypy cannot recognize "if parsed_expr.__class__" as handling certain types complains in the rest of the function
+    # mypy cannot narrow type(x) in (A, B) checks; @no_type_check is needed here
     @no_type_check
     def infix_to_prefix(self, parsed_expr: Union[str, list, Symbol]) -> Union[str, tuple, Symbol]:
         """
         Converts a nested list of operands and operators from infix to prefix notation, because Kconfig uses it.
         """
-        if parsed_expr.__class__ in (str, Symbol):
+        if type(parsed_expr) in (str, Symbol):
             return parsed_expr
         else:
             if parsed_expr[0] == "!":  # negation; !EXPRESSION
@@ -668,7 +668,7 @@ class Parser:
                     else:
                         sym = self.kconfig._lookup_sym(expr)
                     return sym
-        elif expr.__class__ in (tuple, list):
+        elif type(expr) in (tuple, list):
             if expr[0] in operators:
                 if len(expr) == 3:  # expr operator expr
                     return (

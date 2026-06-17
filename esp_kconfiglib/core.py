@@ -1986,7 +1986,7 @@ class Kconfig(object):
 
             item = node.item
 
-            if item.__class__ is Symbol:
+            if type(item) is Symbol:
                 if item._visited:
                     continue
                 item._visited = True
@@ -2162,7 +2162,7 @@ class Kconfig(object):
 
             item = node.item
 
-            if item.__class__ is Symbol:
+            if type(item) is Symbol:
                 if item._visited:
                     continue
                 item._visited = True
@@ -2233,7 +2233,7 @@ class Kconfig(object):
                     # No more nodes
                     return
 
-            if unique_syms and node.item.__class__ is Symbol:
+            if unique_syms and type(node.item) is Symbol:
                 if node.item._visited:
                     continue
                 node.item._visited = True
@@ -2906,7 +2906,7 @@ class Kconfig(object):
         token = self._tokens[self._tokens_i]
         self._tokens_i += 1
 
-        if token.__class__ is not Symbol:
+        if type(token) is not Symbol:
             self._parse_error("expected symbol")
 
         return token
@@ -2917,7 +2917,7 @@ class Kconfig(object):
         token = self._tokens[1]
         self._tokens_i = 2
 
-        if token.__class__ is not Symbol or token.is_constant:
+        if type(token) is not Symbol or token.is_constant:
             self._parse_error("expected nonconstant symbol")
 
         return token
@@ -2926,7 +2926,7 @@ class Kconfig(object):
         token = self._tokens[self._tokens_i]
         self._tokens_i += 1
 
-        if token.__class__ is not str:
+        if type(token) is not str:
             self._parse_error("expected string")
 
         if self._tokens[self._tokens_i] is not None:
@@ -3289,7 +3289,7 @@ class Kconfig(object):
             if t0 == _T_CONFIG or t0 == _T_MENUCONFIG:
                 # The tokenizer allocates Symbol objects for us
                 sym = self._tokens[1]
-                if sym.__class__ is not Symbol or sym.is_constant:
+                if type(sym) is not Symbol or sym.is_constant:
                     self._parse_error("missing or bad symbol name")
 
                 if self._tokens[2] is not None:
@@ -3525,7 +3525,7 @@ class Kconfig(object):
                 self._parse_help(node)
 
             elif t0 == _T_SELECT:
-                if node.item.__class__ is not Symbol:
+                if type(node.item) is not Symbol:
                     self._parse_error("only symbols can select")
 
                 node.selects.append((self._expect_nonconst_sym(), self._parse_cond()))
@@ -3544,13 +3544,13 @@ class Kconfig(object):
                 node.ranges.append((self._expect_sym(), self._expect_sym(), self._parse_cond()))
 
             elif t0 == _T_IMPLY:
-                if node.item.__class__ is not Symbol:
+                if type(node.item) is not Symbol:
                     self._parse_error("only symbols can imply")
 
                 node.implies.append((self._expect_nonconst_sym(), self._parse_cond()))
 
             elif t0 == _T_SET:
-                if node.item.__class__ is not Symbol:
+                if type(node.item) is not Symbol:
                     self.report.add_record(
                         MiscArea,
                         message=(
@@ -3593,13 +3593,13 @@ class Kconfig(object):
                 if not self._check_token(_T_IF):
                     self._parse_error("expected 'if' after 'visible'")
 
-                if node.item and node.item.__class__ is Symbol:
+                if node.item and type(node.item) is Symbol:
                     self._warn(
                         f'config {node.item.name} {_locs(node.item)} has a "visible if" option, '  # type: ignore[union-attr]
                         "which is not supported for configs"
                     )
 
-                elif node.item and node.item.__class__ is Choice:
+                elif node.item and type(node.item) is Choice:
                     self._warn(
                         f'choice {node.item.name} {_locs(node.item)} has a "visible if" option, '  # type: ignore[union-attr]
                         "which is not supported for choices"
@@ -3651,7 +3651,7 @@ class Kconfig(object):
                         )
 
                 elif self._check_token(_T_ALLNOCONFIG_Y):
-                    if node.item.__class__ is not Symbol:
+                    if type(node.item) is not Symbol:
                         self._parse_error("the 'allnoconfig_y' option is only valid for symbols")
 
                     node.item.is_allnoconfig_y = True  # type: ignore[union-attr]
@@ -3660,7 +3660,7 @@ class Kconfig(object):
                     self._parse_error("unrecognized option")
 
             elif t0 == _T_OPTIONAL:
-                if node.item.__class__ is not Choice:
+                if type(node.item) is not Choice:
                     self._parse_error('"optional" is only valid for choices')
 
             elif t0 == _T_WARNING:
@@ -3689,7 +3689,7 @@ class Kconfig(object):
         Replaces invalid bool literals (see INVALID_BOOL_LITERALS in constants.py) with 'n' in the
         "default <value>" option for a symbol.
         """
-        if node.item.__class__ is not Symbol or node.item.orig_type != BOOL:  # type: ignore[union-attr]
+        if type(node.item) is not Symbol or node.item.orig_type != BOOL:  # type: ignore[union-attr]
             return
         if not node.defaults:
             return
@@ -3731,7 +3731,7 @@ class Kconfig(object):
         prompt = self._tokens[1]
         self._tokens_i = 2
 
-        if prompt.__class__ is not str:
+        if type(prompt) is not str:
             self._parse_error("expected prompt string")
 
         if prompt != prompt.strip():
@@ -3855,7 +3855,7 @@ class Kconfig(object):
         token = self._tokens[self._tokens_i]
         self._tokens_i += 1
 
-        if token.__class__ is Symbol:
+        if type(token) is Symbol:
             # Plain symbol or relation
 
             if self._tokens[self._tokens_i] not in _RELATIONS:
@@ -4008,7 +4008,7 @@ class Kconfig(object):
         #   Dependencies from 'visible if' on parent menus. These are added to
         #   the prompts of symbols and choices.
 
-        if node.item.__class__ is Symbol:
+        if type(node.item) is Symbol:
             # Copy defaults, ranges, selects, sets, weak sets, and implies to the Symbol
             self._add_props_to_sym(node)
 
@@ -4055,7 +4055,7 @@ class Kconfig(object):
 
         # Empty choices (node.list None) are possible, so this needs to go
         # outside
-        if node.item.__class__ is Choice:
+        if type(node.item) is Choice:
             # Add the node's non-node-specific properties to the choice, like
             # _add_props_to_sym() does
             choice = node.item
@@ -4074,13 +4074,13 @@ class Kconfig(object):
         #
         # Due to the similar interface, Choice works as a drop-in replacement
         # for Symbol here.
-        basedep = node.item if node.item.__class__ is Choice else node.dep
+        basedep = node.item if type(node.item) is Choice else node.dep
 
         cur = node.list
         while cur:
             dep = cur.dep = self._make_and(cur.dep, basedep)
 
-            if cur.item.__class__ in _SYMBOL_CHOICE:
+            if type(cur.item) in _SYMBOL_CHOICE:
                 # Propagate 'visible if' and dependencies to the prompt
                 if cur.prompt:
                     cur.prompt = (
@@ -4232,7 +4232,7 @@ class Kconfig(object):
 
             elif sym.orig_type:  # STRING/INT/HEX/FLOAT
                 for default, _ in sym.defaults:
-                    if default.__class__ is not Symbol:
+                    if type(default) is not Symbol:
                         raise KconfigError(
                             f"the {TYPE_TO_STR[sym.orig_type]} symbol {sym.name_and_loc} has a malformed default "
                             f"{expr_str(default)} -- expected a single symbol"
@@ -4301,7 +4301,7 @@ class Kconfig(object):
                 self._warn(choice.name_and_loc + " defined without a prompt")
 
             for default, _ in choice.defaults:
-                if default.__class__ is not Symbol:
+                if type(default) is not Symbol:
                     raise KconfigError(f"{choice.name_and_loc} has a malformed default {expr_str(default)}")
 
                 if default.choice is not choice:
@@ -5528,7 +5528,7 @@ class Symbol:
             self.orig_type == BOOL
             and value in (2, 0)  # valid bool
             or (
-                value.__class__ is str  # values other than bool should be string
+                type(value) is str  # values other than bool should be string
                 and (
                     (self.orig_type == INT and _is_base_n(value, 10))  # valid int
                     or self.orig_type == STRING  # valid string
@@ -5926,7 +5926,7 @@ class Symbol:
                 f"{expr_str(selecting_sym.direct_dep)} (value: {BOOL_TO_STR[expr_value(selecting_sym.direct_dep)]})"
             )
 
-            if select.__class__ is tuple:
+            if type(select) is tuple:
                 msg += f", and select condition {expr_str(select[2])} (value: {BOOL_TO_STR[expr_value(select[2])]})"
 
         self.kconfig._warn(msg)
@@ -7017,10 +7017,10 @@ class MenuNode:
         fields = []
         add = fields.append
 
-        if self.item.__class__ is Symbol:
+        if type(self.item) is Symbol:
             add("menu node for symbol " + self.item.name)
 
-        elif self.item.__class__ is Choice:
+        elif type(self.item) is Choice:
             s = "menu node for choice"
             if self.item.name is not None:
                 s += " " + self.item.name
@@ -7035,7 +7035,7 @@ class MenuNode:
         if self.prompt:
             add(f'prompt "{self.prompt[0]}" (visibility {BOOL_TO_STR[expr_value(self.prompt[1])]})')
 
-        if self.item.__class__ is Symbol and self.is_menuconfig:
+        if type(self.item) is Symbol and self.is_menuconfig:
             add("is menuconfig")
 
         add("deps " + BOOL_TO_STR[expr_value(self.dep)])
@@ -7043,7 +7043,7 @@ class MenuNode:
         if self.item == MENU:
             add("'visible if' deps " + BOOL_TO_STR[expr_value(self.visibility)])
 
-        if self.item.__class__ in _SYMBOL_CHOICE and self.help is not None:
+        if type(self.item) in _SYMBOL_CHOICE and self.help is not None:
             add("has help")
 
         if self.list:
@@ -7108,7 +7108,7 @@ class MenuNode:
 
         sc = self.item
 
-        if sc.__class__ is Symbol:
+        if type(sc) is Symbol:
             lines = [("menuconfig " if self.is_menuconfig else "config ") + sc.name]
         else:
             lines = ["choice " + sc.name if sc.name else "choice"]
@@ -7127,7 +7127,7 @@ class MenuNode:
 
             indent_add_cond(prefix + f' "{escape(self.prompt[0])}"', self.orig_prompt[1])
 
-        if sc.__class__ is Symbol:
+        if type(sc) is Symbol:
             if sc.is_allnoconfig_y:
                 indent_add("option allnoconfig_y")
 
@@ -7146,7 +7146,7 @@ class MenuNode:
         for default, cond in self.orig_defaults:
             indent_add_cond("default " + expr_str(default, sc_expr_str_fn), cond)
 
-        if sc.__class__ is Symbol:
+        if type(sc) is Symbol:
             for select, cond in self.orig_selects:
                 indent_add_cond("select " + sc_expr_str_fn(select), cond)
 
@@ -7181,7 +7181,7 @@ class MenuNode:
             return self.kconfig.y
 
         # (AND, X, dep) -> X
-        if expr.__class__ is tuple and expr[0] == AND and expr[2] is self.dep:
+        if type(expr) is tuple and expr[0] == AND and expr[2] is self.dep:
             return expr[1]
 
         return expr
@@ -7353,7 +7353,7 @@ def standard_sc_expr_str(sc: Union[Symbol, Choice]) -> str:
 
     See expr_str().
     """
-    if sc.__class__ is Symbol:
+    if type(sc) is Symbol:
         if sc.is_constant and sc.name not in STR_TO_BOOL:
             return f'"{escape(sc.name)}"'
         return sc.name if sc.name else ""
@@ -7378,12 +7378,12 @@ def _choice_user_entries_last_y_name(entries: List[Tuple[Symbol, str]]) -> Optio
 def _parenthesize(expr, type_, sc_expr_str_fn):
     # expr_str() helper. Adds parentheses around expressions of type 'type_'.
 
-    if expr.__class__ is tuple and expr[0] is type_:
+    if type(expr) is tuple and expr[0] is type_:
         return f"({expr_str(expr, sc_expr_str_fn)})"
     return expr_str(expr, sc_expr_str_fn)
 
 
-@typing.no_type_check  # mypy cannot work with "if expr.__class__ is not tuple:"
+@typing.no_type_check  # mypy cannot work with "if type(expr) is not tuple:"
 def expr_str(
     expr: Union[Symbol, Choice, Tuple], sc_expr_str_fn: Callable[[Union[Symbol, Choice]], str] = standard_sc_expr_str
 ) -> str:
@@ -7404,7 +7404,7 @@ def expr_str(
       Note that quoted values are represented as constants symbols
       (Symbol.is_constant == True).
     """
-    if expr.__class__ is not tuple:
+    if type(expr) is not tuple:
         return sc_expr_str_fn(expr)
 
     if expr[0] == AND:
@@ -7416,7 +7416,7 @@ def expr_str(
         return f"{_parenthesize(expr[1], AND, sc_expr_str_fn)} || {_parenthesize(expr[2], AND, sc_expr_str_fn)}"
 
     if expr[0] == NOT:
-        if expr[1].__class__ is tuple:
+        if type(expr[1]) is tuple:
             return f"!({expr_str(expr[1], sc_expr_str_fn)})"
         return "!" + sc_expr_str_fn(expr[1])  # Symbol
 
@@ -7437,7 +7437,7 @@ def expr_items(expr):
     res = set()
 
     def rec(subexpr):
-        if subexpr.__class__ is tuple:
+        if type(subexpr) is tuple:
             # AND, OR, NOT, or relation
 
             rec(subexpr[1])
@@ -7489,7 +7489,7 @@ def split_expr(expr, op):
     res = []
 
     def rec(subexpr):
-        if subexpr.__class__ is tuple and subexpr[0] is op:
+        if type(subexpr) is tuple and subexpr[0] is op:
             rec(subexpr[1])
             rec(subexpr[2])
         else:
@@ -7633,7 +7633,7 @@ def _depend_on(sc, expr):
     # Constant symbols in 'expr' are skipped as they can never change value
     # anyway.
 
-    if expr.__class__ is tuple:
+    if type(expr) is tuple:
         # AND, OR, NOT, or relation
 
         _depend_on(sc, expr[1])
@@ -7782,7 +7782,7 @@ def _expr_depends_on(expr, sym):
     # if a submenu should be implicitly created. This also influences which
     # items inside choice statements are considered choice items.
 
-    if expr.__class__ is not tuple:
+    if type(expr) is not tuple:
         return expr is sym
 
     if expr[0] in _EQUAL_UNEQUAL:
@@ -7821,7 +7821,7 @@ def _flatten(node):
     # you enter the choice at some location with a prompt.
 
     while node:
-        if node.list and not node.prompt and node.item.__class__ is not Choice:
+        if node.list and not node.prompt and type(node.item) is not Choice:
             last_node = node.list
             while 1:
                 last_node.parent = node.parent
@@ -7871,7 +7871,7 @@ def _finalize_choice(node):
 
     cur = node.list
     while cur:
-        if cur.item.__class__ is Symbol:
+        if type(cur.item) is Symbol:
             cur.item.choice = choice
             choice.syms.append(cur.item)
         cur = cur.next
@@ -7935,7 +7935,7 @@ def _check_dep_loop_sym(sym, ignore_choice):
             #
             # Since we aren't entering the choice via a choice symbol, all
             # choice symbols need to be checked, hence the None.
-            loop = _check_dep_loop_choice(dep, None) if dep.__class__ is Choice else _check_dep_loop_sym(dep, False)
+            loop = _check_dep_loop_choice(dep, None) if type(dep) is Choice else _check_dep_loop_sym(dep, False)
 
             if loop:
                 # Dependency loop found
@@ -8012,7 +8012,7 @@ def _found_dep_loop(loop, cur):
     for item in loop:
         if item is not loop[0]:
             msg += "...depends on "
-            if item.__class__ is Symbol and item.choice:
+            if type(item) is Symbol and item.choice:
                 msg += "the choice symbol "
 
         msg += f"{item.name_and_loc}, with definition...\n\n{item}\n\n"
@@ -8030,7 +8030,7 @@ def _found_dep_loop(loop, cur):
         # sure information isn't lost. I wonder if there's some neat way to
         # improve this.
 
-        if item.__class__ is Symbol:
+        if type(item) is Symbol:
             if item.rev_dep is not item.kconfig.n:
                 msg += f"(select-related dependencies: {expr_str(item.rev_dep)})\n\n"
 
