@@ -6,3 +6,4 @@ from esp_pylib.logger import log
 
 # Keep stdout reserved for machine output
 log.set_info_stream(sys.stderr)
+log.set_console_options(soft_wrap=True)

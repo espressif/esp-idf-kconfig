@@ -11,6 +11,7 @@ from typing import Dict
 from typing import Optional
 
 from esp_pylib.logger import log
+from rich.markup import escape
 
 from esp_kconfiglib.core import standard_config_filename
 
@@ -69,7 +70,7 @@ def menuconfig(kconf: "Kconfig", headless: bool = False) -> None:
 
     conf_changed, load_msg = state.load_config()
     state.conf_changed = conf_changed
-    log.note(load_msg)
+    log.note(escape(load_msg))
 
     if not state.shown:
         state.show_all = True

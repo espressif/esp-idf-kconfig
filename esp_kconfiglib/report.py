@@ -2,23 +2,33 @@
 # SPDX-License-Identifier: Apache-2.0
 
 """
-New Kconfig Report class to log messages.
+Kconfig configuration report.
 
-Instead of continuously logging messages,KconfigReport class will store
-the messages and print them at the end of the parsing process as one report.
+Some diagnostics (e.g. multiply-defined symbols) cannot be emitted on the fly
+because the full picture is only available after parsing completes.
+KconfigReport caches those records and emits a structured summary at the end.
 """
 
 import json
+import os
 import textwrap
+from abc import ABC
+from abc import abstractmethod
 from collections import defaultdict
 from typing import TYPE_CHECKING
+from typing import Any
 from typing import Dict
 from typing import List
 from typing import Optional
 from typing import Set
 from typing import Tuple
 from typing import Union
-from typing import cast
+
+from esp_pylib.logger import EspLog
+from esp_pylib.logger import Verbosity
+from esp_pylib.logger import log
+from rich.console import Console
+from rich.markup import escape
 
 from .constants import DefaultsPolicy
 
@@ -26,15 +36,6 @@ if TYPE_CHECKING:
     from .core import Choice
     from .core import Kconfig
     from .core import Symbol
-
-import os
-from abc import ABC
-from abc import abstractmethod
-
-from rich import print as rprint
-from rich.box import HORIZONTALS
-from rich.console import Console
-from rich.table import Table
 
 PRAGMA_PREFIX = "# ignore:"
 
@@ -44,20 +45,53 @@ STATUS_OK_WITH_INFO = 2
 STATUS_WARNING = 3
 STATUS_ERROR = 4
 
-_INDENT = " " * 4
 VERBOSITY_QUIET = "quiet"  # Report only if there is an error
 VERBOSITY_DEFAULT = "default"  # Report standard information
 VERBOSITY_VERBOSE = "verbose"  # Report everything every time
 
-_MISC_VERBOSITY_RANK = {
-    VERBOSITY_QUIET: 0,
-    VERBOSITY_DEFAULT: 1,
-    VERBOSITY_VERBOSE: 2,
+REPORT_TO_PYLIB_VERBOSITY = {
+    VERBOSITY_QUIET: Verbosity.SILENT,
+    VERBOSITY_DEFAULT: Verbosity.NORMAL,
+    VERBOSITY_VERBOSE: Verbosity.VERBOSE,
 }
 
-AREA_TITLE_STYLE = "bold blue"
-INFO_STRING_STYLE = "italic"
-SUBTITLE_STYLE = "bold"
+
+class CachingLog(EspLog):
+    """
+    Logger that caches all diagnostic messages while delegating to the real
+    EspLog output.  Installed via ``EspLog.set_logger()`` so existing
+    ``log.note(...)`` / ``log.warn(...)`` call sites are captured transparently.
+    """
+
+    _cache: List[Dict[str, str]]
+
+    def __init__(self, cache: List[Dict[str, str]]):
+        # copy settings from the previous EspLog instance
+        prev = EspLog.instance
+        prev_info_stream = getattr(prev, "_info_stream", None) if prev else None
+        prev_options = dict(prev._options) if prev and hasattr(prev, "_options") else None
+        super().__init__()
+        self._cache = cache
+        if prev_info_stream is not None:
+            self._info_stream = prev_info_stream
+        if prev_options is not None:
+            self.set_console_options(**{k: v for k, v in prev_options.items() if k != "emoji"})
+
+    def note(self, *args: Any) -> None:
+        self._cache.append({"level": "note", "message": " ".join(str(a) for a in args)})
+        super().note(*args)
+
+    def warn(self, *args: Any, suggestion: Optional[str] = None) -> None:
+        self._cache.append({"level": "warning", "message": " ".join(str(a) for a in args)})
+        super().warn(*args, suggestion=suggestion)
+
+    def err(self, *args: Any, suggestion: Optional[str] = None) -> None:
+        self._cache.append({"level": "error", "message": " ".join(str(a) for a in args)})
+        super().err(*args, suggestion=suggestion)
+
+    def debug(self, *args: Any) -> None:
+        self._cache.append({"level": "debug", "message": " ".join(str(a) for a in args)})
+        super().debug(*args)
 
 
 class Area(ABC):
@@ -121,9 +155,9 @@ class Area(ABC):
         pass
 
     @abstractmethod
-    def print(self, verbosity: str) -> Optional[Table]:
+    def emit(self, verbosity: str) -> None:
         """
-        Print the area sub-report.
+        Emit the area sub-report via the logger.
         """
         pass
 
@@ -143,6 +177,18 @@ class Area(ABC):
         Reset the area to its initial state, clearing all records and data.
         """
         pass
+
+    def _log_for_severity(self, message: str, suggestion: Optional[str] = None) -> None:
+        """
+        Print a single log message at the severity level of this area.
+        """
+        sev = self.report_severity()
+        if sev == STATUS_ERROR:
+            log.err(message, suggestion=suggestion)
+        elif sev == STATUS_WARNING:
+            log.warn(message, suggestion=suggestion)
+        else:
+            log.note(message)
 
     @staticmethod
     def severity_to_str(severity: int) -> str:
@@ -168,7 +214,7 @@ class DefaultValuesArea(Area):
       environment variable.
     """
 
-    def __init__(self, report: "KconfigReport", verbosity: str):
+    def __init__(self, verbosity: str):
         super().__init__(
             title="Default Value Mismatch",
             ignore_codes=set(),
@@ -179,54 +225,59 @@ class DefaultValuesArea(Area):
                 """
             ),
         )
-        self.report: KconfigReport = report
         self.verbosity: str = verbosity
 
-        self.changed_defaults: Set[Tuple[str, str, str]] = set()
-        # Changed configs without prompts should not be reported as it's not something user should care about.
-        # However, it may be useful to report them in verbose mode for devs.
-        self.changed_values_promptless: Set[Tuple[str, str, str, bool]] = set()
-        self.changed_choices: Set[Tuple[str, str, str]] = set()
+        # (sym_name, kconfig_value, sdkconfig_value, loc)
+        self.changed_defaults: Set[Tuple[str, str, str, str]] = set()
+        # (sym_name, kconfig_value, sdkconfig_value, is_user_set, loc)
+        self.changed_values_promptless: Set[Tuple[str, str, str, bool, str]] = set()
+        # (choice_name, kconfig_selection, sdkconfig_selection, loc)
+        self.changed_choices: Set[Tuple[str, str, str, str]] = set()
+
+    @staticmethod
+    def _first_loc(sym_or_choice: "Union[Symbol, Choice]") -> str:
+        """
+        Return ``file:line`` for the first definition node, or empty string.
+        """
+        if sym_or_choice.nodes:
+            node = sym_or_choice.nodes[0]
+            return f"{node.filename}:{node.linenr}"
+        return ""
 
     def add_record(self, sym_or_choice: "Union[Symbol, Choice]", **kwargs: Optional[dict]) -> None:
         promptless: bool = kwargs.get("promptless", False)  # type: ignore
         record_type: str = kwargs.get("record_type", "symbol")  # type: ignore
+        loc = self._first_loc(sym_or_choice)
         if record_type == "symbol":  # Symbol
             record = (
                 str(sym_or_choice.name),
                 str(sym_or_choice.str_value),
                 str(getattr(sym_or_choice, "_sdkconfig_value", "") or ""),
+                loc,
             )
             if not promptless:
                 self.changed_defaults.add(record)
             else:
                 # sdkconfig value is still set even for promptless symbols, so we can decide
                 # if sdkconfig contained default value or not
-                record_with_default_flag = record + (getattr(sym_or_choice, "_user_value", None) is not None,)
+                record_with_default_flag = record[:3] + (
+                    getattr(sym_or_choice, "_user_value", None) is not None,
+                    loc,
+                )
                 self.changed_values_promptless.add(record_with_default_flag)
         else:  # Choice
             record = (
                 str(sym_or_choice.name or "nameless" + sym_or_choice.name_and_loc),
                 str(sym_or_choice.selection.name if sym_or_choice.selection else "choice deselected"),  # type: ignore
                 str(kwargs.get("sdkconfig_selection", False)),
+                loc,
             )
             self.changed_choices.add(record)
 
     def report_severity(self) -> int:
-        if (
-            not self.changed_defaults
-            and not (self.changed_values_promptless and self.verbosity == VERBOSITY_VERBOSE)
-            and not self.changed_choices
-        ):
+        if self._nothing_to_report(self.verbosity):
             return STATUS_OK
-        if (
-            self.changed_defaults
-            or (self.changed_values_promptless and self.verbosity == VERBOSITY_VERBOSE)
-            or self.changed_choices
-        ):
-            return STATUS_OK_WITH_INFO
-        else:  # This should not happen, but just in case
-            return STATUS_ERROR
+        return STATUS_OK_WITH_INFO
 
     def _nothing_to_report(self, verbosity: str = VERBOSITY_VERBOSE) -> bool:
         """
@@ -238,61 +289,37 @@ class DefaultValuesArea(Area):
             and (verbosity != VERBOSITY_VERBOSE or not self.changed_values_promptless)
         )
 
-    def print(self, verbosity: str) -> Optional[Table]:
-        # No changed defaults or only promptless changed defaults without verbosity VERBOSITY_VERBOSE
-        # -> nothing to report
+    def emit(self, verbosity: str) -> None:
         if self._nothing_to_report(verbosity):
-            return None
-
-        table = Table(title=self.title, title_justify="left", show_header=False, title_style=AREA_TITLE_STYLE)
-        table.add_row(self.report.defaults_policy.description, style=INFO_STRING_STYLE)
-        table.box = HORIZONTALS
-        table.add_column(
-            "",
-            justify="left",
-            no_wrap=False,
-        )
-        if verbosity == VERBOSITY_VERBOSE:
-            table.add_row(self.info_string, style=INFO_STRING_STYLE)
+            return
 
         if self.changed_defaults:
-            table.add_row(
-                "Config symbols with different default value between sdkconfig and Kconfig", style=SUBTITLE_STYLE
-            )
-            for sym_name, kconfig_value, sdkconfig_value in self.changed_defaults:
-                table.add_row(
-                    f"{sym_name}: Kconfig default value: {kconfig_value}, sdkconfig default value: {sdkconfig_value}"
+            for sym_name, kconfig_value, sdkconfig_value, loc in self.changed_defaults:
+                prefix = f"{escape(loc)}: " if loc else ""
+                self._log_for_severity(
+                    f"{prefix}{sym_name}: Kconfig default value: {kconfig_value}, "
+                    f"sdkconfig default value: {sdkconfig_value}"
                 )
-            table.add_row("")
 
         if self.changed_choices:
-            table.add_row(
-                "Choice symbols with different default selection between sdkconfig and Kconfig", style=SUBTITLE_STYLE
-            )
-            for choice_name, kconfig_selection, sdkconfig_selection in self.changed_choices:
-                table.add_row(
-                    f"{choice_name}: Kconfig default selection: {kconfig_selection}, "
+            for choice_name, kconfig_selection, sdkconfig_selection, loc in self.changed_choices:
+                prefix = f"{escape(loc)}: " if loc else ""
+                self._log_for_severity(
+                    f"{prefix}{choice_name}: Kconfig default selection: {kconfig_selection}, "
                     f"sdkconfig default selection: {sdkconfig_selection}"
                 )
-            table.add_row("")
 
         if verbosity == VERBOSITY_VERBOSE and self.changed_values_promptless:
-            table.add_row(
-                "Invisible (promptless) config symbols with different values between sdkconfig and Kconfig",
-                style="bold",
-            )
-            for sym_name, kconfig_value, sdkconfig_value, sdkconfig_value_is_default in self.changed_values_promptless:
-                table.add_row(
-                    (
-                        f"{sym_name}: Kconfig default value: {kconfig_value}, "
-                        f"sdkconfig value {sdkconfig_value} "
-                        f"{'(user-set)' if sdkconfig_value_is_default else '(default)'} "
-                        "will be ignored"
-                    )
+            for sym_name, kconfig_value, sdkconfig_value, is_user_set, loc in self.changed_values_promptless:
+                prefix = f"{escape(loc)}: " if loc else ""
+                log.note(
+                    f"{prefix}{sym_name} (promptless): Kconfig default value: {kconfig_value}, "
+                    f"sdkconfig value {sdkconfig_value} "
+                    f"{'(user-set)' if is_user_set else '(default)'} "
+                    "will be ignored"
                 )
-            table.add_row("")
 
-        return table
+        log.hint(self.info_string.strip())
 
     def return_json(self) -> Optional[dict]:
         """
@@ -307,24 +334,24 @@ class DefaultValuesArea(Area):
 
         if self.changed_defaults:
             ret_json["data"]["changed_defaults"] = list()
-            for sym_name, kconfig_value, sdkconfig_value in self.changed_defaults:
+            for sym_name, kconfig_value, sdkconfig_value, _loc in self.changed_defaults:
                 ret_json["data"]["changed_defaults"].append(
                     {"name": sym_name, "kconfig_default": kconfig_value, "sdkconfig_default": sdkconfig_value}
                 )
         if self.changed_values_promptless:  # There is all the info in json every time
             ret_json["data"]["mismatched_promptless"] = list()
-            for sym_name, kconfig_value, sdkconfig_value, sdkconfig_value_is_default in self.changed_values_promptless:
+            for sym_name, kconfig_value, sdkconfig_value, is_user_set, _loc in self.changed_values_promptless:
                 ret_json["data"]["mismatched_promptless"].append(
                     {
                         "name": sym_name,
                         "kconfig_value": kconfig_value,
                         "sdkconfig_value": sdkconfig_value,
-                        "sdkconfig_value_is_default": sdkconfig_value_is_default,
+                        "sdkconfig_value_is_default": is_user_set,
                     }
                 )
         if self.changed_choices:
             ret_json["data"]["changed_choices"] = list()
-            for choice_name, kconfig_selection, sdkconfig_selection in self.changed_choices:
+            for choice_name, kconfig_selection, sdkconfig_selection, _loc in self.changed_choices:
                 ret_json["data"]["changed_choices"].append(
                     {
                         "name": choice_name,
@@ -363,15 +390,15 @@ class MultipleDefinitionArea(Area):
             ),
         )
 
-        self.multiple_definitions: Dict[str, Set[str]] = dict()
+        # name -> set of (filename, linenr) tuples
+        self.multiple_definitions: Dict[str, Set[Tuple[str, int]]] = dict()
 
     def add_record(self, sym_or_choice: "Union[Symbol, Choice]", **kwargs: Optional[dict]) -> None:
         """
         kwargs:
-            occurrences: Set[str]
+            occurrences: Set[Tuple[str, int]]  — (filename, linenr) pairs
         """
-        occurrences: Set[str] = kwargs["occurrences"] if "occurrences" in kwargs else set()  # type: ignore
-        # For backward compatibility, code and type annotations allow unnamed choices
+        occurrences: Set[Tuple[str, int]] = kwargs.get("occurrences", set())  # type: ignore
         sym_or_choice_name = sym_or_choice.name or "unnamed choice"
         if sym_or_choice_name not in self.multiple_definitions:
             self.multiple_definitions[sym_or_choice_name] = occurrences
@@ -396,34 +423,26 @@ class MultipleDefinitionArea(Area):
         self._apply_ignores()
         return STATUS_OK if not self.multiple_definitions else STATUS_OK_WITH_INFO
 
-    def print(self, verbosity: str) -> Optional[Table]:
+    def emit(self, verbosity: str) -> None:
         self._apply_ignores()
 
         if not self.multiple_definitions:
-            return None
+            return
 
-        table = Table(title=self.title, title_justify="left", show_header=False, title_style=AREA_TITLE_STYLE)
-        table.box = HORIZONTALS
-        table.add_column(
-            "",
-            justify="left",
-            no_wrap=False,
+        for name, locs in self.multiple_definitions.items():
+            sorted_locs = sorted(locs)
+            for filename, linenr in sorted_locs:
+                others = [f"{escape(f)}:{ln}" for f, ln in sorted_locs if (f, ln) != (filename, linenr)]
+                others_str = ", ".join(others)
+                self._log_for_severity(
+                    f"{escape(filename)}:{linenr}: {name} has multiple definitions (also at {others_str})"
+                )
+
+        log.hint(
+            "Multiple definitions will have higher severity in the future. See "
+            "https://docs.espressif.com/projects/esp-idf-kconfig/en/latest/kconfiglib/configuration-report.html"
+            "#multiple-symbol-or-choice-definition"
         )
-        table.add_row(
-            "Multiple definitions will have higher severity in the future. Please, visit "
-            "https://docs.espressif.com/projects/esp-idf-kconfig/en/latest/kconfiglib/configuration-report.html#multiple-symbol-or-choice-definition "  # noqa: E501
-            "for more information.",
-            style=INFO_STRING_STYLE,
-        )
-        if verbosity == VERBOSITY_VERBOSE:
-            table.add_row(self.info_string, style=INFO_STRING_STYLE)
-
-        for sym_or_choice_name in self.multiple_definitions:
-            table.add_row(sym_or_choice_name, style="bold")
-            for definition in self.multiple_definitions[sym_or_choice_name]:
-                table.add_row(_INDENT + definition)
-
-        return table
 
     def return_json(self) -> Optional[dict]:
         """
@@ -435,10 +454,8 @@ class MultipleDefinitionArea(Area):
         if not ret_json:
             ret_json = dict()
         ret_json["data"] = dict()
-        for sym_or_choice_name in self.multiple_definitions:
-            ret_json["data"][sym_or_choice_name] = list()
-            for definition in self.multiple_definitions[sym_or_choice_name]:
-                ret_json["data"][sym_or_choice_name].append(definition)
+        for name, locs in self.multiple_definitions.items():
+            ret_json["data"][name] = [f"    {f}:{ln}" for f, ln in sorted(locs)]
         return ret_json
 
     def reset(self) -> None:
@@ -446,84 +463,6 @@ class MultipleDefinitionArea(Area):
         Reset the area to its initial state, clearing all records and data.
         """
         self.multiple_definitions.clear()
-
-
-class MiscArea(Area):
-    """
-    All the messages not related to the other areas.
-
-    Each record may specify ``min_verbosity`` (quiet / default / verbose). A message is
-    visible for status, printing, and JSON only when the report verbosity (fixed when the
-    report is constructed from ``KCONFIG_REPORT_VERBOSITY``) is at least that level.
-    """
-
-    def __init__(self, verbosity: str):
-        super().__init__(
-            title="Miscellaneous",
-            ignore_codes=set(),
-            info_string="",
-        )
-        self.verbosity = verbosity
-        # (message, min_verbosity) — min_verbosity one of VERBOSITY_* constants
-        self._records: List[Tuple[str, str]] = []
-
-    def add_record(self, sym_or_choice: "Union[Symbol, Choice]", **kwargs: Optional[dict]) -> None:
-        """
-        kwargs:
-            message: str
-            min_verbosity: str (optional)
-                Minimum report verbosity required for this message to affect status,
-                print output, and JSON. Defaults to VERBOSITY_DEFAULT.
-        """
-        if "message" not in kwargs.keys():
-            raise AttributeError("Message must be specified for MiscArea.")
-        min_v = kwargs.get("min_verbosity", VERBOSITY_DEFAULT)
-        if min_v not in _MISC_VERBOSITY_RANK:
-            raise AttributeError(
-                "min_verbosity must be one of "
-                f"{VERBOSITY_QUIET!r}, {VERBOSITY_DEFAULT!r}, or {VERBOSITY_VERBOSE!r}, got {min_v!r}"
-            )
-        self._records.append((str(kwargs["message"]), cast(str, min_v)))
-
-    def _visible_messages(self) -> List[str]:
-        r = _MISC_VERBOSITY_RANK.get(self.verbosity, _MISC_VERBOSITY_RANK[VERBOSITY_DEFAULT])
-        return [m for m, mv in self._records if r >= _MISC_VERBOSITY_RANK[mv]]
-
-    @property
-    def messages(self) -> List[str]:
-        """Messages visible at this area's report verbosity."""
-        return self._visible_messages()
-
-    def report_severity(self) -> int:
-        return STATUS_OK if not self._visible_messages() else STATUS_OK_WITH_INFO
-
-    def print(self, verbosity: str) -> Optional[Table]:
-        visible = self._visible_messages()
-        if not visible:
-            return None
-
-        table = Table(title=self.title, title_justify="left", show_header=False, title_style=AREA_TITLE_STYLE)
-        table.box = HORIZONTALS
-        table.add_column("", justify="left", no_wrap=False)
-        for message in visible:
-            table.add_row(f"* {message}")
-        return table
-
-    def return_json(self) -> Optional[dict]:
-        visible = self._visible_messages()
-        if not visible:
-            return None
-        ret_json = super().return_json()
-        if not ret_json:
-            ret_json = dict()
-        ret_json["data"] = visible
-        return ret_json
-
-    def reset(self) -> None:
-        """
-        Reset the area to its initial state, clearing all records and data.
-        """
-        self._records.clear()
 
 
 class MultipleAssignmentArea(Area):
@@ -576,31 +515,27 @@ class MultipleAssignmentArea(Area):
     def report_severity(self) -> int:
         return STATUS_OK_WITH_INFO if (self.multiple_assignments_sym or self.multiple_assignments_choice) else STATUS_OK
 
-    def print(self, verbosity: str) -> Optional[Table]:
+    def emit(self, verbosity: str) -> None:
         if self.report_severity() is STATUS_OK:
-            return None
-
-        table = Table(title=self.title, title_justify="left", show_header=False, title_style=AREA_TITLE_STYLE)
-        table.box = HORIZONTALS
-        table.add_column("", justify="left", no_wrap=False)
-
-        if verbosity == VERBOSITY_VERBOSE:
-            table.add_row(self.info_string, style=INFO_STRING_STYLE)
+            return
 
         for sym in self.multiple_assignments_sym:
-            msg = f"Symbol {sym.name}: "
-            for val, is_default in self.multiple_assignments_sym[sym]:
-                msg += f"\n{_INDENT}{val}{' (default value)' if is_default else ' (user-set value)'}"
-            msg += f"\n{_INDENT}-> using {sym.str_value}"
-            table.add_row(msg)
+            loc = f"{escape(sym.nodes[0].filename)}:{sym.nodes[0].linenr}: " if sym.nodes else ""
+            vals = ", ".join(
+                f"{val} ({'default' if is_default else 'user-set'})"
+                for val, is_default in self.multiple_assignments_sym[sym]
+            )
+            self._log_for_severity(f"{loc}{sym.name} assigned multiple times: {vals} -> using {sym.str_value}")
         for choice in self.multiple_assignments_choice:
-            msg = f"Choice {choice.name}: "
-            for val, is_default in self.multiple_assignments_choice[choice]:
-                msg += f"\n{_INDENT}{val}{' (default selection)' if is_default else ' (user-set selection)'}"
-            msg += f"\n{_INDENT}-> using {choice.selection.name if choice.selection else 'choice deselected'}"
-            table.add_row(msg)
+            loc = f"{escape(choice.nodes[0].filename)}:{choice.nodes[0].linenr}: " if choice.nodes else ""
+            vals = ", ".join(
+                f"{val} ({'default' if is_default else 'user-set'})"
+                for val, is_default in self.multiple_assignments_choice[choice]
+            )
+            final = choice.selection.name if choice.selection else "choice deselected"
+            self._log_for_severity(f"{loc}{choice.name} assigned multiple times: {vals} -> using {final}")
 
-        return table
+        log.hint(self.info_string)
 
     def return_json(self) -> Optional[dict]:
         if not self.multiple_assignments_sym and not self.multiple_assignments_choice:
@@ -669,27 +604,32 @@ class DisabledSymbolArea(Area):
     def report_severity(self) -> int:
         return STATUS_OK_WITH_INFO if self.hidden_symbols or self.hidden_choices else STATUS_OK
 
-    def print(self, verbosity: str) -> Optional[Table]:
+    def emit(self, verbosity: str) -> None:
         if self.report_severity() == STATUS_OK:
-            return None
-        table = Table(title=self.title, title_justify="left", show_header=False, title_style=AREA_TITLE_STYLE)
-        table.box = HORIZONTALS
-        table.add_column("", justify="left", no_wrap=False, min_width=50)
+            return
+
         for symbol in self.hidden_symbols:
-            table.add_row(
-                f"* {symbol.name_and_loc} with user-set value {self.hidden_symbols[symbol]} from {symbol._user_source}"
+            loc = f"{escape(symbol.nodes[0].filename)}:{symbol.nodes[0].linenr}: " if symbol.nodes else ""
+            self._log_for_severity(
+                f"{loc}{symbol.name} has user-set value {self.hidden_symbols[symbol]} "
+                f"from {escape(symbol._user_source or '')} but is not visible (disabled dependency)"
             )
         for choice in self.hidden_choices:
+            loc = f"{escape(choice.nodes[0].filename)}:{choice.nodes[0].linenr}: " if choice.nodes else ""
             user_source = choice._user_source or getattr(choice._user_selection, "_user_source", "")
             y_name = self.hidden_choices[choice]
             if y_name is None:
-                table.add_row(
-                    f"* {choice.name_and_loc} with all choice symbols disabled in sdkconfig; "
-                    f"the choice is not visible. Source: {user_source or '(unknown)'}"
+                self._log_for_severity(
+                    f"{loc}{choice.name or 'unnamed choice'} has all choice symbols disabled in sdkconfig; "
+                    f"the choice is not visible. Source: {escape(user_source) if user_source else '(unknown)'}"
                 )
             else:
-                table.add_row(f"* {choice.name_and_loc} with user-set value {y_name} from {user_source}")
-        return table
+                self._log_for_severity(
+                    f"{loc}{choice.name or 'unnamed choice'} has user-set value {y_name} "
+                    f"from {escape(user_source) if user_source else '(unknown)'} but is not visible"
+                )
+
+        log.hint(self.info_string)
 
     def return_json(self) -> Optional[dict]:
         if self.report_severity() == STATUS_OK:
@@ -724,11 +664,11 @@ class DisabledSymbolArea(Area):
 
 class KconfigReport:
     """
-    By add_record() method, new records are added to the report.
-    Every time, it is needed to specify report area for given record.
-    Every area is described by a class inheriting from Area class.
+    Deferred configuration report.
 
-    NOTE: Full support will come in the future. Currently, only multiple-definition and misc areas are supported.
+    Records are added via ``add_record(AreaClass, ...)`` during parsing and
+    config loading.  ``print_report()`` emits the collected diagnostics after
+    all work is done.
     """
 
     _instance = None
@@ -757,14 +697,17 @@ class KconfigReport:
         self.verbosity: str = os.getenv("KCONFIG_REPORT_VERBOSITY", VERBOSITY_DEFAULT)
         self.defaults_policy: DefaultsPolicy = defaults_policy
 
+        self._log_cache: List[Dict[str, str]] = []
+        EspLog.set_logger(CachingLog(self._log_cache))
+        log.set_verbosity(REPORT_TO_PYLIB_VERBOSITY[self.verbosity])
+
         # Ignores
         self.lines_with_ignores: List[str] = list()
 
         # Areas
         self.areas = (
             MultipleDefinitionArea(),
-            MiscArea(self.verbosity),
-            DefaultValuesArea(self, verbosity=self.verbosity),
+            DefaultValuesArea(verbosity=self.verbosity),
             MultipleAssignmentArea(),
             DisabledSymbolArea(),
         )
@@ -804,6 +747,7 @@ class KconfigReport:
         """
         Reset the report to its initial state.
         """
+        self._log_cache.clear()
         self.lines_with_ignores.clear()
         for area in self.areas:
             area.reset()
@@ -817,74 +761,46 @@ class KconfigReport:
             raise AttributeError("Kconfig object must be set before adding ignore lines.")
         parts = [part.strip() for part in line.split()]
         if parts[0] not in ["config", "choice", "menuconfig"]:
-            self.add_record(
-                MiscArea, message=f"Kconfig entry {parts[0]} does not support ignore directives. Directive ignored."
-            )
+            log.note(f"Kconfig entry {parts[0]} does not support ignore directives - directive ignored")
             return
         sc_name = parts[1]
         for ignore_code in parts[4:]:  # config/choice NAME # ignore: CODE [CODE]* -> CODE is parts[4]
             try:
                 self.ignore_code_to_area[ignore_code].add_ignore(self.kconfig._lookup_sym(sc_name))
             except KeyError:
-                self.add_record(
-                    MiscArea,
-                    message=f'Ignoring ignore code "{ignore_code}" for {parts[0]} {sc_name} (unsupported ignore code).',
-                )
+                log.note(f'ignoring ignore code "{ignore_code}" for {parts[0]} {sc_name} (unsupported ignore code)')
                 continue
 
     def add_record(self, area, **kwargs):
         """
-        Adds a record for given area.
-        Typically, record is related to the Symbol/Choice object (sym_or_choice from kwargs).
-        However, some areas may not need sym_or_choice to be specified, thus it is not mandatory.
+        Add a record to the given area.
 
-        For :class:`MiscArea`, optional ``min_verbosity`` (``quiet`` / ``default`` / ``verbose``)
-        sets the minimum report verbosity at which the message counts for status, print, and JSON
-        (default: ``default``).
+        ``sym_or_choice`` is required for most areas.  If omitted the area's
+        ``add_record`` is called with ``sym_or_choice=None``.
         """
         if "sym_or_choice" not in kwargs.keys():
-            # E.g. MiscArea does not care about the Symbol/Choice
             self.area_to_instance[area].add_record(sym_or_choice=None, **kwargs)
         else:
             self.area_to_instance[area].add_record(**kwargs)
 
-    def _make_header(self) -> Table:
+    def _emit_header(self) -> None:
         if not self.kconfig:
             raise AttributeError("Kconfig object must be set before printing report.")
-        header_table = Table(title_style="bold", show_header=False)
-        header_table.box = None
-        header_table.add_column("Configuration", justify="left")
-        header_table.add_row(f"Parser Version: {self.kconfig.parser_version}")
-        header_table.add_row(f"Verbosity: {self.verbosity}")
-        if self.verbosity == VERBOSITY_VERBOSE:
-            header_table.add_row(f"Symbols parsed: {len(self.kconfig.unique_defined_syms)}")
 
-        header_table.add_row(f"Defaults policy: {self.defaults_policy.value}")
+        log.note(f"Kconfig parser version: {self.kconfig.parser_version}")
+        log.note(f"Kconfig defaults policy: use {self.defaults_policy.value}")
+        if self.verbosity == VERBOSITY_VERBOSE:
+            log.note(f"Symbols parsed: {len(self.kconfig.unique_defined_syms)}")
+
         status = self.status
         if status == STATUS_OK:
-            header_table.add_row("Status: Finished successfully", style="green")
+            log.note("Status: Finished successfully")
         elif status == STATUS_OK_WITH_INFO:
-            header_table.add_row("Status: Finished with notifications", style="green_yellow")
-            if self.verbosity == VERBOSITY_VERBOSE:
-                header_table.add_row(
-                    "Configuration is successfully finished, but the system has identified situations that could "
-                    "potentially cause some issues. Please check the relevant areas.",
-                    style="green_yellow",
-                )
+            log.note("Status: Finished with notifications")
         elif status == STATUS_WARNING:
-            header_table.add_row("Status: Finished with warnings", style="yellow")
-            if self.verbosity == VERBOSITY_VERBOSE:
-                header_table.add_row(
-                    "Configuration is successfully finished, but the system has identified situations that probably "
-                    "will cause some issues. Please check the relevant areas.",
-                    style="yellow",
-                )
-        else:  # NOTE: STATUS_ERROR is currently not used, so "failed" here is just a placeholder.
-            header_table.add_row("Status: Failed", style="red")
-
-        header_table.add_row("")
-
-        return header_table
+            log.warn("Status: Finished with warnings")
+        else:
+            log.err("Status: Failed")
 
     def _finalize_report_data(self) -> None:
         """
@@ -906,7 +822,7 @@ class KconfigReport:
                 str_value = bool_to_str[sym._user_value] if sym._user_value in bool_to_str else sym._user_value
                 self.add_record(DisabledSymbolArea, sym_or_choice=sym, user_value=str_value)
 
-    def print_report(self, file: Optional[str] = None) -> None:
+    def print_report(self) -> None:
         # Some areas (DisabledSymbolArea for instance) need to be finalized after Kconfig
         # files are parsed and sdkconfig files are loaded.
         self._finalize_report_data()
@@ -914,22 +830,11 @@ class KconfigReport:
         if self.verbosity == VERBOSITY_QUIET and self.status in (STATUS_OK, STATUS_OK_WITH_INFO, STATUS_WARNING):
             return
 
-        report_table = Table(title="Configuration Report", title_style="bold", show_header=False, title_justify="left")
-        report_table.box = HORIZONTALS
-        report_table.add_column("Configuration", justify="center", no_wrap=False)
-        report_table.add_row(self._make_header())
+        log.set_console_options(soft_wrap=True)
+        self._emit_header()
 
         for area in self.areas:
-            sub_report = area.print(verbosity=self.verbosity)
-            if sub_report:
-                report_table.add_row(sub_report)
-
-        if not file:
-            console = Console(force_terminal=True, stderr=True)
-            console.print(report_table)
-        else:
-            with open(file, "w") as f:
-                rprint(report_table, file=f)
+            area.emit(verbosity=self.verbosity)
 
     def output_json(self, file: Optional[str] = None) -> None:
         report_json = self._return_json()
@@ -961,5 +866,7 @@ class KconfigReport:
             if area.report_severity() == STATUS_OK:
                 continue
             report_json["areas"].append(area.return_json())
+
+        report_json["messages"] = list(self._log_cache)
 
         return report_json

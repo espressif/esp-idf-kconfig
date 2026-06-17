@@ -13,10 +13,7 @@ from esp_kconfiglib.core import BOOL
 from esp_kconfiglib.core import INT
 from esp_kconfiglib.core import STRING
 from esp_kconfiglib.deprecated import DeprecatedOptions
-from esp_kconfiglib.report import STATUS_OK
-from esp_kconfiglib.report import VERBOSITY_VERBOSE
 from esp_kconfiglib.report import KconfigReport
-from esp_kconfiglib.report import MiscArea
 
 TEST_DIR = os.path.join(os.path.dirname(__file__), "deprecated")
 KCONFIG = os.path.join(TEST_DIR, "Kconfig")
@@ -492,26 +489,24 @@ class TestDuplicateRenameMappings:
         assert config.syms["FEATURE_SPEED"].str_value == "200"
         assert config.syms["FEATURE_ENABLE"].str_value == "y"
 
-    def test_duplicate_misc_not_in_report_when_verbosity_default(self, monkeypatch):
-        monkeypatch.delenv("KCONFIG_REPORT_VERBOSITY", raising=False)
+    def test_duplicate_emits_note(self):
+        """
+        Duplicate rename mapping emits a log.note() with details about the conflict.
+        """
         config = Kconfig(KCONFIG)
         config.load_rename_files([RENAME_DUPLICATE_OLD_A])
-        misc = config.report.area_to_instance[MiscArea]
-        assert not any("duplicate" in m.lower() and "last mapping is used" in m.lower() for m in misc.messages)
+        notes = [m["message"] for m in config.report._log_cache if m["level"] == "note"]
+        assert any("duplicate rename mapping" in msg.lower() for msg in notes)
+        assert any("last mapping is used" in msg.lower() for msg in notes)
 
-    def test_duplicate_misc_in_report_when_verbosity_verbose(self, monkeypatch):
-        monkeypatch.setenv("KCONFIG_REPORT_VERBOSITY", VERBOSITY_VERBOSE)
-        config = Kconfig(KCONFIG)
-        config.load_rename_files([RENAME_DUPLICATE_OLD_A])
-        misc = config.report.area_to_instance[MiscArea]
-        assert any("duplicate" in m.lower() and "last mapping is used" in m.lower() for m in misc.messages)
+    def test_duplicate_does_not_affect_report_status(self):
+        """
+        Duplicate rename mappings should not elevate the report status.
+        """
+        from esp_kconfiglib.report import STATUS_OK
 
-    def test_duplicate_misc_does_not_affect_status_when_verbosity_default(self, monkeypatch):
-        monkeypatch.delenv("KCONFIG_REPORT_VERBOSITY", raising=False)
         config = Kconfig(KCONFIG)
         config.load_rename_files([RENAME_DUPLICATE_OLD_A])
-        misc = config.report.area_to_instance[MiscArea]
-        assert misc.report_severity() == STATUS_OK
         assert config.report.status == STATUS_OK
 
 

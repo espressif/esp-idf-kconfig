@@ -1,3 +1,3 @@
 NONBOOL of type int
-has 'set' option, which is only supported for boolean symbols.
-has 'set default' option, which is only supported for boolean symbols.
+has 'set' option, which is only supported for boolean symbols
+has 'set default' option, which is only supported for boolean symbols

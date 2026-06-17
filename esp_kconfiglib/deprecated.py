@@ -11,11 +11,12 @@ from typing import List
 from typing import Optional
 from typing import Tuple
 
+from esp_pylib.logger import log
+from rich.markup import escape
+
 from .constants import DEP_OP_BEGIN
 from .constants import DEP_OP_END
-from .report import VERBOSITY_VERBOSE
 from .report import KconfigReport
-from .report import MiscArea
 
 if TYPE_CHECKING:
     from .core import Kconfig
@@ -130,15 +131,11 @@ class DeprecatedOptions:
                         )
                     if dep_opt in rep_dic:
                         prev_new = rep_dic[dep_opt]
-                        self.report.add_record(
-                            MiscArea,
-                            message=(
-                                f"Duplicate rename mapping for {self.config_prefix}{dep_opt} in "
-                                f"{rename_path} (line {line_number}): "
-                                f"previous target {self.config_prefix}{prev_new}, "
-                                f"new target {parsed_line['new']} - last mapping is used."
-                            ),
-                            min_verbosity=VERBOSITY_VERBOSE,
+                        log.note(
+                            f"{escape(rename_path)}:{line_number}: "
+                            f"duplicate rename mapping for {self.config_prefix}{dep_opt}: "
+                            f"previous target {self.config_prefix}{prev_new}, "
+                            f"new target {parsed_line['new']} - last mapping is used",
                         )
                         while dep_opt in inversions:
                             inversions.remove(dep_opt)
@@ -181,7 +178,7 @@ class DeprecatedOptions:
         from .core import BOOL  # noqa: I001
         from .core import HEX
         from .core import STRING
-        from .core import escape
+        from .core import _escape
 
         prefix = self.config_prefix
         val = sym.str_value
@@ -195,7 +192,7 @@ class DeprecatedOptions:
             return f"{prefix}{dep_name}={val}\n"
 
         elif sym.orig_type == STRING:
-            return f'{prefix}{dep_name}="{escape(val)}"\n'
+            return f'{prefix}{dep_name}="{_escape(val)}"\n'
 
         elif sym.orig_type == HEX:
             if not val.startswith(("0x", "0X")):
