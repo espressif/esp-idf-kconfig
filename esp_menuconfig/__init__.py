@@ -10,7 +10,13 @@ from typing import TYPE_CHECKING
 from typing import Dict
 from typing import Optional
 
+from esp_pylib.logger import log
+
 from esp_kconfiglib.core import standard_config_filename
+
+# Keep stdout reserved for machine output: route note/hint/debug to stderr so all
+# diagnostics land there, as they did before the esp_pylib migration.
+log.set_info_stream(sys.stderr)
 
 if TYPE_CHECKING:
     from esp_kconfiglib import Kconfig
@@ -46,8 +52,6 @@ def menuconfig(kconf: "Kconfig", headless: bool = False) -> None:
     """Launch the Textual configuration interface, returning after the user exits."""
     global _module_state
 
-    from rich.console import Console
-
     from .model import MenuConfigState
 
     conf_filename = standard_config_filename()
@@ -65,16 +69,13 @@ def menuconfig(kconf: "Kconfig", headless: bool = False) -> None:
 
     conf_changed, load_msg = state.load_config()
     state.conf_changed = conf_changed
-    print(load_msg, file=sys.stderr)
+    log.note(load_msg)
 
     if not state.shown:
         state.show_all = True
         state.shown = state.shown_nodes(state.cur_menu)
         if not state.shown:
-            print(
-                "Empty configuration -- nothing to configure.\nCheck that environment variables are set properly.",
-                file=sys.stderr,
-            )
+            log.warn("Empty configuration -- nothing to configure.\nCheck that environment variables are set properly.")
             return
 
     kconf.warn = False
@@ -90,7 +91,7 @@ def menuconfig(kconf: "Kconfig", headless: bool = False) -> None:
     result = app.run()
 
     if result:
-        Console(file=sys.stderr).print(result)
+        log.print(result, file=sys.stderr)
 
 
 def _needs_save() -> bool:

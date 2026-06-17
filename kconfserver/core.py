@@ -5,13 +5,17 @@
 # Long-running server process uses stdin & stdout to communicate JSON
 # with a caller
 #
-import argparse
 import json
 import os
 import sys
 from json import JSONDecodeError
 from typing import Dict
 from typing import List
+
+import rich_click as click
+from esp_pylib.excepthook import install_exception_reporting
+from esp_pylib.logger import log
+from rich.markup import escape
 
 import esp_kconfiglib.core as kconfiglib
 import kconfgen.core as kconfgen
@@ -22,77 +26,72 @@ MIN_PROTOCOL_VERSION = 1
 MAX_PROTOCOL_VERSION = 3
 
 
-def main():
-    parser = argparse.ArgumentParser(
-        description=f"kconfserver.py v{__version__} - Config Generation Tool",
-        prog=os.path.basename(sys.argv[0]),
-    )
+@click.command(
+    help=f"kconfserver v{__version__} - Config Generation Tool",
+    context_settings=dict(help_option_names=["-h", "--help"]),
+)
+@click.option(
+    "--config",
+    required=True,
+    help="Project configuration settings",
+)
+@click.option(
+    "--kconfig",
+    required=True,
+    help="Kconfig file with config item definitions",
+)
+@click.option(
+    "--sdkconfig-rename",
+    default=None,
+    help="File with deprecated Kconfig options",
+)
+@click.option(
+    "--env",
+    multiple=True,
+    metavar="NAME=VAL",
+    help="Environment to set when evaluating the config file",
+)
+@click.option(
+    "--env-file",
+    type=click.File("r"),
+    default=None,
+    help="Optional file to load environment variables from. Contents "
+    "should be a JSON object where each key/value pair is a variable.",
+)
+@click.option(
+    "--version",
+    type=int,
+    default=MAX_PROTOCOL_VERSION,
+    help="Set protocol version to use on initial status",
+)
+def main(config, kconfig, sdkconfig_rename, env, env_file, version):
+    install_exception_reporting()
 
-    parser.add_argument("--config", help="Project configuration settings", required=True)
-
-    parser.add_argument("--kconfig", help="Kconfig file with config item definitions", required=True)
-
-    parser.add_argument(
-        "--sdkconfig-rename",
-        help="File with deprecated Kconfig options",
-        required=False,
-    )
-
-    parser.add_argument(
-        "--env",
-        action="append",
-        default=[],
-        help="Environment to set when evaluating the config file",
-        metavar="NAME=VAL",
-    )
-
-    parser.add_argument(
-        "--env-file",
-        type=argparse.FileType("r"),
-        help="Optional file to load environment variables from. Contents "
-        "should be a JSON object where each key/value pair is a variable.",
-    )
-
-    parser.add_argument(
-        "--version",
-        help="Set protocol version to use on initial status",
-        type=int,
-        default=MAX_PROTOCOL_VERSION,
-    )
-
-    args = parser.parse_args()
-
-    if args.version < MIN_PROTOCOL_VERSION:
-        print(
-            f"Version {args.version} is older than minimum supported protocol version {MIN_PROTOCOL_VERSION}. "
-            "Client is much older than ESP-IDF version?",
-            file=sys.stderr,
+    if version < MIN_PROTOCOL_VERSION:
+        log.warn(
+            f"Version {version} is older than minimum supported protocol version {MIN_PROTOCOL_VERSION}. "
+            "Client is much older than ESP-IDF version?"
         )
 
-    if args.version > MAX_PROTOCOL_VERSION:
-        print(
-            f"Version {args.version} is newer than maximum supported protocol version {MAX_PROTOCOL_VERSION}. "
-            "Client is newer than ESP-IDF version?",
-            file=sys.stderr,
+    if version > MAX_PROTOCOL_VERSION:
+        log.warn(
+            f"Version {version} is newer than maximum supported protocol version {MAX_PROTOCOL_VERSION}. "
+            "Client is newer than ESP-IDF version?"
         )
 
     try:
-        args.env = [(name, value) for (name, value) in (e.split("=", 1) for e in args.env)]
+        env_pairs = [(name, value) for (name, value) in (e.split("=", 1) for e in env)]
     except ValueError:
-        print(
-            "--env arguments must each contain =. To unset an environment variable, use 'ENV='",
-            file=sys.stderr,
-        )
-        sys.exit(1)
+        log.die("--env arguments must each contain =. To unset an environment variable, use 'ENV='")
 
-    for name, value in args.env:
+    for name, value in env_pairs:
         os.environ[name] = value
 
-    if args.env_file is not None:
-        env = json.load(args.env_file)
-        os.environ.update(env)
+    if env_file is not None:
+        env_vars = json.load(env_file)
+        os.environ.update(env_vars)
 
-    run_server(args.kconfig, args.config, args.sdkconfig_rename)
+    run_server(kconfig, config, sdkconfig_rename)
 
 
 def run_server(kconfig, sdkconfig, sdkconfig_rename, default_version=MAX_PROTOCOL_VERSION):
@@ -105,7 +104,7 @@ def run_server(kconfig, sdkconfig, sdkconfig_rename, default_version=MAX_PROTOCO
         config.load_rename_files(sdkconfig_renames)
     config.load_config(sdkconfig)
 
-    print("Server running, waiting for requests on stdin...", file=sys.stderr)
+    log.print("Server running, waiting for requests on stdin...", file=sys.stderr)
 
     config_dict = kconfgen.get_json_values(config)
     ranges_dict = get_ranges(config)
@@ -158,63 +157,69 @@ def run_server(kconfig, sdkconfig, sdkconfig_rename, default_version=MAX_PROTOCO
         before_ranges = get_ranges(config)
         before_visible = get_visible(config)
 
-        if req["version"] >= 3:
-            before_defaults = get_sym_default_value_dict(config)
-
-        if "load" in req:  # load a new sdkconfig
-            if req.get("version", default_version) == 1:
-                # for V1 protocol, send all items when loading new sdkconfig.
-                # (V2+ will only send changes, same as when setting an item)
-                before = {}
-                before_ranges = {}
-                before_visible = {}
-
-            # if no new filename is supplied, use existing sdkconfig path, otherwise update the path
-            if req["load"] is None:
-                req["load"] = sdkconfig
-            else:
-                sdkconfig = req["load"]
-
-        if "save" in req:
-            if req["save"] is None:
-                req["save"] = sdkconfig
-            else:
-                sdkconfig = req["save"]
-
-        error = handle_request(config, req)
-
-        after = kconfgen.get_json_values(config)
-        after_ranges = get_ranges(config)
-        after_visible = get_visible(config)
-        if req["version"] >= 3:
-            after_defaults = get_sym_default_value_dict(config)
-
-        values_diff = diff(before, after)
-        ranges_diff = diff(before_ranges, after_ranges)
-        visible_diff = diff(before_visible, after_visible)
-        if req["version"] >= 3:
-            defaults_diff = diff(before_defaults, after_defaults)
-
-        if req["version"] == 1:
-            # V1 response, invisible items have value None
-            for k in (k for (k, v) in visible_diff.items() if not v):
-                values_diff[k] = None
-            response = {"version": 1, "values": values_diff, "ranges": ranges_diff}
-        else:
-            # V2+ response, separate visibility values
+        if "version" not in req:
             response = {
-                "version": req["version"],
-                "values": values_diff,
-                "ranges": ranges_diff,
-                "visible": visible_diff,
+                "version": default_version,
             }
+            error = ["All requests must have a 'version'"]
+        else:
             if req["version"] >= 3:
-                # V3 onwards: send which values have default values
-                response["defaults"] = defaults_diff
+                before_defaults = get_sym_default_value_dict(config)
+
+            if "load" in req:  # load a new sdkconfig
+                if req.get("version", default_version) == 1:
+                    # for V1 protocol, send all items when loading new sdkconfig.
+                    # (V2+ will only send changes, same as when setting an item)
+                    before = {}
+                    before_ranges = {}
+                    before_visible = {}
+
+                # if no new filename is supplied, use existing sdkconfig path, otherwise update the path
+                if req["load"] is None:
+                    req["load"] = sdkconfig
+                else:
+                    sdkconfig = req["load"]
+
+            if "save" in req:
+                if req["save"] is None:
+                    req["save"] = sdkconfig
+                else:
+                    sdkconfig = req["save"]
+
+            error = handle_request(config, req)
+
+            after = kconfgen.get_json_values(config)
+            after_ranges = get_ranges(config)
+            after_visible = get_visible(config)
+            if req["version"] >= 3:
+                after_defaults = get_sym_default_value_dict(config)
+
+            values_diff = diff(before, after)
+            ranges_diff = diff(before_ranges, after_ranges)
+            visible_diff = diff(before_visible, after_visible)
+            if req["version"] >= 3:
+                defaults_diff = diff(before_defaults, after_defaults)
+
+            if req["version"] == 1:
+                # V1 response, invisible items have value None
+                for k in (k for (k, v) in visible_diff.items() if not v):
+                    values_diff[k] = None
+                response = {"version": 1, "values": values_diff, "ranges": ranges_diff}
+            else:
+                # V2+ response, separate visibility values
+                response = {
+                    "version": req["version"],
+                    "values": values_diff,
+                    "ranges": ranges_diff,
+                    "visible": visible_diff,
+                }
+                if req["version"] >= 3:
+                    # V3 onwards: send which values have default values
+                    response["defaults"] = defaults_diff
 
         if error:
             for err in error:
-                print(f"Error: {err}", file=sys.stderr)
+                log.err(escape(str(err)))
             response["error"] = error
         json.dump(response, sys.stdout)
         sys.stdout.write("\n")
@@ -244,7 +249,7 @@ def handle_request(config, req):
     error = []
 
     if "load" in req:
-        print(f"Loading config from {req['load']}...", file=sys.stderr)
+        log.print(f"Loading config from {req['load']}...", file=sys.stderr, markup=False)
         try:
             config.load_config(req["load"])
         except Exception as e:
@@ -261,7 +266,7 @@ def handle_request(config, req):
 
     if "save" in req:
         try:
-            print(f"Saving config to {req['save']}...", file=sys.stderr)
+            log.print(f"Saving config to {req['save']}...", file=sys.stderr, markup=False)
             kconfgen.write_config(config, req["save"])
         except Exception as e:
             error += [f"Failed to save to {req['save']}: {e}"]
@@ -279,7 +284,7 @@ def handle_reset(config: kconfiglib.Kconfig, error: List[str], to_reset: List[st
     # Reset the whole configuration to default values
     if "all" in to_reset:
         if kconfiglib._recursively_perform_action(config.top_node, kconfiglib._restore_default):
-            print("Reset the whole configuration to default values", file=sys.stderr)
+            log.print("Reset the whole configuration to default values", file=sys.stderr, markup=False)
         else:
             error.append("Failed to reset the whole configuration to default values")
         return
@@ -308,13 +313,13 @@ def handle_reset(config: kconfiglib.Kconfig, error: List[str], to_reset: List[st
 
     for sym in syms:
         if kconfiglib._restore_default(sym.nodes[0]):
-            print(f"Reset {sym.name} to default value", file=sys.stderr)
+            log.print(f"Reset {sym.name} to default value", file=sys.stderr, markup=False)
         else:
             error.append(f"Failed to reset {sym.name} to default value")
 
     for menu in menus:
         if kconfiglib._recursively_perform_action(menu, kconfiglib._restore_default):
-            print(f"Reset menu {menu.id} to default values", file=sys.stderr)
+            log.print(f"Reset menu {menu.id} to default values", file=sys.stderr, markup=False)
         else:
             error.append(f"Failed to reset menu {menu.id} to default values")
 
@@ -358,7 +363,7 @@ def handle_set(config, error, to_set):
                     sym.set_value(str(val))
             else:
                 sym.set_value(str(val))
-            print(f"Set {sym.name}", file=sys.stderr)
+            log.print(f"Set {sym.name}", file=sys.stderr)
             del to_set[sym]
 
     if len(to_set):

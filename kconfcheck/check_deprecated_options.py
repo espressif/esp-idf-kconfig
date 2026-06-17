@@ -2,12 +2,14 @@
 # SPDX-License-Identifier: Apache-2.0
 import os
 import re
-import sys
 from typing import Dict
 from typing import List
 from typing import Optional
 from typing import Set
 from typing import Tuple
+
+from esp_pylib.logger import log
+from rich.markup import escape
 
 
 def _is_project_root(directory: str) -> bool:
@@ -149,7 +151,7 @@ def _prepare_deprecated_options(
     idf_path = os.environ.get("IDF_PATH", None)
     if not idf_path:
         idf_path = os.getcwd()
-        print(f"kconfcheck: IDF_PATH is not set. Using {idf_path} as a fallback.", file=sys.stderr)
+        log.note(f"kconfcheck: IDF_PATH is not set. Using {escape(idf_path)} as a fallback.")
     abs_idf_path = os.path.abspath(idf_path)
 
     global_deprecated |= _build_global_deprecated(abs_idf_path)
@@ -173,7 +175,7 @@ def _prepare_deprecated_options(
                     elif filename == "sdkconfig.rename":
                         global_deprecated.update(extract_lhs_from_file(full_path))
                     elif full_path.startswith(ignore_dirs):
-                        print(f"{full_path}: Ignored")
+                        log.note(f"{escape(full_path)}: Ignored")
 
     return files, global_deprecated, local_deprecated, ignore_dirs, project_root_cache, abs_idf_path
 
@@ -195,7 +197,7 @@ def check_deprecated_options(
     set never trigger a walk of their project tree.
     """
     if file_full_path in ignore_dirs:
-        print(f"{file_full_path}: Ignored", file=sys.stderr)
+        log.note(f"{escape(file_full_path)}: Ignored")
         return None
 
     file_dir = os.path.dirname(os.path.abspath(file_full_path))
@@ -210,8 +212,8 @@ def check_deprecated_options(
     used_options = extract_lhs_from_file(file_full_path, "=")
     used_deprecated_options = effective_deprecated.intersection(used_options)
     if len(used_deprecated_options) > 0:
-        print(f"{file_full_path}: The following options are deprecated: {', '.join(used_deprecated_options)}")
+        log.warn(f"{file_full_path}: The following options are deprecated: {', '.join(used_deprecated_options)}")
         return False
     else:
-        print(f"{file_full_path}: OK")
+        log.print(f"{file_full_path}: OK", markup=False)
         return True
