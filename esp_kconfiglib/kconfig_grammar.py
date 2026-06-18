@@ -15,7 +15,9 @@ from pyparsing import LineEnd
 from pyparsing import OneOrMore
 from pyparsing import Opt
 from pyparsing import ParseException
+from pyparsing import ParseFatalException
 from pyparsing import ParseResults
+from pyparsing import ParseSyntaxException
 from pyparsing import PrecededBy
 from pyparsing import QuotedString
 from pyparsing import Regex
@@ -24,12 +26,30 @@ from pyparsing import Token
 from pyparsing import Word
 from pyparsing import ZeroOrMore
 from pyparsing import alphanums
+from pyparsing import lineno
 from pyparsing import one_of
 
 if TYPE_CHECKING:
     from esp_kconfiglib.kconfig_parser import Parser
 
+from esp_kconfiglib.core import KconfigError
 from esp_kconfiglib.report import PRAGMA_PREFIX
+
+
+def _expr_error_loc(line: str, line_start: int, expr_text: str, pe: Optional[ParseException] = None) -> int:
+    """
+    Compute the position in the original instring where the expression parser
+    failed, so the caret and 'found' annotation point at the actual token.
+
+    *line* is the raw option line (e.g. "    default str").
+    *line_start* is the instring offset of the first char of that line.
+    *expr_text* is the substring that was passed to expression.parse_string().
+    *pe.loc* is the char offset within expr_text where parsing failed.
+    """
+    idx = line.find(expr_text)
+    if idx == -1:
+        return line_start
+    return line_start + idx + int(pe.loc if pe else 0)
 
 
 class KconfigBlock(Token):
@@ -430,6 +450,11 @@ class KconfigOptionBlock(KconfigBlock):
             if not is_line_with_option(tokens):
                 break
 
+            # current_loc holds the \n at the end of the previously-processed line.
+            # Adding 1 gives the position of the first character of the current line,
+            # which produces a useful caret in ParseSyntaxException.explain().
+            line_start = current_loc + 1
+
             ############################################
             # Parsing the option block
             ############################################
@@ -447,9 +472,16 @@ class KconfigOptionBlock(KconfigBlock):
 
                     cond = None
                     if len(tokens) > current_token_idx and tokens[current_token_idx] == "if":  # inline condition
-                        cond = expression.parse_string(
-                            " ".join(tokens[current_token_idx + 1 :]), parse_all=True
-                        ).as_list()
+                        expr_text = " ".join(tokens[current_token_idx + 1 :])
+                        try:
+                            cond = expression.parse_string(expr_text, parse_all=True).as_list()
+                        except ParseException as pe:
+                            raise ParseSyntaxException(
+                                instring,
+                                _expr_error_loc(line, line_start, expr_text, pe),
+                                f"invalid prompt condition: {pe.msg}",
+                                self,
+                            )
 
                     option_dict["prompt"].append((prompt_str, cond))
                 current_loc += len(line) + 1  # +1 for \n
@@ -457,18 +489,40 @@ class KconfigOptionBlock(KconfigBlock):
             # parse default
             elif tokens[0] == "default":
                 if "if" in tokens:
-                    option_dict["default"].append(
-                        (
-                            expression.parse_string(" ".join(tokens[1 : tokens.index("if")]), parse_all=True).as_list(),
-                            expression.parse_string(
-                                " ".join(tokens[tokens.index("if") + 1 :]), parse_all=True
-                            ).as_list(),
+                    if_idx = tokens.index("if")
+                    expr_text = " ".join(tokens[1:if_idx])
+                    try:
+                        default_val = expression.parse_string(expr_text, parse_all=True).as_list()
+                    except ParseException as pe:
+                        raise ParseSyntaxException(
+                            instring,
+                            _expr_error_loc(line, line_start, expr_text, pe),
+                            f"invalid 'default' value: {pe.msg}",
+                            self,
                         )
-                    )
+                    expr_text = " ".join(tokens[if_idx + 1 :])
+                    try:
+                        default_cond = expression.parse_string(expr_text, parse_all=True).as_list()
+                    except ParseException as pe:
+                        raise ParseSyntaxException(
+                            instring,
+                            _expr_error_loc(line, line_start, expr_text, pe),
+                            f"invalid 'default' condition: {pe.msg}",
+                            self,
+                        )
+                    option_dict["default"].append((default_val, default_cond))
                 else:
-                    option_dict["default"].append(
-                        (expression.parse_string(" ".join(tokens[1:]), parse_all=True).as_list(), None)
-                    )
+                    expr_text = " ".join(tokens[1:])
+                    try:
+                        default_val = expression.parse_string(expr_text, parse_all=True).as_list()
+                    except ParseException as pe:
+                        raise ParseSyntaxException(
+                            instring,
+                            _expr_error_loc(line, line_start, expr_text, pe),
+                            f"invalid 'default' value: {pe.msg}",
+                            self,
+                        )
+                    option_dict["default"].append((default_val, None))
 
                 current_loc += len(line) + 1  # +1 for \n
 
@@ -487,23 +541,49 @@ class KconfigOptionBlock(KconfigBlock):
                         self,
                     )
                 else:
-                    expr = expression.parse_string(" ".join(tokens[2:]), parse_all=True).as_list()
+                    expr_text = " ".join(tokens[2:])
+                    try:
+                        expr = expression.parse_string(expr_text, parse_all=True).as_list()
+                    except ParseException as pe:
+                        raise ParseSyntaxException(
+                            instring,
+                            _expr_error_loc(line, line_start, expr_text, pe),
+                            f"invalid 'depends on' expression: {pe.msg}",
+                            self,
+                        )
                     option_dict["depends_on"].append(expr)
                     current_loc += len(line) + 1  # +1 for \n
 
             elif tokens[0] == "range":
-                symbol1 = symbol.parse_string(tokens[1], parse_all=True).as_list()[0]
-                symbol2 = symbol.parse_string(tokens[2], parse_all=True).as_list()[0]
+                try:
+                    symbol1 = symbol.parse_string(tokens[1], parse_all=True).as_list()[0]
+                    symbol2 = symbol.parse_string(tokens[2], parse_all=True).as_list()[0]
+                except ParseException as pe:
+                    raise ParseSyntaxException(
+                        instring,
+                        _expr_error_loc(line, line_start, " ".join(tokens[1:3]), pe),
+                        f"invalid 'range' symbol: {pe.msg}",
+                        self,
+                    )
                 cond = None
                 if len(tokens) > 3:
                     if not tokens[3] == "if":
-                        raise ParseException(
+                        raise ParseSyntaxException(
                             instring,
-                            current_loc,
-                            "Error parsing option block: extra tokens after range sym1 sym2.",
+                            _expr_error_loc(line, line_start, " ".join(tokens[3:])),
+                            "extra tokens after range sym1 sym2.",
                             self,
                         )
-                    cond = expression.parse_string(" ".join(tokens[4:]), parse_all=True).as_list()
+                    expr_text = " ".join(tokens[4:])
+                    try:
+                        cond = expression.parse_string(expr_text, parse_all=True).as_list()
+                    except ParseException as pe:
+                        raise ParseSyntaxException(
+                            instring,
+                            _expr_error_loc(line, line_start, expr_text, pe),
+                            f"invalid 'range' condition: {pe.msg}",
+                            self,
+                        )
                 option_dict["range"].append((symbol1, symbol2, cond))
                 current_loc += len(line) + 1  # +1 for \n
 
@@ -516,21 +596,48 @@ class KconfigOptionBlock(KconfigBlock):
 
                 cond = None
                 if len(tokens) > current_token_idx and tokens[current_token_idx] == "if":  # inline condition
-                    cond = expression.parse_string(" ".join(tokens[current_token_idx + 1 :]), parse_all=True).as_list()
+                    expr_text = " ".join(tokens[current_token_idx + 1 :])
+                    try:
+                        cond = expression.parse_string(expr_text, parse_all=True).as_list()
+                    except ParseException as pe:
+                        raise ParseSyntaxException(
+                            instring,
+                            _expr_error_loc(line, line_start, expr_text, pe),
+                            f"invalid 'prompt' condition: {pe.msg}",
+                            self,
+                        )
                 option_dict["prompt"].append((prompt_str, cond))
                 current_loc += len(line) + 1  # +1 for \n
 
             elif tokens[0] == "select" or tokens[0] == "imply":
-                sym = symbol.parse_string(tokens[1], parse_all=True).as_list()[0]
+                expr_text = tokens[1]
+                try:
+                    sym = symbol.parse_string(expr_text, parse_all=True).as_list()[0]
+                except ParseException as pe:
+                    raise ParseSyntaxException(
+                        instring,
+                        _expr_error_loc(line, line_start, expr_text, pe),
+                        f"invalid '{tokens[0]}' symbol: {pe.msg}",
+                        self,
+                    )
                 if len(tokens) > 2:
                     if not tokens[2] == "if":
-                        raise ParseException(
+                        raise ParseSyntaxException(
                             instring,
-                            current_loc,
+                            _expr_error_loc(line, line_start, " ".join(tokens[2:])),
                             f"Error parsing option block: extra tokens after {tokens[0]} option.",
                             self,
                         )
-                    cond = expression.parse_string(" ".join(tokens[3:]), parse_all=True).as_list()
+                    expr_text = " ".join(tokens[3:])
+                    try:
+                        cond = expression.parse_string(expr_text, parse_all=True).as_list()
+                    except ParseException as pe:
+                        raise ParseSyntaxException(
+                            instring,
+                            _expr_error_loc(line, line_start, expr_text, pe),
+                            f"invalid '{tokens[0]}' condition: {pe.msg}",
+                            self,
+                        )
                     option_dict[tokens[0]].append((sym, cond))
                 else:
                     option_dict[tokens[0]].append((sym, None))
@@ -545,7 +652,16 @@ class KconfigOptionBlock(KconfigBlock):
                         self,
                     )
                 else:
-                    expr = expression.parse_string(" ".join(tokens[2:]), parse_all=True).as_list()
+                    expr_text = " ".join(tokens[2:])
+                    try:
+                        expr = expression.parse_string(expr_text, parse_all=True).as_list()
+                    except ParseException as pe:
+                        raise ParseSyntaxException(
+                            instring,
+                            _expr_error_loc(line, line_start, expr_text, pe),
+                            f"invalid 'visible if' expression: {pe.msg}",
+                            self,
+                        )
                     option_dict["visible_if"].append(expr)
                     current_loc += len(line) + 1  # +1 for \n
 
@@ -558,16 +674,25 @@ class KconfigOptionBlock(KconfigBlock):
                     assignment_idx = 1
 
                 if_idx = tokens.index("if") if "if" in tokens else -1
-                assignment = expression.parse_string(
-                    " ".join(tokens[assignment_idx:if_idx] if if_idx != -1 else tokens[assignment_idx:]), parse_all=True
-                ).as_list()[0]  # parse_string returns [[<target>, "=", <value>]]
+                expr_text = " ".join(tokens[assignment_idx:if_idx] if if_idx != -1 else tokens[assignment_idx:])
+                try:
+                    assignment = expression.parse_string(expr_text, parse_all=True).as_list()[
+                        0
+                    ]  # parse_string returns [[<target>, "=", <value>]]
+                except ParseException as pe:
+                    raise ParseSyntaxException(
+                        instring,
+                        _expr_error_loc(line, line_start, expr_text, pe),
+                        f"invalid 'set' assignment: {pe.msg}",
+                        self,
+                    )
                 if (
                     len(assignment) != 3  # 3 = len([<target>, "=", <value>])
                     or assignment[1] != "="
                 ):
-                    raise ParseException(
+                    raise ParseSyntaxException(
                         instring,
-                        current_loc,
+                        line_start,
                         (
                             'Error parsing option block: "set" option syntax is '
                             '"set [default] <config>=<value> [if <condition>]".'
@@ -577,7 +702,16 @@ class KconfigOptionBlock(KconfigBlock):
                 if if_idx == -1:
                     cond = None
                 else:
-                    cond = expression.parse_string(" ".join(tokens[if_idx + 1 :]), parse_all=True).as_list()[0]
+                    expr_text = " ".join(tokens[if_idx + 1 :])
+                    try:
+                        cond = expression.parse_string(expr_text, parse_all=True).as_list()[0]
+                    except ParseException as pe:
+                        raise ParseSyntaxException(
+                            instring,
+                            _expr_error_loc(line, line_start, expr_text, pe),
+                            f"invalid 'set' condition: {pe.msg}",
+                            self,
+                        )
 
                 #                  (target,        value,         condition)
                 output_list.append((assignment[0], assignment[2], cond))
@@ -683,9 +817,15 @@ class KconfigGrammar:
         ###########################
         # List of all possible options for the config/choice.
 
-        symbol_name = Word(alphanums.upper() + "_").set_results_name("config_name", list_all_matches=True)
+        symbol_name = (
+            Word(alphanums.upper() + "_").set_results_name("config_name", list_all_matches=True).set_name("symbol name")
+        )
         config_opts = KconfigOptionBlock().leave_whitespace().set_results_name("config_opts")
-        config = (Keyword("config") + symbol_name + config_opts).set_parse_action(parser.parse_config)
+        config = (
+            (Keyword("config") - symbol_name - config_opts)
+            .set_parse_action(parser.parse_config)
+            .set_name("config entry")
+        )
 
         ###########################
         # Comment
@@ -693,8 +833,11 @@ class KconfigGrammar:
         # Not a #-like comment (which is ignored), but a comment block showed in generated sdkconfig file.
         comment_opts = KconfigOptionBlock().leave_whitespace().set_results_name("comment_opts")
 
-        comment = Keyword("comment") + inline_prompt + Opt(comment_opts)
-        comment = comment.set_parse_action(parser.parse_comment)
+        comment = (
+            (Keyword("comment") - inline_prompt + Opt(comment_opts))
+            .set_parse_action(parser.parse_comment)
+            .set_name("comment block")
+        )
 
         ###########################
         # Macro
@@ -702,10 +845,14 @@ class KconfigGrammar:
         # Although not a basic Kconfig syntax, some Kconfig files are using basic macros in the form of NAME := value.
         # This part adds support for this.
         macro = (
-            symbol_name.set_results_name("name")
-            + one_of([":=", "="]).set_results_name("operation")
-            + symbol.set_results_name("value")
-        ).set_parse_action(parser.parse_macro)
+            (
+                symbol_name.set_results_name("name")
+                + one_of([":=", "="]).set_results_name("operation")
+                + symbol.set_results_name("value")
+            )
+            .set_parse_action(parser.parse_macro)
+            .set_name("macro definition")
+        )
 
         ###########################
         # Source
@@ -716,7 +863,7 @@ class KconfigGrammar:
         # (TLDR: recursively, new KconfigGrammar class is created and sourced_root is parsed).
         source_type = one_of(["orsource", "source", "rsource", "osource"], as_keyword=True)
         path = QuotedString('"').set_results_name("path")
-        source = (source_type + path).set_parse_action(parser.parse_sourced)
+        source = (source_type - path).set_parse_action(parser.parse_sourced).set_name("source directive")
 
         ########################
         # Choice
@@ -724,17 +871,25 @@ class KconfigGrammar:
         entries = Forward()
         # Choice is a group of configs that can have only one active at a time.
         choice = (
-            Keyword("choice")
-            + Opt(symbol_name).set_results_name("choice_name")
-            + Opt(KconfigOptionBlock().leave_whitespace()).set_results_name("choice_opts")
-            + entries
-            + Keyword("endchoice")
-        ).set_parse_action(parser.parse_choice)
+            (
+                Keyword("choice")
+                - Opt(symbol_name).set_results_name("choice_name")
+                + Opt(KconfigOptionBlock().leave_whitespace()).set_results_name("choice_opts")
+                + entries
+                + Keyword("endchoice")
+            )
+            .set_parse_action(parser.parse_choice)
+            .set_name("choice block")
+        )
 
         ########################
         # Menuconfig
         ########################
-        menuconfig = (Keyword("menuconfig") + symbol_name + config_opts).set_parse_action(parser.parse_config)
+        menuconfig = (
+            (Keyword("menuconfig") - symbol_name - config_opts)
+            .set_parse_action(parser.parse_config)
+            .set_name("menuconfig entry")
+        )
 
         ########################
         # Menu
@@ -748,28 +903,34 @@ class KconfigGrammar:
         # Every entry should have the same indentation and optionally, an empty line in between two entries.
         # But e.g. lvgl does not follow any rules in their Kconfig files and thus,
         # formal specifications needs to be loosen.
-        entry_records = config | menu | choice | source | menuconfig | if_entry | comment | macro
+        entry_records = (config | menu | choice | source | menuconfig | if_entry | comment | macro).set_name(
+            "Kconfig entry"
+        )
         entries << ZeroOrMore(entry_records).set_results_name("entries")
 
         menu << (
             Keyword("menu")
-            + QuotedString('"')
+            - QuotedString('"')
             + Opt(KconfigOptionBlock().leave_whitespace())
             + entries
             + Keyword("endmenu")
-        ).set_parse_action(parser.parse_menu).set_results_name("menu")
+        ).set_parse_action(parser.parse_menu).set_results_name("menu").set_name("menu block")
 
         ###########################
         # If entry
         ###########################
         # Not "if" as a condition, but "if" as a separate block
-        if_entry << Keyword("if") + (expression + entries).set_parse_action(parser.parse_if_entry) + Keyword("endif")
+        if_entry << (
+            Keyword("if") - (expression + entries).set_parse_action(parser.parse_if_entry) + Keyword("endif")
+        ).set_name("if block")
 
         ###########################
         # Main menu
         ###########################
-        mainmenu = (Keyword("mainmenu") + (QuotedString('"') | QuotedString("'")) + entries).set_parse_action(
-            parser.parse_mainmenu
+        mainmenu = (
+            (Keyword("mainmenu") - (QuotedString('"') | QuotedString("'")) + entries)
+            .set_parse_action(parser.parse_mainmenu)
+            .set_name("mainmenu")
         )
 
         ############################
@@ -777,11 +938,10 @@ class KconfigGrammar:
         ############################
         # The root of the grammar. It is used to parse the main Kconfig file,
         # which needs to contain mainmenu as a top element.
-        self.root = mainmenu
+        self.root = mainmenu.set_name("Kconfig root")
 
         # sourced file can have different structure than the main Kconfig file, thus using a separate root.
-        sourced_root = OneOrMore(entry_records)
-        self.sourced_root = sourced_root
+        self.sourced_root = OneOrMore(entry_records).set_name("sourced Kconfig file")
 
     def preprocess_file(self, file: str, ensure_end_newline: bool = True) -> str:
         """
@@ -875,19 +1035,42 @@ class KconfigGrammar:
         if not sourced:
             try:
                 output = self.root.parse_string(file_content, parse_all=True)
-            except ParseException as e:
-                raise KconfigParseError(f"Error parsing file {file}: {str(e)}")
+            except (ParseException, ParseFatalException, ParseSyntaxException) as e:
+                raise KconfigParseError(
+                    f"Error parsing file {file} (line {lineno(e.loc, file_content)}):\n{e.explain(depth=0)}",
+                    file=file,
+                    line=lineno(e.loc, file_content),
+                    suggestion=e.explain(depth=0),
+                )
         else:
             try:
                 output = self.sourced_root.parse_string(file_content, parse_all=True)
-            except ParseException as e:
-                raise KconfigParseError(f"Error parsing sourced file {file}: {str(e)}")
+            except (ParseException, ParseFatalException, ParseSyntaxException) as e:
+                raise KconfigParseError(
+                    f"Error parsing sourced file {file} (line {lineno(e.loc, file_content)}):\n{e.explain(depth=0)}",
+                    file=file,
+                    line=lineno(e.loc, file_content),
+                    suggestion=e.explain(depth=0),
+                )
         return output
 
 
-class KconfigParseError(Exception):
+class KconfigParseError(KconfigError):
     """
     Exception raised when parsing of the Kconfig file fails.
+
+    Carries structured metadata so CLI entry points can forward it
+    to esp_pylib logging and IDE WebSocket integration.
     """
 
-    pass
+    def __init__(
+        self,
+        message: str,
+        file: Optional[str] = None,
+        line: Optional[int] = None,
+        suggestion: Optional[str] = None,
+    ):
+        super().__init__(message)
+        self.file = file
+        self.line = line
+        self.suggestion = suggestion
