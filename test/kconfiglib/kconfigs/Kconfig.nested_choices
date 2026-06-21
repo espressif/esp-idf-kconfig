@@ -1,0 +1,24 @@
+mainmenu "Test that nested choices do not leak data into each other"
+
+choice OUTER
+    prompt "Outer choice"
+
+    config OUTER_A
+        bool "Outer A"
+
+    config OUTER_B
+        bool "Outer B"
+
+    # Note: this is de facto illegal and we support it only for compat reasons
+    choice INNER
+        prompt "Inner choice"
+
+        config INNER_X
+            bool "Inner X"
+
+        config INNER_Y
+            bool "Inner Y"
+
+    endchoice
+
+endchoice
