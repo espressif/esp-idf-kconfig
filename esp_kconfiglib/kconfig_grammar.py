@@ -875,7 +875,11 @@ class KconfigGrammar:
                 Keyword("choice")
                 - Opt(symbol_name).set_results_name("choice_name")
                 + Opt(KconfigOptionBlock().leave_whitespace()).set_results_name("choice_opts")
-                + entries
+                # Group() isolates the nested entries' named results (e.g. a nested
+                # choice's "choice_name"/"choice_opts") so they do not leak into and
+                # overwrite this choice's results. Without it, an outer choice would
+                # pick up an inner choice's name and the two would be merged.
+                + Group(entries)
                 + Keyword("endchoice")
             )
             .set_parse_action(parser.parse_choice)

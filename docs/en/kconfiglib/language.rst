@@ -177,7 +177,7 @@ The ``choice`` entry consists of the ``choice`` keyword, followed by ``choice_na
 
 .. note::
 
-    The ``choice`` entry should contain only ``config`` entries as its sub-entries. Syntactically, ``choice`` is allowed to contain other entries (such as ``menu``) as well, although this functionality results in rather unusual and confusing structure. Usually, it is better to define those elements outside of the ``choice``.
+    The ``choice`` entry should contain only ``config`` entries as its sub-entries. Syntactically, ``choice`` is allowed to contain other entries (such as ``menu`` or even a nested ``choice``) as well, although this functionality results in rather unusual and confusing structure and is supported only for compatibility reasons. Usually, it is better to define those elements outside of the ``choice``.
 
     .. code-block:: kconfig
 

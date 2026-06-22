@@ -284,6 +284,30 @@ class TestLoadingUserSetChoice(TestBase):
 
 
 @pytest.mark.parametrize("version", ["1", "2"], indirect=True)
+class TestNestedChoices(TestBase):
+    """
+    Regression test: a choice nested inside another choice must not leak its data
+    into the enclosing choice. Previously the parser v2 grammar merged a nested
+    choice's name and symbols into the outer choice, so the outer choice lost its
+    own name and ended up owning all symbols of both choices.
+    """
+
+    def test_nested_choices_do_not_leak(self):
+        kconfig = Kconfig(os.path.join(KCONFIG_PATH, "Kconfig.nested_choices"))
+
+        # Both choices keep their own name.
+        assert set(kconfig.named_choices.keys()) == {"OUTER", "INNER"}
+
+        # Each choice owns exactly its own symbols, with no cross-contamination.
+        outer = kconfig.named_choices["OUTER"]
+        inner = kconfig.named_choices["INNER"]
+        assert [sym.name for sym in outer.syms] == ["OUTER_A", "OUTER_B"]
+        assert [sym.name for sym in inner.syms] == ["INNER_X", "INNER_Y"]
+
+        kconfig.report.reset()
+
+
+@pytest.mark.parametrize("version", ["1", "2"], indirect=True)
 class TestMultipleValueSet(TestBase):
     """
     Test cases test what happens if one config option is set multiple times.
