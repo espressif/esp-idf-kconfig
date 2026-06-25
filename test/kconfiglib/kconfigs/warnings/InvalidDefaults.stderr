@@ -1,17 +1,14 @@
 the int symbol INVALID_INT_CONFIG
-has a non-int default string (undefined)
+has a non-int default string
 the hex symbol INVALID_HEX_CONFIG
-has a non-hex default y (undefined)
+has a non-hex default y
 the float symbol INVALID_FLOAT_CONFIG
-has a non-float default string (undefined)
-Indirectly set value string on INT_CONFIG
-by SOURCE
+has a non-float default string
+indirectly set value string on INT_CONFIG
 is not a valid base 10 number.
-Indirectly set value y on HEX_CONFIG
-by SOURCE
+indirectly set value y on HEX_CONFIG
 is not a valid base 16 number.
-Indirectly set value string on FLOAT_CONFIG
-(by SOURCE (defined at
+indirectly set value string on FLOAT_CONFIG
 is not a valid float.
 default value 1000 on INT_OUTSIDE_RANGE_CONFIG
 clamped to 999 due to being outside the active range ([0, 999])

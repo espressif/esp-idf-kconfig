@@ -681,12 +681,12 @@ def validate_file(file_full_path: str, verbose: bool = False, replace: bool = Fa
             "\t{} has been saved with suggestions for resolving the issues.\n"
             "\tPlease note that the suggestions can be wrong and "
             "you might need to re-run the checker several times "
-            "for solving all issues".format(suggestions_full_path if not replace else file_full_path),
+            "for solving all issues".format(escape(suggestions_full_path if not replace else file_full_path)),
             markup=False,
         )
         return False
     else:
-        log.print("{}: OK".format(file_full_path), markup=False)
+        log.print("{}: OK".format(escape(file_full_path)), markup=False)
         # If replace, file already removed
         if not replace:
             try:

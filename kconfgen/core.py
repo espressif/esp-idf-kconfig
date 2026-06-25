@@ -95,7 +95,7 @@ def write_cmake(config: kconfiglib.Kconfig, filename: str, write_deprecated: boo
                 if sym.orig_type == kconfiglib.BOOL and val == "n":
                     val = ""
                 elif sym.orig_type == kconfiglib.STRING:
-                    val = kconfiglib.escape(val)
+                    val = kconfiglib._escape(val)
                 elif sym.orig_type == kconfiglib.HEX:
                     val = hex(int(val, 16))
                 f.write(f'set({prefix}{sym.name} "{val}")\n')
@@ -490,12 +490,12 @@ def main(
                     line = line.strip()
                     if line.endswith("="):
                         line += "n"
-                        log.note(f"{path_out}:{line_num} line was updated to {line}")
+                        log.note(f"{escape(path_out)}:{line_num} line was updated to {line}")
                     f_out.write(line)
                     f_out.write("\n")
 
         for name in defaults:
-            log.print(f"Loading defaults file {name}...", file=sys.stderr, markup=False)
+            log.print(f"Loading defaults file {escape(name)}...", file=sys.stderr, markup=False)
             if not os.path.exists(name):
                 raise RuntimeError(f"Defaults file not found: {name}")
             try:

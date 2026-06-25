@@ -249,7 +249,7 @@ def handle_request(config, req):
     error = []
 
     if "load" in req:
-        log.print(f"Loading config from {req['load']}...", file=sys.stderr, markup=False)
+        log.print(f"Loading config from {escape(req['load'])}...", file=sys.stderr, markup=False)
         try:
             config.load_config(req["load"])
         except Exception as e:
@@ -266,7 +266,7 @@ def handle_request(config, req):
 
     if "save" in req:
         try:
-            log.print(f"Saving config to {req['save']}...", file=sys.stderr, markup=False)
+            log.print(f"Saving config to {escape(req['save'])}...", file=sys.stderr, markup=False)
             kconfgen.write_config(config, req["save"])
         except Exception as e:
             error += [f"Failed to save to {req['save']}: {e}"]

@@ -511,16 +511,16 @@ class TestMenuconfigHeadlessEnvVar:
         monkeypatch.setenv("KCONFIG_CONFIG", str(sdkconfig))
 
         captured: Dict[str, Any] = {}
+        real_kconfig = Kconfig(os.path.join(KCONFIGS_PATH, "Kconfig"))
+        captured["kconf"] = real_kconfig
 
-        def fake_standard_kconfig() -> Kconfig:
-            kconf = Kconfig(os.path.join(KCONFIGS_PATH, "Kconfig"))
-            captured["kconf"] = kconf
-            return kconf
+        def fake_kconfig_ctor(*args: Any, **kwargs: Any) -> Kconfig:
+            return real_kconfig
 
         def fake_menuconfig(kconf: Kconfig, headless: bool = False) -> None:
             captured["headless"] = headless
 
-        monkeypatch.setattr("esp_kconfiglib.core.standard_kconfig", fake_standard_kconfig)
+        monkeypatch.setattr("esp_kconfiglib.core.Kconfig", fake_kconfig_ctor)
         monkeypatch.setattr("esp_menuconfig.menuconfig", fake_menuconfig)
         return captured
 
@@ -541,6 +541,6 @@ class TestMenuconfigHeadlessEnvVar:
 
         from esp_menuconfig.__main__ import _main
 
-        _main()
+        _main.callback(kconfig="Kconfig")
 
         assert patched_main["headless"] is expected_headless

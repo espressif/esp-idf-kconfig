@@ -12,13 +12,14 @@ from typing import Tuple
 from typing import Union
 from typing import no_type_check
 
+from esp_pylib.logger import log
 from pyparsing import ParserElement
 from pyparsing import ParseResults
 from pyparsing import line as pyparsing_line
 from pyparsing import lineno
+from rich.markup import escape
 
 from esp_kconfiglib.kconfig_grammar import KconfigGrammar
-from esp_kconfiglib.report import MiscArea
 
 from .core import AND
 from .core import BOOL
@@ -143,10 +144,13 @@ class Parser:
         sym.nodes.append(node)
         self.parse_options(node, sym.name, parsed_config["config_opts"])
         if parsed_config["config_opts"]["visible_if"]:
-            self.kconfig._warn(
-                f'config {sym.name} (defined at {self.file_stack[-1]}:{node.linenr}) has a "visible if" option, '
-                "which is not supported for configs"
+            log.note(
+                f"{escape(self.file_stack[-1])}:{node.linenr}: "
+                f'config {sym.name} has a "visible if" option, '
+                "which is not supported for configs - option ignored"
             )
+        if node.is_menuconfig and not node.prompt:
+            log.note(f"the menuconfig symbol {escape(sym.name_and_loc)} has no prompt")
 
         orphan = Orphan(
             node=node,
@@ -166,13 +170,10 @@ class Parser:
 
         menu_options = parsed_menu[2]
         if menu_options["set"] or menu_options["weak_set"]:
-            self.kconfig.report.add_record(
-                MiscArea,
-                message=(
-                    f"{self.file_stack[-1]}:{lineno(loc, s)}: "
-                    "'set' option is only valid for config and "
-                    "menuconfig entries. Option ignored."
-                ),
+            log.note(
+                f"{escape(self.file_stack[-1])}:{lineno(loc, s)}: "
+                "'set' option is only valid for config and "
+                "menuconfig entries - option ignored"
             )
         if menu_options["depends_on"]:  # depends on
             for depend in menu_options["depends_on"]:
@@ -251,13 +252,12 @@ class Parser:
             parsed_choice["choice_opts"],
         )
         if not node.prompt:
-            self.kconfig._warn(
-                f"<choice {choice.name}> (defined at {self.file_stack[-1]}:{node.linenr}) defined without a prompt"
-            )
+            log.note(f"{escape(self.file_stack[-1])}:{node.linenr}: <choice {choice.name}> defined without a prompt")
         if parsed_choice["choice_opts"]["visible_if"]:
-            self.kconfig._warn(
-                f'choice {choice.name} (defined at {self.file_stack[-1]}:{node.linenr}) has a "visible if" option, '
-                "which is not supported for choices"
+            log.note(
+                f"{escape(self.file_stack[-1])}:{node.linenr}: "
+                f'choice {choice.name} has a "visible if" option, '
+                "which is not supported for choices - option ignored"
             )
 
         self.get_children(node, (self.file_stack[-1], line_number))
@@ -271,11 +271,11 @@ class Parser:
                 child = child.next
 
         for child in children_with_default:
-            self.kconfig._warn(
+            log.note(
+                f"{escape(self.file_stack[-1])}:{child.linenr}: "
                 "default on the choice symbol "
                 f"{child.item.name if isinstance(child.item, (Symbol, Choice)) else child.item} "
-                f"(defined at {self.file_stack[-1]}:{child.linenr}) will have no effect, as defaults "
-                "do not affect choice symbols"
+                "will have no effect, as defaults do not affect choice symbols"
             )
 
         orphan = Orphan(
@@ -338,12 +338,18 @@ class Parser:
     def parse_prompt(self, node: MenuNode, prompts: List[Tuple]) -> None:
         for prompt in prompts:
             if node.prompt:
-                self.kconfig._warn(node.item.name_and_loc + " defined with multiple prompts in single location")  # type: ignore
+                log.note(
+                    f"{escape(self.file_stack[-1])}:{node.linenr}: "  # type: ignore[union-attr]
+                    f"{node.item.name} defined with multiple prompts in single location"  # type: ignore[union-attr]
+                )
             prompt_str = prompt[0]
 
             # Other items (like e.g. comments) can have leading or trailing whitespace in their prompt
-            if node.item.__class__ in (Symbol, Choice) and prompt_str != prompt_str.strip():
-                self.kconfig._warn(node.item.name_and_loc + " has leading or trailing whitespace in its prompt")  # type: ignore
+            if type(node.item) in (Symbol, Choice) and prompt_str != prompt_str.strip():
+                log.note(
+                    f"{escape(self.file_stack[-1])}:{node.linenr}: "  # type: ignore[union-attr]
+                    f"{node.item.name} has leading or trailing whitespace in its prompt"  # type: ignore[union-attr]
+                )
                 prompt_str = prompt_str.strip()
 
             condition: Union["Symbol", str, Tuple] = self.kconfig.y
@@ -377,7 +383,7 @@ class Parser:
         #####################
         # _parse_props() functionality
         #####################
-        if node.item.__class__ not in (Symbol, Choice):
+        if type(node.item) not in (Symbol, Choice):
             raise RuntimeError("Attempted to parse options for MenuNode item which is neither Symbol nor Choice.")
 
         if not options:  # choice can have no options
@@ -387,7 +393,7 @@ class Parser:
         if options["type"]:
             self.kconfig._set_type(node.item, self.str_to_kconfig_type[options["type"]])
         else:
-            if node.item.__class__ != Choice:  # Choices can have implicit type by their first child
+            if type(node.item) is not Choice:  # Choices can have implicit type by their first child
                 raise ValueError(
                     f"Config {sym_or_choice_name}, defined in {self.file_stack[-1]}:{node.linenr} has no type."
                 )
@@ -416,11 +422,9 @@ class Parser:
                 expr = self.parse_expression(depend)
                 node.dep = self.kconfig._make_and(node.dep, expr)
 
-        # NOTE: mypy does not recognize __class__ is <class> checks, thus many # type: ignore[union-attr]
-        #       rather than to sacrifice speed in favor of mypy.
         # parse select
         if options["select"]:
-            if node.item.__class__ is Symbol and node.item.orig_type == BOOL:  # type: ignore[union-attr]
+            if type(node.item) is Symbol and node.item.orig_type == BOOL:  # type: ignore[union-attr]
                 for select in options["select"]:
                     target_sym = self.kconfigize_expr(select[0])
                     if len(select) > 1 and select[1]:
@@ -429,17 +433,15 @@ class Parser:
                     else:
                         node.selects.append((target_sym, self.kconfig.y))
             else:
-                self.kconfig._warn(
-                    (
-                        f"{node.item.name} of type {TYPE_TO_STR[node.item.orig_type]} "  # type: ignore[union-attr]
-                        f"(defined at {self.file_stack[-1]}:{node.linenr}) "
-                        "has 'select' option, which is only supported for boolean symbols. Option ignored."
-                    )
+                log.note(
+                    f"{escape(self.file_stack[-1])}:{node.linenr}: "  # type: ignore[union-attr]
+                    f"{node.item.name} of type {TYPE_TO_STR[node.item.orig_type]} "  # type: ignore[union-attr]
+                    "has 'select' option, which is only supported for boolean symbols - option ignored"
                 )
 
         # parse imply
         if options["imply"]:
-            if node.item.__class__ is Symbol and node.item.orig_type == BOOL:  # type: ignore[union-attr]
+            if type(node.item) is Symbol and node.item.orig_type == BOOL:  # type: ignore[union-attr]
                 for imply in options["imply"]:
                     target_sym = self.kconfigize_expr(imply[0])
                     if len(imply) > 1 and imply[1]:
@@ -448,12 +450,10 @@ class Parser:
                     else:
                         node.implies.append((target_sym, self.kconfig.y))
             else:
-                self.kconfig._warn(
-                    (
-                        f"{node.item.name} of type {TYPE_TO_STR[node.item.orig_type]} "  # type: ignore[union-attr]
-                        f"(defined at {self.file_stack[-1]}:{node.linenr}) "
-                        "has 'imply' option, which is only supported for boolean symbols. Option ignored."
-                    )
+                log.note(
+                    f"{escape(self.file_stack[-1])}:{node.linenr}: "  # type: ignore[union-attr]
+                    f"{node.item.name} of type {TYPE_TO_STR[node.item.orig_type]} "  # type: ignore[union-attr]
+                    "has 'imply' option, which is only supported for boolean symbols - option ignored"
                 )
 
         # parse prompt
@@ -474,95 +474,92 @@ class Parser:
 
         # parse set default (weak indirect value setting)
         if options["weak_set"]:
-            if node.item.__class__ is Symbol and node.item.orig_type == BOOL:  # type: ignore[union-attr]
+            if type(node.item) is Symbol and node.item.orig_type == BOOL:  # type: ignore[union-attr]
                 for set_entry in options["weak_set"]:
                     target_sym = self.kconfigize_expr(set_entry[0])
                     val = self.kconfigize_expr(set_entry[1])
                     cond = self.kconfig.y if set_entry[2] is None else self.parse_expression(set_entry[2])
                     node.weak_sets.append((target_sym, val, cond))
             else:
-                self.kconfig.report.add_record(
-                    MiscArea,
-                    message=(
-                        f"{node.item.name} of type {TYPE_TO_STR[node.item.orig_type]} "  # type: ignore[union-attr]
-                        f"(defined at {self.file_stack[-1]}:{node.linenr}) "
-                        "has 'set default' option, which is only supported for boolean symbols. Option ignored."
-                    ),
+                log.note(
+                    f"{escape(self.file_stack[-1])}:{node.linenr}: "  # type: ignore[union-attr]
+                    f"{node.item.name} of type {TYPE_TO_STR[node.item.orig_type]} "  # type: ignore[union-attr]
+                    "has 'set default' option, which is only supported for boolean symbols - option ignored"
                 )
 
         # parse set (indirect value setting)
         if options["set"]:
-            if node.item.__class__ is Symbol and node.item.orig_type == BOOL:  # type: ignore[union-attr]
+            if type(node.item) is Symbol and node.item.orig_type == BOOL:  # type: ignore[union-attr]
                 for set_entry in options["set"]:
                     target_sym = self.kconfigize_expr(set_entry[0])
                     val = self.kconfigize_expr(set_entry[1])
                     cond = self.kconfig.y if set_entry[2] is None else self.parse_expression(set_entry[2])
                     node.sets.append((target_sym, val, cond))
             else:
-                self.kconfig.report.add_record(
-                    MiscArea,
-                    message=(
-                        f"{node.item.name} of type {TYPE_TO_STR[node.item.orig_type]} "  # type: ignore[union-attr]
-                        f"(defined at {self.file_stack[-1]}:{node.linenr}) "
-                        "has 'set' option, which is only supported for boolean symbols. Option ignored."
-                    ),
+                log.note(
+                    f"{escape(self.file_stack[-1])}:{node.linenr}: "  # type: ignore[union-attr]
+                    f"{node.item.name} of type {TYPE_TO_STR[node.item.orig_type]} "  # type: ignore[union-attr]
+                    "has 'set' option, which is only supported for boolean symbols - option ignored"
                 )
 
         # parse option
         if options["option"]:
             env_var = options["option"][0]
+            sym_name = node.item.name  # type: ignore[union-attr]
             node.item.env_var = env_var  # type: ignore
             if env_var in os.environ:
-                sym_name = os.environ.get(env_var) or ""
-                node.defaults.append((self.kconfig._lookup_const_sym(sym_name), self.kconfig.y))
+                node.defaults.append((self.kconfig._lookup_const_sym(os.environ[env_var]), self.kconfig.y))
             else:
-                self.kconfig._warn(
-                    f"{node.item.name} has 'option env=\"{env_var}\"', "  # type: ignore
-                    f"but the environment variable {env_var} is not set",
-                    self.file_stack[-1],
-                    node.linenr,
+                log.note(
+                    f"{escape(self.file_stack[-1])}:{node.linenr}: "
+                    f"{sym_name} has 'option env=\"{env_var}\"', "
+                    f"but the environment variable {env_var} is not set"
+                )
+
+            if env_var != sym_name:
+                log.note(
+                    "Kconfiglib expands environment variables "
+                    "in strings directly, meaning you do not "
+                    "need 'option env=...' \"bounce\" symbols. "
+                    "For compatibility with the C tools, "
+                    f"rename {sym_name} to {env_var} (so that the symbol name "
+                    "matches the environment variable name).",
                 )
 
         if options["warning"]:
-            if node.item.__class__ is Symbol:
+            if type(node.item) is Symbol:
                 if len(options["warning"]) > 1:
-                    self.kconfig.report.add_record(
-                        MiscArea,
-                        message=(
-                            node.item.name_and_loc  # type: ignore[union-attr]
-                            + " has several prompts for warning option in one location. Using the last one."
-                        ),
+                    log.note(
+                        f"{escape(self.file_stack[-1])}:{node.linenr}: "
+                        f"{node.item.name} has several prompts for warning option "  # type: ignore[union-attr]
+                        "in one location - using the last one"
                     )
                 else:
                     prompt_str = options["warning"][-1]
                     if prompt_str != prompt_str.strip():
-                        self.kconfig.report.add_record(
-                            MiscArea,
-                            message=(
-                                f"{node.item.name_and_loc if node.item.name_and_loc else node.item}"  # type: ignore[union-attr]
-                                + " has leading or trailing whitespace in its warning prompt"
-                            ),
+                        log.note(
+                            f"{escape(self.file_stack[-1])}:{node.linenr}: "
+                            f"{node.item.name} has leading or trailing whitespace "  # type: ignore[union-attr]
+                            "in its warning prompt - warning prompt trimmed"
                         )
                         prompt_str = prompt_str.strip()
                     node.warning = prompt_str  # type: ignore[union-attr]
-            elif node.item.__class__ is Choice:
-                self.kconfig.report.add_record(
-                    MiscArea,
-                    message=(
-                        f"Choice {node.item.name} (defined at {self.file_stack[-1]}:{node.linenr}) "  # type: ignore[union-attr]
-                        "has 'warning' option, which is only supported for symbols. Option ignored."
-                    ),
+            elif type(node.item) is Choice:
+                log.note(
+                    f"{escape(self.file_stack[-1])}:{node.linenr}: "
+                    f"Choice {node.item.name} "
+                    "has 'warning' option, which is only supported for symbols - option ignored"
                 )
 
         # ignore anything else, should not happen
 
-    # mypy cannot recognize "if parsed_expr.__class__" as handling certain types complains in the rest of the function
+    # mypy cannot narrow type(x) in (A, B) checks; @no_type_check is needed here
     @no_type_check
     def infix_to_prefix(self, parsed_expr: Union[str, list, Symbol]) -> Union[str, tuple, Symbol]:
         """
         Converts a nested list of operands and operators from infix to prefix notation, because Kconfig uses it.
         """
-        if parsed_expr.__class__ in (str, Symbol):
+        if type(parsed_expr) in (str, Symbol):
             return parsed_expr
         else:
             if parsed_expr[0] == "!":  # negation; !EXPRESSION
@@ -668,7 +665,7 @@ class Parser:
                     else:
                         sym = self.kconfig._lookup_sym(expr)
                     return sym
-        elif expr.__class__ in (tuple, list):
+        elif type(expr) in (tuple, list):
             if expr[0] in operators:
                 if len(expr) == 3:  # expr operator expr
                     return (

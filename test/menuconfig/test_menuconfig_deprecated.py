@@ -148,20 +148,20 @@ class TestMainEnvVarLoading:
 
     @pytest.fixture
     def patched_main(self, monkeypatch: pytest.MonkeyPatch) -> Dict[str, Any]:
-        """Patch ``standard_kconfig`` and ``menuconfig`` so we can inspect what
+        """Patch ``Kconfig`` and ``menuconfig`` so we can inspect what
         ``_main()`` builds without launching the TUI."""
         captured: Dict[str, Any] = {}
+        premade_kconfig = _build_kconfig()
+        captured["kconf"] = premade_kconfig
 
-        def fake_standard_kconfig() -> Kconfig:
-            kconf = _build_kconfig()
-            captured["kconf"] = kconf
-            return kconf
+        def inject_premade_kconfig(*args: Any, **kwargs: Any) -> Kconfig:
+            return premade_kconfig
 
         def fake_menuconfig(kconf: Kconfig, headless: bool = False) -> None:
             captured["menuconfig_called_with"] = kconf
             captured["headless"] = headless
 
-        monkeypatch.setattr("esp_kconfiglib.core.standard_kconfig", fake_standard_kconfig)
+        monkeypatch.setattr("esp_kconfiglib.core.Kconfig", inject_premade_kconfig)
         monkeypatch.setattr("esp_menuconfig.menuconfig", fake_menuconfig)
         return captured
 
@@ -176,7 +176,7 @@ class TestMainEnvVarLoading:
 
         from esp_menuconfig.__main__ import _main
 
-        _main()
+        _main.callback(kconfig="Kconfig")
 
         kconf = patched_main["kconf"]
         assert patched_main.get("menuconfig_called_with") is kconf
@@ -195,7 +195,7 @@ class TestMainEnvVarLoading:
 
         from esp_menuconfig.__main__ import _main
 
-        _main()
+        _main.callback(kconfig="Kconfig")
 
         kconf = patched_main["kconf"]
         assert kconf.deprecated_options is not None
@@ -218,7 +218,7 @@ class TestMainEnvVarLoading:
 
         from esp_menuconfig.__main__ import _main
 
-        _main()
+        _main.callback(kconfig="Kconfig")
 
         kconf = patched_main["kconf"]
         assert kconf.deprecated_options is not None
@@ -237,7 +237,7 @@ class TestMainEnvVarLoading:
 
         from esp_menuconfig.__main__ import _main
 
-        _main()
+        _main.callback(kconfig="Kconfig")
 
         kconf = patched_main["kconf"]
         assert kconf.deprecated_options is None

@@ -212,8 +212,10 @@ def check_deprecated_options(
     used_options = extract_lhs_from_file(file_full_path, "=")
     used_deprecated_options = effective_deprecated.intersection(used_options)
     if len(used_deprecated_options) > 0:
-        log.warn(f"{file_full_path}: The following options are deprecated: {', '.join(used_deprecated_options)}")
+        log.warn(
+            f"{escape(file_full_path)}: The following options are deprecated: {', '.join(used_deprecated_options)}"
+        )
         return False
     else:
-        log.print(f"{file_full_path}: OK", markup=False)
+        log.print(f"{escape(file_full_path)}: OK", markup=False)
         return True

@@ -64,20 +64,18 @@ class TestValidDefaultValue(TestDefaultsBase):
         for name in names_and_valid_values:
             assert kconfig.syms[name].str_value == names_and_valid_values[name]
 
-        # kconfiglib checks string and bool values ahead "normal" checks and uses different messages
-        # FIXME after this warning will be converted to kconfiglib report
-        stderr_lines = (
+        expected_fragments = (
             "Failed to set default value for HEX_CONFIG from sdkconfig",
             "Failed to set default value for INT_CONFIG from sdkconfig",
             "Failed to set default value for FLOAT_CONFIG from sdkconfig",
-            "'0x42' is not a valid value for the bool symbol BOOL_CONFIG",
+            "is not a valid value for the bool symbol BOOL_CONFIG",
             "malformed string literal in assignment to",
-        )  # STRING_CONFIG
-        for line in stderr_lines:
+        )
+        for fragment in expected_fragments:
             if sdkconfig == "sdkconfig.invalid_defaults":
-                assert line in err
+                assert fragment in err, f"{fragment!r} not found in stderr"
             else:
-                assert line not in err
+                assert fragment not in err, f"{fragment!r} unexpectedly found in stderr"
 
         kconfig.report.reset()
 
@@ -90,15 +88,19 @@ class TestLoadingDefaults(TestDefaultsBase):
         * If a dependent symbol is loaded before the "dependee", both symbols should be loaded correctly
     """
 
-    def test_defaults_loading(self, capsys: pytest.CaptureFixture) -> None:
+    def test_defaults_loading(self) -> None:
         kconfig = Kconfig(os.path.join(KCONFIG_PATH, "Kconfig.loading_defaults"))
         kconfig.load_config(os.path.join(SDKCONFIGS_PATH, "sdkconfig.differing_defaults"))
-        _, err = capsys.readouterr()
 
-        # Check stderr for expected messages
-        assert "Default value for DEPENDEE" in err
-        assert "Default value for DEP" in err
-        assert "Default value for PROMPTLESS" not in err, (
+        from esp_kconfiglib.report import DefaultValuesArea
+
+        area = kconfig.report.area_to_instance[DefaultValuesArea]
+        assert isinstance(area, DefaultValuesArea)
+        reported_names = {name for name, _, _, _ in area.changed_defaults}
+        assert "DEPENDEE" in reported_names
+        assert "DEP" in reported_names
+        promptless_names = {name for name, _, _, _, _ in area.changed_values_promptless}
+        assert "PROMPTLESS" not in reported_names and "PROMPTLESS" not in promptless_names, (
             "Promptless symbols should ignore their default values from sdkconfig"
         )
 
@@ -268,14 +270,10 @@ class TestLoadingUserSetChoice(TestBase):
     def test_loading_choice_all_disabled(self):
         kconfig = Kconfig(os.path.join(KCONFIG_PATH, "Kconfig.choice_loading"))
         kconfig.load_config(os.path.join(SDKCONFIGS_PATH, "sdkconfig.choice_all_disabled"))
-        report_json = kconfig.report._return_json()
-        assert "Info" in report_json["header"]["status"]
-        misc_area = next((area for area in report_json["areas"] if area["title"] == "Miscellaneous"), None)
-        assert misc_area is not None
-        assert (
-            "Trying to set symbol ALPHA to n, but it is currently selected by choice TEST_CHOICE. "
-            "For setting it to n, set another choice symbol to y instead." in misc_area["data"]
-        )
+
+        notes = [m["message"] for m in kconfig.report._log_cache if m["level"] == "note"]
+        assert any("Trying to set symbol ALPHA to n" in msg for msg in notes)
+        assert any("currently selected by choice TEST_CHOICE" in msg for msg in notes)
 
         assert kconfig.syms["ALPHA"].str_value == "y"
         assert kconfig.syms["BETA"].str_value == "n"
@@ -394,13 +392,9 @@ class TestMultipleValueSet(TestBase):
         assert "CONFIG_GAMMA_SECOND_COMMON=y" in output_sdkconfig
         assert "CHOICE_SECOND_COMMON" in multiple_assignments["data"]["choices"]
 
-        assert "Info" in json_report["header"]["status"]
-        misc_area = next((area for area in json_report["areas"] if area["title"] == "Miscellaneous"), None)
-        assert misc_area is not None
-        assert (
-            "Choice CHOICE_SECOND_COMMON has multiple active selections. "
-            "The last one will be used: GAMMA_SECOND_COMMON." in misc_area["data"]
-        )
+        notes = [m["message"] for m in kconfig.report._log_cache if m["level"] == "note"]
+        assert any("Choice CHOICE_SECOND_COMMON has multiple active selections" in msg for msg in notes)
+        assert any("The last one will be used" in msg for msg in notes)
 
         kconfig.report.reset()
 
@@ -684,7 +678,7 @@ class TestDisabledSymbols(TestBase):
         from esp_kconfiglib.report import DefaultValuesArea
 
         area = kconfig.report.area_to_instance[DefaultValuesArea]
-        promptless_names = {name for name, _, _, _ in area.changed_values_promptless}
+        promptless_names = {name for name, _, _, _, _ in area.changed_values_promptless}
 
         assert "PROMPTLESS_STRING" not in promptless_names, (
             "Allowed promptless symbol should not appear in DefaultValuesArea"
@@ -707,7 +701,7 @@ class TestDisabledSymbols(TestBase):
         from esp_kconfiglib.report import DefaultValuesArea
 
         area = kconfig.report.area_to_instance[DefaultValuesArea]
-        promptless_names = {name for name, _, _, _ in area.changed_values_promptless}
+        promptless_names = {name for name, _, _, _, _ in area.changed_values_promptless}
 
         assert "PROMPTLESS_STRING" not in promptless_names
         assert "PROMPTLESS_BOOL" not in promptless_names

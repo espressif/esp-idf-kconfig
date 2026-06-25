@@ -348,7 +348,7 @@ class TestRenameConfig(KconfgenBaseTestCase):
             self.args,
             TestRenameConfig.input,
             "",
-            expected_error=f"RuntimeError: Error in {self.rename_file} (line 2): {expected_error}",
+            expected_error=f"Error in {self.rename_file} (line 2): {expected_error}",
         )
 
     def test_lowercase_in_old_name(self, runner):
