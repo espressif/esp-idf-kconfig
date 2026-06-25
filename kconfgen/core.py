@@ -507,7 +507,7 @@ def main(
                 config.load_config(temp_file, replace=False)
 
                 for symbol, value in config.missing_syms:
-                    log.warn(f"unknown kconfig symbol '{escape(symbol)}' assigned to '{escape(str(value))}' in {name}")
+                    log.note(f"unknown kconfig symbol '{escape(symbol)}' assigned to '{escape(str(value))}' in {name}")
             finally:
                 try:
                     os.remove(temp_file)
