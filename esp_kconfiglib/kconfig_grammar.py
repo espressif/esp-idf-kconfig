@@ -993,7 +993,7 @@ class KconfigGrammar:
             split_lines_idxs: List[int] = []
 
             for line_idx, line in enumerate(lines):
-                line = line.replace("\t", "    ")  # Replace tabs with 4 spaces
+                line = line.expandtabs()
                 # Remove unnecessary whitespaces from otherwise empty line
                 if line.isspace():
                     return_file += "\n"
