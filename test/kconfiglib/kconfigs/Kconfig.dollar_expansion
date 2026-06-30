@@ -1,0 +1,17 @@
+mainmenu "Dollar expansion test"
+
+config EMBEDDED
+    string
+    default "/p/$DOLLAR_TEST_VAR/x"
+
+config LEADING
+    string
+    default "$DOLLAR_TEST_VAR/x"
+
+config PAREN
+    string
+    default "$(DOLLAR_TEST_VAR)/x"
+
+config BRACE
+    string
+    default "${DOLLAR_TEST_VAR}/x"

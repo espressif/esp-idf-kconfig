@@ -743,3 +743,23 @@ class TestStringEscapes(TestBase):
         assert kconfig.syms["WINPATH"].str_value == "C:\\tmp"
 
         kconfig.report.reset()
+
+
+@pytest.mark.parametrize("version", ["1", "2"], indirect=True)
+class TestDollarExpansion(TestBase):
+    """
+    Both parsers expand embedded environment references inside quoted strings
+    identically: $(NAME), ${NAME} and bare $NAME, whether the reference spans
+    the whole value or is only part of it (e.g. "$NAME/suffix").
+    """
+
+    def test_embedded_env_refs_are_expanded(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("DOLLAR_TEST_VAR", "hello")
+        kconfig = Kconfig(os.path.join(KCONFIG_PATH, "Kconfig.dollar_expansion"))
+
+        assert kconfig.syms["EMBEDDED"].str_value == "/p/hello/x"
+        assert kconfig.syms["LEADING"].str_value == "hello/x"
+        assert kconfig.syms["PAREN"].str_value == "hello/x"
+        assert kconfig.syms["BRACE"].str_value == "hello/x"
+
+        kconfig.report.reset()
