@@ -27,8 +27,6 @@ from typing import Set
 from typing import Tuple
 from typing import Union
 
-from esp_pylib.logger import EspLog
-from esp_pylib.logger import Verbosity
 from esp_pylib.logger import log
 from rich.markup import escape
 
@@ -496,8 +494,7 @@ class Kconfig(object):
         "unique_choices",
         "unique_defined_syms",
         "variables",
-        "_warn",
-        "_warn_saved_verbosity",
+        "warn",
         "info",
         "warn_assign_override",
         "warn_assign_redun",
@@ -520,8 +517,7 @@ class Kconfig(object):
         "_reuse_tokens",
     )
     print_report: bool
-    _warn: bool
-    _warn_saved_verbosity: int
+    warn: bool
     warnings: List[str]
     syms: Dict[str, "Symbol"]
     const_syms: Dict[str, "Symbol"]
@@ -651,8 +647,11 @@ class Kconfig(object):
         # because it assumes symlink/../foo is the same as foo/.
         self._srctree_prefix = realpath(self.srctree) + os.sep
 
-        self._warn_saved_verbosity = Verbosity.NORMAL
-        self._warn = True
+        """
+        warn:
+            Deprecated, left only for backward compatibility.
+            Use esp_pylib's logging system instead.
+        """
         self.warn: bool = warn
 
         self.info = info
@@ -1060,32 +1059,6 @@ class Kconfig(object):
             self.report.print_report()
 
         return self
-
-    @property
-    def warn(self) -> bool:
-        """
-        When True (default), the logger verbosity is unchanged.
-        When set to False, the logger is switched to ``Verbosity.SILENT``
-        so that only errors are printed. The previous verbosity is saved and
-        restored when ``warn`` is set back to True.
-        WARNING: Setting Kconfig.warn is generally a deprecated API, but it is kept for backward
-        compatibility. Please, do not use it if not necessary.
-        """
-        return self._warn
-
-    @warn.setter
-    def warn(self, value: bool) -> None:
-        if value == self._warn:
-            return
-        self._warn = value
-        instance = EspLog.instance
-        if instance is None:
-            instance = EspLog()
-        if not value:
-            self._warn_saved_verbosity = instance._verbosity
-            instance.set_verbosity(Verbosity.SILENT)
-        else:
-            instance.set_verbosity(self._warn_saved_verbosity)
 
     @property
     def mainmenu_text(self):
@@ -2663,7 +2636,7 @@ class Kconfig(object):
 
         if self._parsing_kconfigs:
             self.syms[name] = sym
-        else:
+        elif self.warn:
             log.debug(f"no symbol {name} in configuration")
 
         return sym
