@@ -468,11 +468,13 @@ class KconfigOptionBlock(KconfigBlock):
                             instring, current_loc, "Error parsing option block: prompt must be a quoted string.", self
                         )
 
-                    prompt_str, current_token_idx = prompt_from_token_list(tokens[1:])
+                    prompt_str, prompt_end_idx = prompt_from_token_list(tokens[1:])
+                    # prompt_end_idx is relative to tokens[1:]; offset by 1 for the type keyword
+                    if_idx = prompt_end_idx + 1
 
                     cond = None
-                    if len(tokens) > current_token_idx and tokens[current_token_idx] == "if":  # inline condition
-                        expr_text = " ".join(tokens[current_token_idx + 1 :])
+                    if len(tokens) > if_idx and tokens[if_idx] == "if":  # inline condition
+                        expr_text = " ".join(tokens[if_idx + 1 :])
                         try:
                             cond = expression.parse_string(expr_text, parse_all=True).as_list()
                         except ParseException as pe:
@@ -592,11 +594,13 @@ class KconfigOptionBlock(KconfigBlock):
                     raise ParseException(
                         instring, current_loc, "Error parsing option block: prompt must be a quoted string.", self
                     )
-                prompt_str, current_token_idx = prompt_from_token_list(tokens[1:])
+                prompt_str, prompt_end_idx = prompt_from_token_list(tokens[1:])
+                # prompt_end_idx is relative to tokens[1:]; offset by 1 for the "prompt" keyword
+                if_idx = prompt_end_idx + 1
 
                 cond = None
-                if len(tokens) > current_token_idx and tokens[current_token_idx] == "if":  # inline condition
-                    expr_text = " ".join(tokens[current_token_idx + 1 :])
+                if len(tokens) > if_idx and tokens[if_idx] == "if":  # inline condition
+                    expr_text = " ".join(tokens[if_idx + 1 :])
                     try:
                         cond = expression.parse_string(expr_text, parse_all=True).as_list()
                     except ParseException as pe:
@@ -737,7 +741,7 @@ class KconfigOptionBlock(KconfigBlock):
                             instring, current_loc, "Error parsing option block: prompt must be a quoted string.", self
                         )
 
-                    prompt_str, current_token_idx = prompt_from_token_list(tokens[1:])
+                    prompt_str, prompt_end_idx = prompt_from_token_list(tokens[1:])
 
                     option_dict["warning"].append(prompt_str)
                 else:

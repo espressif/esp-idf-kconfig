@@ -731,6 +731,47 @@ class TestDefaultPragmaRegression(TestBase):
 
 
 @pytest.mark.parametrize("version", ["1", "2"], indirect=True)
+class TestConditionalPrompt(TestBase):
+    """
+    When a symbol has a conditional prompt (``bool "text" if GATE`` or
+    ``prompt "text" if GATE``) and the gate is false, the symbol is
+    effectively promptless: user values from sdkconfig must be ignored and
+    the default must win.
+    """
+
+    def test_conditional_prompt_gate_false(self):
+        """
+        GATE=n -> *_GATE_FALSE symbols have invisible prompts, so user
+        value n from sdkconfig is ignored and default y applies.
+        """
+        kconfig = Kconfig(os.path.join(KCONFIG_PATH, "Kconfig.conditional_prompt"))
+        kconfig.load_config(os.path.join(SDKCONFIGS_PATH, "sdkconfig.conditional_prompt"))
+
+        assert kconfig.syms["TYPE_IF_GATE_FALSE"].str_value == "y"
+        assert kconfig.syms["TYPE_IF_GATE_FALSE"].visibility == 0
+        assert kconfig.syms["EXPLICIT_IF_GATE_FALSE"].str_value == "y"
+        assert kconfig.syms["EXPLICIT_IF_GATE_FALSE"].visibility == 0
+
+        kconfig.report.reset()
+
+    def test_conditional_prompt_gate_true(self):
+        """
+        *_GATE_TRUE symbols depend on TYPE_IF_GATE_FALSE which is y (from
+        previous assertion), so their prompts are visible and the user
+        value n from sdkconfig is applied.
+        """
+        kconfig = Kconfig(os.path.join(KCONFIG_PATH, "Kconfig.conditional_prompt"))
+        kconfig.load_config(os.path.join(SDKCONFIGS_PATH, "sdkconfig.conditional_prompt"))
+
+        assert kconfig.syms["TYPE_IF_GATE_TRUE"].str_value == "n"
+        assert kconfig.syms["TYPE_IF_GATE_TRUE"].visibility == 2
+        assert kconfig.syms["EXPLICIT_IF_GATE_TRUE"].str_value == "n"
+        assert kconfig.syms["EXPLICIT_IF_GATE_TRUE"].visibility == 2
+
+        kconfig.report.reset()
+
+
+@pytest.mark.parametrize("version", ["1", "2"], indirect=True)
 class TestStringEscapes(TestBase):
     """
     Backslash escapes in a string default must be unescaped on read identically
