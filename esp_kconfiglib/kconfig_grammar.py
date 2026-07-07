@@ -161,7 +161,7 @@ symbol_regex = r"""(?<!\S)
                     |-?\d+\.\d+(?:[eE][+-]?\d+)?  # floats: 1.5, -3.14, 1.5e-6, -2.5E10
                     |-?\d+[eE][+-]?\d+  # floats with exponent but no decimal: 1e-6, -2E10
                     |-?\d+   # numbers: 1234, -1234
-                    |[A-Z\d_]+  # variables: FOO, BAR_BAR, ENABLE_ESP64
+                    |[A-Za-z\d_]+  # variables: FOO, BAR_BAR, ENABLE_ESP64
                     |'(?:\\.|[^'\\])*'  # strings: 'a string', with \\. backslash escapes
                     |\"(?:\\.|[^\"\\])*\" # strings: "hello world", "", with \\. backslash escapes
                     |\"?\$[({]?[A-Z\d_]+[)}]?\"?"""  # $ENV, ENV can be in () or {} and the whole thing can be in ""

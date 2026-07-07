@@ -829,3 +829,28 @@ class TestDollarExpansion(TestBase):
         assert kconfig.syms["BRACE"].str_value == "hello/x"
 
         kconfig.report.reset()
+
+
+@pytest.mark.parametrize("version", ["1", "2"], indirect=True)
+class TestLowercaseSymbolNames(TestBase):
+    """
+    Lowercase config names are illegal in principle, but both parsers accept
+    them for backward compatibility. A lowercase symbol referenced in an
+    expression must resolve to the actual symbol (not a constant string), so
+    dependencies on it are evaluated against its value.
+    """
+
+    def test_lowercase_symbol_resolves_in_expression(self):
+        kconfig = Kconfig(os.path.join(KCONFIG_PATH, "Kconfig.lowercase_symbols"))
+
+        assert "lower_gate" in kconfig.syms
+        assert kconfig.syms["lower_gate"].str_value == "y"
+
+        # UPPER_DEPENDENT depends on the lowercase symbol lower_gate (=y). If
+        # lower_gate were treated as a constant string its tristate value would
+        # be 0 and UPPER_DEPENDENT would be invisible; visibility 2 proves it is
+        # resolved as a symbol.
+        assert kconfig.syms["UPPER_DEPENDENT"].visibility == 2
+        assert kconfig.syms["UPPER_DEPENDENT"].str_value == "y"
+
+        kconfig.report.reset()

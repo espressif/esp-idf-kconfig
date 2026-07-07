@@ -44,7 +44,6 @@ from .core import KconfigError
 from .core import MenuNode
 from .core import Symbol
 from .core import Variable
-from .core import is_float
 from .core import unescape
 
 ParserElement.enable_packrat(cache_size_limit=None)  # Speeds up parsing by caching intermediate results
@@ -130,7 +129,14 @@ class Parser:
 
     def parse_config(self, s: str, loc: int, parsed_config: ParseResults) -> None:
         self.kconfig.linenr = lineno(loc, s)
-        sym = self.kconfig._lookup_sym(parsed_config[1])
+        name = parsed_config[1]
+        # Lowercase config names are illegal in principle, but for backward compatibility we still
+        # accept them (only emitting a note) until all occurrences in third-party Kconfigs are fixed.
+        if any(c.islower() for c in name):
+            log.note(
+                f"{escape(self.file_stack[-1])}:{lineno(loc, s)}: config symbol '{name}' contains lowercase letters"
+            )
+        sym = self.kconfig._lookup_sym(name)
         self.kconfig.defined_syms.append(sym)
 
         node = MenuNode(
@@ -615,27 +621,8 @@ class Parser:
         Converts a string or a list of operands and operators to the corresponding Kconfig symbols and operators.
         """
 
-        def is_numeric(s: str) -> bool:
-            """Check if s is a numeric literal (int, hex, or float)."""
-            if not s:
-                return False
-            if s.isnumeric():
-                return True
-            if s[0] == "-":
-                s = s[1:]
-                if not s:
-                    return False
-            if s[0:2] in ["0x", "0X"]:
-                s = s[2:]
-                for c in s:
-                    if c not in "0123456789abcdefABCDEF":
-                        return False
-                return True
-            # Check for float (including scientific notation)
-            return is_float(s)
-
         operators = ("&&", "||", "!", "=", "!=", "<", "<=", ">", ">=")
-        if isinstance(expr, str):
+        if type(expr) is str:
             if expr in operators:
                 return self.kconfigize_operator[expr]
             # $(NAME) first tries to expand as a macro, then as an environment variable,
@@ -689,13 +676,8 @@ class Parser:
                     # start, e.g. "/prefix/$(VAR)/suffix" or "/prefix/$HOME/x".
                     if expr.startswith(("'", '"')) and "$" in expr:
                         return self._const_sym_with_embedded_vars(expr[1:-1])
-                    if (expr.startswith(("'", '"')) or not expr.isupper()) and not is_numeric(expr):
-                        # Quoted literals are unescaped (\\x -> x) so the value
-                        # matches the legacy parser; bare symbols pass through.
-                        if expr.startswith(("'", '"')):
-                            sym = self.kconfig._lookup_const_sym(unescape(expr[1:-1]))
-                        else:
-                            sym = self.kconfig._lookup_const_sym(expr)
+                    if expr.startswith(("'", '"')):
+                        sym = self.kconfig._lookup_const_sym(unescape(expr[1:-1]))
                     else:
                         sym = self.kconfig._lookup_sym(expr)
                     return sym
