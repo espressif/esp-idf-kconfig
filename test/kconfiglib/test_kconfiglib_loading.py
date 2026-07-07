@@ -306,6 +306,31 @@ class TestNestedChoices(TestBase):
 
 
 @pytest.mark.parametrize("version", ["1", "2"], indirect=True)
+class TestUnnamedChoicesStaySeparate(TestBase):
+    """
+    Regression test: multiple unnamed choices (bare ``choice`` without a name)
+    must each remain a separate choice.  A previous bug widened the symbol-name
+    regex to include lowercase letters, which caused ``Opt(symbol_name)`` after
+    ``choice`` to greedily match the ``bool`` keyword on the next line as the
+    choice name — merging every unnamed bool-typed choice into one and creating
+    a dependency loop.
+    """
+
+    def test_unnamed_choices_are_independent(self):
+        kconfig = Kconfig(os.path.join(KCONFIG_PATH, "Kconfig.unnamed_choices"))
+
+        assert len(kconfig.choices) == 2
+
+        color_choice, size_choice = kconfig.choices
+        assert color_choice.name is None
+        assert size_choice.name is None
+        assert [s.name for s in color_choice.syms] == ["COLOR_RED", "COLOR_BLUE"]
+        assert [s.name for s in size_choice.syms] == ["SIZE_SMALL", "SIZE_BIG"]
+
+        kconfig.report.reset()
+
+
+@pytest.mark.parametrize("version", ["1", "2"], indirect=True)
 class TestMultipleValueSet(TestBase):
     """
     Test cases test what happens if one config option is set multiple times.

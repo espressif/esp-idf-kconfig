@@ -821,9 +821,20 @@ class KconfigGrammar:
         ###########################
         # List of all possible options for the config/choice.
 
+        # Symbol name after a keyword (config, menuconfig, choice).
+        # leave_whitespace() + leading [ \t]+ ensures the match stays on
+        # the same line as the keyword — pyparsing won't skip a newline
+        # and accidentally grab the next line's first token.
         symbol_name = (
-            Word(alphanums.upper() + "_").set_results_name("config_name", list_all_matches=True).set_name("symbol name")
+            Regex(r"[ \t]+[A-Za-z0-9_]+")
+            .leave_whitespace()
+            .add_parse_action(lambda t: t[0].strip())
+            .set_results_name("config_name", list_all_matches=True)
+            .set_name("symbol name")
         )
+        # Macro names start at column 0 (no preceding keyword), so they
+        # need normal pyparsing whitespace handling.
+        macro_name = Word(alphanums + "_").set_name("macro name")
         config_opts = KconfigOptionBlock().leave_whitespace().set_results_name("config_opts")
         config = (
             (Keyword("config") - symbol_name - config_opts)
@@ -850,7 +861,7 @@ class KconfigGrammar:
         # This part adds support for this.
         macro = (
             (
-                symbol_name.set_results_name("name")
+                macro_name.set_results_name("name")
                 + one_of([":=", "="]).set_results_name("operation")
                 + symbol.set_results_name("value")
             )
