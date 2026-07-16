@@ -369,8 +369,18 @@ class MenuConfigState:
             sc = node.item
             if not isinstance(sc, (Symbol, Choice)):
                 continue
+
+            search_strings = []
+            if sc.name:
+                name = sc.name.lower()
+                prefix = self.kconf.config_prefix.lower()
+                search_strings.append(name)
+                search_strings.append(prefix + name)
+            if node.prompt:
+                search_strings.append(node.prompt[0].lower())
+
             for search in regex_searches:
-                if not (sc.name and search(sc.name.lower()) or node.prompt and search(node.prompt[0].lower())):
+                if not any(search(s) for s in search_strings):
                     break
             else:
                 matches.append(node)

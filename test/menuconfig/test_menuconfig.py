@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 from typing import Any
 from typing import Dict
+from typing import List
 from typing import Union
 
 import pytest
@@ -544,3 +545,50 @@ class TestMenuconfigHeadlessEnvVar:
         _main.callback(kconfig="Kconfig")
 
         assert patched_main["headless"] is expected_headless
+
+
+def _sc_names(nodes: List[MenuNode]) -> List[str]:
+    """Names of Symbol/Choice items; narrows for mypy."""
+    return [n.item.name for n in nodes if isinstance(n.item, (Symbol, Choice)) and n.item.name is not None]
+
+
+@pytest.mark.parametrize("version", ["1", "2"], indirect=True)
+class TestSearchNodes(MenuconfigTestBase):
+    def test_search_matches_config_prefix(self) -> None:
+        """sdkconfig-style CONFIG_FOO queries should match symbol FOO."""
+        kconfig = Kconfig(os.path.join(KCONFIGS_PATH, "Kconfig"))
+        state = _make_state(kconfig)
+
+        bare_matches, bare_err = state.search_nodes("motors_enabled")
+        prefixed_matches, prefixed_err = state.search_nodes("CONFIG_MOTORS_ENABLED")
+        mixed_case_matches, mixed_err = state.search_nodes("config_MOTORS_ENABLED")
+
+        assert bare_err is None and prefixed_err is None and mixed_err is None
+        bare_names = _sc_names(bare_matches)
+        assert bare_names
+        assert bare_names == _sc_names(prefixed_matches)
+        assert bare_names == _sc_names(mixed_case_matches)
+        assert bare_names[0] == "MOTORS_ENABLED"
+
+    def test_search_config_prefix_alone_matches_prefixed_names(self) -> None:
+        """A bare CONFIG_ token matches every symbol via its prefixed name."""
+        kconfig = Kconfig(os.path.join(KCONFIGS_PATH, "Kconfig"))
+        state = _make_state(kconfig)
+
+        matches, err = state.search_nodes("CONFIG_")
+        assert err is None
+        assert matches
+        assert "MOTORS_ENABLED" in set(_sc_names(matches))
+
+    def test_search_anchored_bare_name_still_matches(self) -> None:
+        """Anchored regex against bare symbol name must keep working."""
+        kconfig = Kconfig(os.path.join(KCONFIGS_PATH, "Kconfig"))
+        state = _make_state(kconfig)
+
+        matches, err = state.search_nodes("^motors_enabled$")
+        assert err is None
+        assert _sc_names(matches) == ["MOTORS_ENABLED"]
+
+        prefixed_matches, prefixed_err = state.search_nodes("^config_motors_enabled$")
+        assert prefixed_err is None
+        assert _sc_names(prefixed_matches) == ["MOTORS_ENABLED"]
