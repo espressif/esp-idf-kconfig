@@ -161,7 +161,7 @@ symbol_regex = r"""(?<!\S)
                     |-?\d+\.\d+(?:[eE][+-]?\d+)?  # floats: 1.5, -3.14, 1.5e-6, -2.5E10
                     |-?\d+[eE][+-]?\d+  # floats with exponent but no decimal: 1e-6, -2E10
                     |-?\d+   # numbers: 1234, -1234
-                    |[A-Z\d_]+  # variables: FOO, BAR_BAR, ENABLE_ESP64
+                    |[A-Za-z\d_]+  # variables: FOO, BAR_BAR, ENABLE_ESP64
                     |'(?:\\.|[^'\\])*'  # strings: 'a string', with \\. backslash escapes
                     |\"(?:\\.|[^\"\\])*\" # strings: "hello world", "", with \\. backslash escapes
                     |\"?\$[({]?[A-Z\d_]+[)}]?\"?"""  # $ENV, ENV can be in () or {} and the whole thing can be in ""
@@ -468,11 +468,13 @@ class KconfigOptionBlock(KconfigBlock):
                             instring, current_loc, "Error parsing option block: prompt must be a quoted string.", self
                         )
 
-                    prompt_str, current_token_idx = prompt_from_token_list(tokens[1:])
+                    prompt_str, prompt_end_idx = prompt_from_token_list(tokens[1:])
+                    # prompt_end_idx is relative to tokens[1:]; offset by 1 for the type keyword
+                    if_idx = prompt_end_idx + 1
 
                     cond = None
-                    if len(tokens) > current_token_idx and tokens[current_token_idx] == "if":  # inline condition
-                        expr_text = " ".join(tokens[current_token_idx + 1 :])
+                    if len(tokens) > if_idx and tokens[if_idx] == "if":  # inline condition
+                        expr_text = " ".join(tokens[if_idx + 1 :])
                         try:
                             cond = expression.parse_string(expr_text, parse_all=True).as_list()
                         except ParseException as pe:
@@ -592,11 +594,13 @@ class KconfigOptionBlock(KconfigBlock):
                     raise ParseException(
                         instring, current_loc, "Error parsing option block: prompt must be a quoted string.", self
                     )
-                prompt_str, current_token_idx = prompt_from_token_list(tokens[1:])
+                prompt_str, prompt_end_idx = prompt_from_token_list(tokens[1:])
+                # prompt_end_idx is relative to tokens[1:]; offset by 1 for the "prompt" keyword
+                if_idx = prompt_end_idx + 1
 
                 cond = None
-                if len(tokens) > current_token_idx and tokens[current_token_idx] == "if":  # inline condition
-                    expr_text = " ".join(tokens[current_token_idx + 1 :])
+                if len(tokens) > if_idx and tokens[if_idx] == "if":  # inline condition
+                    expr_text = " ".join(tokens[if_idx + 1 :])
                     try:
                         cond = expression.parse_string(expr_text, parse_all=True).as_list()
                     except ParseException as pe:
@@ -737,7 +741,7 @@ class KconfigOptionBlock(KconfigBlock):
                             instring, current_loc, "Error parsing option block: prompt must be a quoted string.", self
                         )
 
-                    prompt_str, current_token_idx = prompt_from_token_list(tokens[1:])
+                    prompt_str, prompt_end_idx = prompt_from_token_list(tokens[1:])
 
                     option_dict["warning"].append(prompt_str)
                 else:
@@ -817,9 +821,20 @@ class KconfigGrammar:
         ###########################
         # List of all possible options for the config/choice.
 
+        # Symbol name after a keyword (config, menuconfig, choice).
+        # leave_whitespace() + leading [ \t]+ ensures the match stays on
+        # the same line as the keyword — pyparsing won't skip a newline
+        # and accidentally grab the next line's first token.
         symbol_name = (
-            Word(alphanums.upper() + "_").set_results_name("config_name", list_all_matches=True).set_name("symbol name")
+            Regex(r"[ \t]+[A-Za-z0-9_]+")
+            .leave_whitespace()
+            .add_parse_action(lambda t: t[0].strip())
+            .set_results_name("config_name", list_all_matches=True)
+            .set_name("symbol name")
         )
+        # Macro names start at column 0 (no preceding keyword), so they
+        # need normal pyparsing whitespace handling.
+        macro_name = Word(alphanums + "_").set_name("macro name")
         config_opts = KconfigOptionBlock().leave_whitespace().set_results_name("config_opts")
         config = (
             (Keyword("config") - symbol_name - config_opts)
@@ -846,7 +861,7 @@ class KconfigGrammar:
         # This part adds support for this.
         macro = (
             (
-                symbol_name.set_results_name("name")
+                macro_name.set_results_name("name")
                 + one_of([":=", "="]).set_results_name("operation")
                 + symbol.set_results_name("value")
             )
@@ -993,7 +1008,7 @@ class KconfigGrammar:
             split_lines_idxs: List[int] = []
 
             for line_idx, line in enumerate(lines):
-                line = line.replace("\t", "    ")  # Replace tabs with 4 spaces
+                line = line.expandtabs()
                 # Remove unnecessary whitespaces from otherwise empty line
                 if line.isspace():
                     return_file += "\n"

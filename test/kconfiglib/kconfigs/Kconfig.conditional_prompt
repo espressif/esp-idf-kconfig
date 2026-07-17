@@ -1,0 +1,23 @@
+mainmenu "Conditional Prompt Test"
+
+    config GATE
+        bool
+        default n
+
+    config TYPE_IF_GATE_FALSE
+        bool "Prompt only when GATE" if GATE
+        default y
+
+    config TYPE_IF_GATE_TRUE
+        bool "Prompt only when TYPE_IF_GATE_FALSE" if TYPE_IF_GATE_FALSE
+        default y
+
+    config EXPLICIT_IF_GATE_FALSE
+        bool
+        prompt "Explicit prompt only when GATE" if GATE
+        default y
+
+    config EXPLICIT_IF_GATE_TRUE
+        bool
+        prompt "Explicit prompt only when TYPE_IF_GATE_FALSE" if TYPE_IF_GATE_FALSE
+        default y

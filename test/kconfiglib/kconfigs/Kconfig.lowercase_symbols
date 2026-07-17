@@ -1,0 +1,10 @@
+mainmenu "Lowercase symbol names test"
+
+config lower_gate
+    bool "Lowercase gate"
+    default y
+
+config UPPER_DEPENDENT
+    bool "Depends on lowercase symbol"
+    depends on lower_gate
+    default y

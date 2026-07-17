@@ -44,7 +44,6 @@ from .core import KconfigError
 from .core import MenuNode
 from .core import Symbol
 from .core import Variable
-from .core import is_float
 from .core import unescape
 
 ParserElement.enable_packrat(cache_size_limit=None)  # Speeds up parsing by caching intermediate results
@@ -130,7 +129,14 @@ class Parser:
 
     def parse_config(self, s: str, loc: int, parsed_config: ParseResults) -> None:
         self.kconfig.linenr = lineno(loc, s)
-        sym = self.kconfig._lookup_sym(parsed_config[1])
+        name = parsed_config[1]
+        # Lowercase config names are illegal in principle, but for backward compatibility we still
+        # accept them (only emitting a note) until all occurrences in third-party Kconfigs are fixed.
+        if any(c.islower() for c in name):
+            log.note(
+                f"{escape(self.file_stack[-1])}:{lineno(loc, s)}: config symbol '{name}' contains lowercase letters"
+            )
+        sym = self.kconfig._lookup_sym(name)
         self.kconfig.defined_syms.append(sym)
 
         node = MenuNode(
@@ -589,32 +595,34 @@ class Parser:
             env_var_sym = self.kconfig._lookup_const_sym(f"${{{name}}}")  # will expand to ${ENVAR_NAME}
         return env_var_sym
 
+    def _expand_string_vars(self, s: str) -> str:
+        """
+        Expand embedded $(NAME) and ${NAME} references within a string value.
+
+        Delegates to the v1 expansion engine: _expand_whole handles $(...)
+        references (macros, functions, env vars with full nesting support),
+        then expandvars handles ${...} and $NAME (POSIX shell-style).
+        """
+        result: str = self.kconfig._expand_whole(s, ())
+        return expandvars(result)
+
+    def _const_sym_with_embedded_vars(self, s: str) -> "Symbol":
+        """
+        Expand embedded $(...)/${...}/$NAME references in s and return the matching constant symbol.
+
+        The source is unescaped before expansion (matching parser v1): backslash
+        escapes in the literal parts are resolved first, and the expanded values
+        are inserted afterwards, so they are not unescaped a second time.
+        """
+        return self.kconfig._lookup_const_sym(self._expand_string_vars(unescape(s)))
+
     def kconfigize_expr(self, expr: Union[str, tuple, list]) -> Union[str, tuple, "Symbol", int]:
         """
         Converts a string or a list of operands and operators to the corresponding Kconfig symbols and operators.
         """
 
-        def is_numeric(s: str) -> bool:
-            """Check if s is a numeric literal (int, hex, or float)."""
-            if not s:
-                return False
-            if s.isnumeric():
-                return True
-            if s[0] == "-":
-                s = s[1:]
-                if not s:
-                    return False
-            if s[0:2] in ["0x", "0X"]:
-                s = s[2:]
-                for c in s:
-                    if c not in "0123456789abcdefABCDEF":
-                        return False
-                return True
-            # Check for float (including scientific notation)
-            return is_float(s)
-
         operators = ("&&", "||", "!", "=", "!=", "<", "<=", ">", ">=")
-        if isinstance(expr, str):
+        if type(expr) is str:
             if expr in operators:
                 return self.kconfigize_operator[expr]
             # $(NAME) first tries to expand as a macro, then as an environment variable,
@@ -645,8 +653,17 @@ class Parser:
                         )  # macros failed to expand even as environment variable are substituted with empty string
                     else:
                         raise KconfigError(f"{expr}: macro expanded to blank string")
-                else:  # name in {} or without brackets at all (only for environment variables)
-                    expr = expr[1:-1] if expr.startswith("{") and expr.endswith("}") else expr
+                elif expr.startswith("{") and expr.endswith("}"):
+                    # Pure ${NAME} reference spanning the entire content
+                    expr = expr[1:-1]
+                    return self.create_envvar(expr)
+                elif quoted and (expr.startswith(("(", "{")) or not expr.isidentifier()):
+                    # Quoted string with embedded reference(s) that don't span
+                    # the entire content, e.g. "$(IDF_PATH)/path" or "$HOME/x".
+                    # Expand all embedded $(...), ${...} and $NAME inline (v1 parity).
+                    return self._const_sym_with_embedded_vars("$" + expr)
+                else:
+                    # Bare $NAME (no brackets) spanning the whole value — environment variable only
                     return self.create_envvar(expr)
 
             else:  # symbol
@@ -655,13 +672,12 @@ class Parser:
                 elif expr in ("y", "'y'", '"y"'):
                     return self.kconfig.y
                 else:
-                    if (expr.startswith(("'", '"')) or not expr.isupper()) and not is_numeric(expr):
-                        # Quoted literals are unescaped (\\x -> x) so the value
-                        # matches the legacy parser; bare symbols pass through.
-                        if expr.startswith(("'", '"')):
-                            sym = self.kconfig._lookup_const_sym(unescape(expr[1:-1]))
-                        else:
-                            sym = self.kconfig._lookup_const_sym(expr)
+                    # Quoted string containing an embedded reference not at the
+                    # start, e.g. "/prefix/$(VAR)/suffix" or "/prefix/$HOME/x".
+                    if expr.startswith(("'", '"')) and "$" in expr:
+                        return self._const_sym_with_embedded_vars(expr[1:-1])
+                    if expr.startswith(("'", '"')):
+                        sym = self.kconfig._lookup_const_sym(unescape(expr[1:-1]))
                     else:
                         sym = self.kconfig._lookup_sym(expr)
                     return sym

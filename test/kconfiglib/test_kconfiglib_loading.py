@@ -306,6 +306,31 @@ class TestNestedChoices(TestBase):
 
 
 @pytest.mark.parametrize("version", ["1", "2"], indirect=True)
+class TestUnnamedChoicesStaySeparate(TestBase):
+    """
+    Regression test: multiple unnamed choices (bare ``choice`` without a name)
+    must each remain a separate choice.  A previous bug widened the symbol-name
+    regex to include lowercase letters, which caused ``Opt(symbol_name)`` after
+    ``choice`` to greedily match the ``bool`` keyword on the next line as the
+    choice name — merging every unnamed bool-typed choice into one and creating
+    a dependency loop.
+    """
+
+    def test_unnamed_choices_are_independent(self):
+        kconfig = Kconfig(os.path.join(KCONFIG_PATH, "Kconfig.unnamed_choices"))
+
+        assert len(kconfig.choices) == 2
+
+        color_choice, size_choice = kconfig.choices
+        assert color_choice.name is None
+        assert size_choice.name is None
+        assert [s.name for s in color_choice.syms] == ["COLOR_RED", "COLOR_BLUE"]
+        assert [s.name for s in size_choice.syms] == ["SIZE_SMALL", "SIZE_BIG"]
+
+        kconfig.report.reset()
+
+
+@pytest.mark.parametrize("version", ["1", "2"], indirect=True)
 class TestMultipleValueSet(TestBase):
     """
     Test cases test what happens if one config option is set multiple times.
@@ -731,6 +756,47 @@ class TestDefaultPragmaRegression(TestBase):
 
 
 @pytest.mark.parametrize("version", ["1", "2"], indirect=True)
+class TestConditionalPrompt(TestBase):
+    """
+    When a symbol has a conditional prompt (``bool "text" if GATE`` or
+    ``prompt "text" if GATE``) and the gate is false, the symbol is
+    effectively promptless: user values from sdkconfig must be ignored and
+    the default must win.
+    """
+
+    def test_conditional_prompt_gate_false(self):
+        """
+        GATE=n -> *_GATE_FALSE symbols have invisible prompts, so user
+        value n from sdkconfig is ignored and default y applies.
+        """
+        kconfig = Kconfig(os.path.join(KCONFIG_PATH, "Kconfig.conditional_prompt"))
+        kconfig.load_config(os.path.join(SDKCONFIGS_PATH, "sdkconfig.conditional_prompt"))
+
+        assert kconfig.syms["TYPE_IF_GATE_FALSE"].str_value == "y"
+        assert kconfig.syms["TYPE_IF_GATE_FALSE"].visibility == 0
+        assert kconfig.syms["EXPLICIT_IF_GATE_FALSE"].str_value == "y"
+        assert kconfig.syms["EXPLICIT_IF_GATE_FALSE"].visibility == 0
+
+        kconfig.report.reset()
+
+    def test_conditional_prompt_gate_true(self):
+        """
+        *_GATE_TRUE symbols depend on TYPE_IF_GATE_FALSE which is y (from
+        previous assertion), so their prompts are visible and the user
+        value n from sdkconfig is applied.
+        """
+        kconfig = Kconfig(os.path.join(KCONFIG_PATH, "Kconfig.conditional_prompt"))
+        kconfig.load_config(os.path.join(SDKCONFIGS_PATH, "sdkconfig.conditional_prompt"))
+
+        assert kconfig.syms["TYPE_IF_GATE_TRUE"].str_value == "n"
+        assert kconfig.syms["TYPE_IF_GATE_TRUE"].visibility == 2
+        assert kconfig.syms["EXPLICIT_IF_GATE_TRUE"].str_value == "n"
+        assert kconfig.syms["EXPLICIT_IF_GATE_TRUE"].visibility == 2
+
+        kconfig.report.reset()
+
+
+@pytest.mark.parametrize("version", ["1", "2"], indirect=True)
 class TestStringEscapes(TestBase):
     """
     Backslash escapes in a string default must be unescaped on read identically
@@ -741,5 +807,50 @@ class TestStringEscapes(TestBase):
         kconfig = Kconfig(os.path.join(KCONFIG_PATH, "Kconfig.string_escape"))
         assert kconfig.syms["GREETING"].str_value == 'he said "hi"'
         assert kconfig.syms["WINPATH"].str_value == "C:\\tmp"
+
+        kconfig.report.reset()
+
+
+@pytest.mark.parametrize("version", ["1", "2"], indirect=True)
+class TestDollarExpansion(TestBase):
+    """
+    Both parsers expand embedded environment references inside quoted strings
+    identically: $(NAME), ${NAME} and bare $NAME, whether the reference spans
+    the whole value or is only part of it (e.g. "$NAME/suffix").
+    """
+
+    def test_embedded_env_refs_are_expanded(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("DOLLAR_TEST_VAR", "hello")
+        kconfig = Kconfig(os.path.join(KCONFIG_PATH, "Kconfig.dollar_expansion"))
+
+        assert kconfig.syms["EMBEDDED"].str_value == "/p/hello/x"
+        assert kconfig.syms["LEADING"].str_value == "hello/x"
+        assert kconfig.syms["PAREN"].str_value == "hello/x"
+        assert kconfig.syms["BRACE"].str_value == "hello/x"
+
+        kconfig.report.reset()
+
+
+@pytest.mark.parametrize("version", ["1", "2"], indirect=True)
+class TestLowercaseSymbolNames(TestBase):
+    """
+    Lowercase config names are illegal in principle, but both parsers accept
+    them for backward compatibility. A lowercase symbol referenced in an
+    expression must resolve to the actual symbol (not a constant string), so
+    dependencies on it are evaluated against its value.
+    """
+
+    def test_lowercase_symbol_resolves_in_expression(self):
+        kconfig = Kconfig(os.path.join(KCONFIG_PATH, "Kconfig.lowercase_symbols"))
+
+        assert "lower_gate" in kconfig.syms
+        assert kconfig.syms["lower_gate"].str_value == "y"
+
+        # UPPER_DEPENDENT depends on the lowercase symbol lower_gate (=y). If
+        # lower_gate were treated as a constant string its tristate value would
+        # be 0 and UPPER_DEPENDENT would be invisible; visibility 2 proves it is
+        # resolved as a symbol.
+        assert kconfig.syms["UPPER_DEPENDENT"].visibility == 2
+        assert kconfig.syms["UPPER_DEPENDENT"].str_value == "y"
 
         kconfig.report.reset()

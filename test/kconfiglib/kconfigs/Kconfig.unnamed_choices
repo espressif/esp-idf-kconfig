@@ -1,0 +1,21 @@
+mainmenu "Unnamed choices test"
+
+choice
+    bool "Pick color"
+    default COLOR_RED
+
+    config COLOR_RED
+        bool "Red"
+    config COLOR_BLUE
+        bool "Blue"
+endchoice
+
+choice
+    bool "Pick size"
+    default SIZE_SMALL
+
+    config SIZE_SMALL
+        bool "Small"
+    config SIZE_BIG
+        bool "Big"
+endchoice
