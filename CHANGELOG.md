@@ -20,6 +20,33 @@
 </div>
 <hr>
 
+## v3.12.0 (2026-07-17)
+
+### ✨ New Features
+
+- **menuconfig**: match sdkconfig-style CONFIG_ names in search *(Alexey Lapshin - 07fe5a5)*
+- improve error reporting from the parser v2 *(Jan Beran - d52a6f4)*
+- adopt esp-pylib for logging (except configuration report) *(Jan Beran - 69732c4)*
+
+### 🐛 Bug Fixes
+
+- **parser**: prevent unnamed choices to merge into one *(Jan Beran - 2c2ccfa)*
+- **kconfserver**: send error when request does not contain a version *(Jan Beran - 8c16dfa)*
+- log if illegal config option name is used *(Jan Beran - 5644e7b)*
+- fix parsing conditional prompt in parser v2 *(Jan Beran - 6fb1b8a)*
+- stop Kconfig.warn from mutating global logger verbosity *(Jan Beran - 568d100)*
+- expand embedded $() and ${} references in quoted strings *(Jan Beran - c4e20c8)*
+- use the same tab expansion logic in both parsers *(Jan Beran - eff3f7e)*
+- lower the severity of unknown config symbol in sdkconfig.defaults *(Jan Beran - 70d322f)*
+- prevent raw exception tracebacks from being printed to stdout *(Jan Beran - c45b22d)*
+- prevent nested choices' data to leak into each other *(Jan Beran - bddfe41)*
+
+### 🔧 Code Refactoring
+
+- **kconfiglib**: complete esp_pylib logging migration *(Jan Beran - 1f53ad7)*
+- **kconfiglib**: use type() is for type checks instead of __class__ is *(Jan Beran - ff63cf0)*
+
+
 ## v3.11.1 (2026-06-08)
 
 ### 🐛 Bug Fixes
