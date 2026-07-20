@@ -310,17 +310,17 @@ def append_deprecated_doc(
                                 f_o.write("    - {}\n".format(", ".join(dep_names)))
 
 
-def write_docs(config: kconfiglib.Kconfig, filename: str, write_deprecated: bool = True) -> None:
+def write_docs(kconfig: kconfiglib.Kconfig, filename: str, write_deprecated: bool = True) -> None:
     """Write Kconfig documentation in RST format, optionally with deprecated options section."""
     try:
         target = os.environ["IDF_TARGET"]
     except KeyError:
         log.die("IDF_TARGET environment variable must be defined!")
 
-    visibility = gen_kconfig_doc.ConfigTargetVisibility(config, target)
-    gen_kconfig_doc.write_docs(config, visibility, filename)
-    if write_deprecated and config.deprecated_options:
-        append_deprecated_doc(config.deprecated_options, config, visibility, filename)
+    visibility = gen_kconfig_doc.ConfigTargetVisibility(kconfig, target)
+    gen_kconfig_doc.write_docs(kconfig, visibility, filename)
+    if write_deprecated and kconfig.deprecated_options:
+        append_deprecated_doc(kconfig.deprecated_options, kconfig, visibility, filename)
 
 
 def write_report(config: kconfiglib.Kconfig, filename: str, write_deprecated: bool = True) -> None:

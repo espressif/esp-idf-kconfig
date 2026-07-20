@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# SPDX-FileCopyrightText: 2024-2025 Espressif Systems (Shanghai) CO LTD
+# SPDX-FileCopyrightText: 2024-2026 Espressif Systems (Shanghai) CO LTD
 # SPDX-License-Identifier: Apache-2.0
 import io
 import os
@@ -46,7 +46,7 @@ class TestDocOutput:
 
     def get_doc_out(self, config_name, data):
         with io.StringIO() if sys.version_info.major == 3 else io.BytesIO() as output:
-            gen_kconfig_doc.write_menu_item(output, self.get_config(config_name, data), data.visibility)
+            gen_kconfig_doc.write_menu_item(output, self.get_config(config_name, data), data.visibility, data.config)
             output.seek(0)
             return output.read()
 
@@ -56,9 +56,9 @@ class TestDocOutput:
 
     def test_multiple_defaults(self, data):
         s = self.get_doc_out("CHIPA_OPTION", data)
-        assert "- 5" not in s
+        assert "- 5 if :ref:`CONFIG_CHIPA_REV_MIN` < 2" in s
         assert "- 4 if CHIPA_VERSION = 2" in s
-        assert "- 9" not in s
+        assert "- 9 if :ref:`CONFIG_CHIPA_REV_MIN` = 3" in s
 
     def test_string_default(self, data):
         s = self.get_doc_out("COMPILER", data)
