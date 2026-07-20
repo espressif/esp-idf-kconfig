@@ -1,0 +1,59 @@
+mainmenu "Test set / set default vs depends on"
+
+
+    comment "Test set (strong) ignores target depends on"
+
+    config SET_SRC
+        bool
+        default y
+        set SET_TARGET=42
+
+    config SET_TARGET
+        int "set target"
+        default 1
+        depends on NOT_DEFINED
+
+
+    comment "Test set default respects target depends on"
+
+    config SET_DEFAULT_SRC_OK
+        bool
+        default y
+        set default SET_DEFAULT_TARGET_OK=42
+
+    config SET_DEFAULT_TARGET_OK
+        int "set default target (deps met)"
+        default 1
+
+    config SET_DEFAULT_SRC_BLOCKED
+        bool
+        default y
+        set default SET_DEFAULT_TARGET_BLOCKED=42
+
+    config SET_DEFAULT_TARGET_BLOCKED
+        int "set default target (deps unmet)"
+        default 1
+        depends on NOT_DEFINED
+
+
+    comment "Test set default respects depends on for string and float"
+
+    config STR_SRC
+        bool
+        default y
+        set default STR_TARGET="blocked"
+
+    config STR_TARGET
+        string "string target"
+        default "fallback"
+        depends on NOT_DEFINED
+
+    config FLOAT_SRC
+        bool
+        default y
+        set default FLOAT_TARGET=3.14
+
+    config FLOAT_TARGET
+        float "float target"
+        default 1.0
+        depends on NOT_DEFINED

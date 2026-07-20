@@ -1,0 +1,30 @@
+#
+# Automatically generated file. DO NOT EDIT.
+# Espressif IoT Development Framework (ESP-IDF)  Project Configuration
+#
+
+#
+# Test set (strong) ignores target depends on
+#
+# default:
+CONFIG_SET_SRC=y
+# default:
+CONFIG_SET_TARGET=42
+
+#
+# Test set default respects target depends on
+#
+# default:
+CONFIG_SET_DEFAULT_SRC_OK=y
+# default:
+CONFIG_SET_DEFAULT_TARGET_OK=42
+# default:
+CONFIG_SET_DEFAULT_SRC_BLOCKED=y
+
+#
+# Test set default respects depends on for string and float
+#
+# default:
+CONFIG_STR_SRC=y
+# default:
+CONFIG_FLOAT_SRC=y

@@ -5053,10 +5053,10 @@ class Symbol:
 
             if use_defaults:
                 # 4) Apply weak_rev_values (weakly-set) if any
-                # Check if indirect value setting is in effect - equivalent to select on BOOl symbol
+                # Like imply: only apply when the target's direct dependencies are met
                 for weak_rev_value in self.weak_rev_values:
                     candidate_val, cond, src = weak_rev_value
-                    if expr_value(cond):
+                    if expr_value(cond) and expr_value(self.direct_dep):
                         if _is_base_n(candidate_val.name, base):
                             val = candidate_val.name
                             val_num_int = int(val, base)
@@ -5132,11 +5132,12 @@ class Symbol:
                     val = self._user_value
                 else:
                     # 3) Apply weak_rev_values (weakly-set) if any
+                    # Like imply: only apply when the target's direct dependencies are met
                     for weak_rev_value in self.weak_rev_values:
                         candidate_val, cond, _ = weak_rev_value
-                        if expr_value(cond):
+                        if expr_value(cond) and expr_value(self.direct_dep):
                             val = candidate_val.str_value
-                            # same as select; if indirectly set, it is written to .config even if not visible
+                            # same as imply; if weakly set, it is written to .config even if not visible
                             self._write_to_conf = True
                             break
                     # Otherwise, look at defaults
@@ -5214,9 +5215,10 @@ class Symbol:
 
             if use_defaults:
                 # 4) Apply weak_rev_values (weakly-set) if any
+                # Like imply: only apply when the target's direct dependencies are met
                 for weak_rev_value in self.weak_rev_values:
                     candidate_val, cond, src = weak_rev_value
-                    if expr_value(cond):
+                    if expr_value(cond) and expr_value(self.direct_dep):
                         if is_float(candidate_val.name):
                             val = _normalize_float(candidate_val.name)
                             val_num_float = float(val)
