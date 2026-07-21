@@ -118,6 +118,12 @@ class TestDocOutput:
         s = self.get_doc_out("ALWAYS_VISIBLE", data)
         assert "Symbol can be set when:" not in s
 
+    def test_can_be_set_when_negated_dependency(self, data):
+        # depends on a visible bool being off -> "<sym> is disabled"
+        s = self.get_doc_out("DEP_NEG_DEPEND", data)
+        assert "Symbol can be set when:" in s
+        assert ":ref:`CONFIG_BOOL_OPTION` is disabled" in s
+
     def test_when_enabled_forward_dependencies(self, data):
         s = self.get_doc_out("DEP_SOURCE", data)
         assert "Symbol can be set when:" in s

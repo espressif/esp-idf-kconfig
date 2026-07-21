@@ -205,6 +205,10 @@ mainmenu "Main menu"
         depends on BOOL_OPTION
         default 1
 
+    config DEP_NEG_DEPEND
+        bool "option that requires a visible bool to be disabled"
+        depends on !BOOL_OPTION
+
     config DEP_FORCED_BY_TARGET
         bool "forced by IDF_TARGET select"
 

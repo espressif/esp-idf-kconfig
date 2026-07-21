@@ -254,7 +254,11 @@ def _minimize_expr(expr, visibility, kconfig):
     if isinstance(expr, tuple):
         if expr[0] == kconfiglib.NOT:
             new_expr = _minimize_expr(expr[1], visibility, kconfig)
-            return y if new_expr is n else n
+            if new_expr is n:
+                return y
+            if new_expr is y:
+                return n
+            return (kconfiglib.NOT, new_expr)
         else:
             new_expr1 = _minimize_expr(expr[1], visibility, kconfig)
             new_expr2 = _minimize_expr(expr[2], visibility, kconfig)
