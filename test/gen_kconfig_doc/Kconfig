@@ -6,10 +6,12 @@ mainmenu "Main menu"
     config IDF_TARGET_CHIPA
         bool
         default "y" if IDF_TARGET="chipa"
+        select DEP_FORCED_BY_TARGET
 
     config IDF_TARGET_CHIPB
         bool
         default "y" if IDF_TARGET="chipb"
+        select DEP_FORCED_BY_TARGET
 
     config ALWAYS_VISIBLE
         bool "Always visible option"
@@ -172,3 +174,60 @@ mainmenu "Main menu"
         int "int option"
         range 1 10 if IDF_TARGET_CHIPA
         range 100 200 if IDF_TARGET_CHIPB
+
+    # --- dependencies documented for sdkconfig.defaults authors (IDFGH-12439) ---
+
+    config DEP_GATE
+        bool "dependency gate"
+
+    config DEP_SELECTED
+        bool "selected target"
+
+    config DEP_IMPLIED
+        bool "implied target"
+
+    config DEP_SET_TARGET
+        int "set target"
+        default 0
+
+    config DEP_SOURCE
+        bool "dependency source"
+        depends on DEP_GATE
+        select DEP_SELECTED
+        imply DEP_IMPLIED
+        set DEP_SET_TARGET=42 if BOOL_OPTION
+        set default DEP_SET_TARGET=7
+        # imply / set default stay in the fixture to confirm they are omitted from docs
+
+    config DEP_COND_PROMPT
+        int
+        prompt "conditional prompt option" if DEP_GATE
+        depends on BOOL_OPTION
+        default 1
+
+    config DEP_FORCED_BY_TARGET
+        bool "forced by IDF_TARGET select"
+
+    config DEP_PROMPTLESS_TARGET
+        bool
+
+    config DEP_SELECTS_PROMPTLESS
+        bool "selects a promptless symbol"
+        select DEP_PROMPTLESS_TARGET
+
+    # Target-specific range/default + fallback (like BOOTLOADER_APP_SEC_VER_SIZE_EFUSE_FIELD)
+    config TARGETED_RANGE_DEFAULT
+        int "targeted range and default"
+        depends on BOOL_OPTION
+        range 1 32 if IDF_TARGET_CHIPA
+        default 32 if IDF_TARGET_CHIPA
+        range 1 4 if IDF_TARGET_CHIPB
+        default 4 if IDF_TARGET_CHIPB
+        range 1 16
+        default 16
+
+    config GENERIC_DEFAULT_IF
+        int "generic default with fallback"
+        depends on BOOL_OPTION
+        default 7 if DEP_GATE
+        default 3
