@@ -107,13 +107,13 @@ class TestDocOutput:
         assert re.search(r"- op2\s+\(CONFIG_CHOICE_FOR_CHIPA_OP2\)", s)
 
         s = self.get_doc_out("OPT_DEPENDENT_ON_CHOICE_OP2", data)
-        assert "- Yes (enabled) if :ref:`CONFIG_CHOICE_FOR_CHIPA_OP2<CONFIG_CHOICE_FOR_CHIPA_OP2>`" in s
+        assert "- Yes (enabled) if :ref:`CONFIG_CHOICE_FOR_CHIPA_OP2<CONFIG_CHOICE_FOR_CHIPA_OP2>` is enabled" in s
 
     def test_can_be_set_when_combines_prompt_and_depends(self, data):
         s = self.get_doc_out("DEP_COND_PROMPT", data)
         assert "Symbol can be set when:" in s
-        assert ":ref:`CONFIG_DEP_GATE`" in s
-        assert ":ref:`CONFIG_BOOL_OPTION`" in s
+        # bool dependencies read as "<sym> is enabled" / "is disabled"
+        assert ":ref:`CONFIG_DEP_GATE` is enabled && :ref:`CONFIG_BOOL_OPTION` is enabled" in s
         # always-assignable options omit the section
         s = self.get_doc_out("ALWAYS_VISIBLE", data)
         assert "Symbol can be set when:" not in s
@@ -124,7 +124,7 @@ class TestDocOutput:
         assert ":ref:`CONFIG_DEP_GATE`" in s
         assert "This symbol affects the value of following symbols:" in s
         assert "- forcefully enables :ref:`CONFIG_DEP_SELECTED`" in s
-        assert "- sets :ref:`CONFIG_DEP_SET_TARGET` to 42 if :ref:`CONFIG_BOOL_OPTION`" in s
+        assert "- sets :ref:`CONFIG_DEP_SET_TARGET` to 42 if :ref:`CONFIG_BOOL_OPTION` is enabled" in s
         # imply / set default are not documented (weak; overridden by sdkconfig.defaults)
         assert "enables :ref:`CONFIG_DEP_IMPLIED`" not in s
         assert "Sets default value" not in s
@@ -140,7 +140,7 @@ class TestDocOutput:
 
         s = self.get_doc_out("DEP_SET_TARGET", data)
         assert "Following symbols affect the value of this symbol:" in s
-        assert "- set by :ref:`CONFIG_DEP_SOURCE` to 42 if :ref:`CONFIG_BOOL_OPTION`" in s
+        assert "- set by :ref:`CONFIG_DEP_SOURCE` to 42 if :ref:`CONFIG_BOOL_OPTION` is enabled" in s
         assert "weakly set by" not in s
 
         s = self.get_doc_out("DEP_IMPLIED", data)
@@ -177,6 +177,6 @@ class TestDocOutput:
 
     def test_generic_default_keeps_condition_and_fallback(self, data):
         s = self.get_doc_out("GENERIC_DEFAULT_IF", data)
-        assert "- 7 if :ref:`CONFIG_DEP_GATE`" in s
+        assert "- 7 if :ref:`CONFIG_DEP_GATE` is enabled" in s
         assert "- 3" in s
         assert "- 3 if" not in s

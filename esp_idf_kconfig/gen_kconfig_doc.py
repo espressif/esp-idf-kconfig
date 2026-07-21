@@ -367,6 +367,61 @@ def _prepare_cond(cond, visibility, kconfig, direct_deps=None):
     return cond
 
 
+def _is_bool_sym(expr):
+    """
+    True if expr is a bool symbol, i.e. one that reads as "enabled"/"disabled"
+    in a condition. The y/n constants are the only bool constants and are always
+    folded away by _minimize_expr before this is reached.
+    """
+    return type(expr) is kconfiglib.Symbol and expr.orig_type == kconfiglib.BOOL
+
+
+def _parenthesize_cond(expr, wrap_op, sc_str_fn):
+    """
+    _cond_to_doc_str() helper mirroring kconfiglib._parenthesize: wrap expr in
+    parentheses when its top operator is wrap_op.
+    """
+    if type(expr) is tuple and expr[0] is wrap_op:
+        return f"({_cond_to_doc_str(expr, sc_str_fn)})"
+    return _cond_to_doc_str(expr, sc_str_fn)
+
+
+def _cond_to_doc_str(expr, sc_str_fn):
+    """
+    Render a condition (assignability, range/default, select/set) for the docs.
+
+    A bare bool symbol is shown as "<sym> is enabled" and its negation as
+    "<sym> is disabled". Boolean operators keep &&/||/! and the same
+    parenthesization as kconfiglib.expr_str, so e.g. "(A || B) && C" is
+    preserved. Relations (A = B, A < B, ...) are rendered by expr_str.
+    """
+    if type(expr) is not tuple:
+        if _is_bool_sym(expr):
+            return f"{sc_str_fn(expr)} is enabled"
+        return sc_str_fn(expr)
+
+    op = expr[0]
+    if op == kconfiglib.AND:
+        return (
+            f"{_parenthesize_cond(expr[1], kconfiglib.OR, sc_str_fn)} && "
+            f"{_parenthesize_cond(expr[2], kconfiglib.OR, sc_str_fn)}"
+        )
+    if op == kconfiglib.OR:
+        return (
+            f"{_parenthesize_cond(expr[1], kconfiglib.AND, sc_str_fn)} || "
+            f"{_parenthesize_cond(expr[2], kconfiglib.AND, sc_str_fn)}"
+        )
+    if op == kconfiglib.NOT:
+        inner = expr[1]
+        if _is_bool_sym(inner):
+            return f"{sc_str_fn(inner)} is disabled"
+        if type(inner) is tuple:
+            return f"!({_cond_to_doc_str(inner, sc_str_fn)})"
+        return f"!{sc_str_fn(inner)}"
+    # Relation (=, !=, <, <=, >, >=)
+    return kconfiglib.expr_str(expr, sc_str_fn)
+
+
 def _format_sym_value(val, expr_str_fn):
     """
     Format a symbol or constant value to the format used in the documentation.
@@ -590,11 +645,11 @@ def write_menu_item(f, node, visibility, kconfig, reverse_deps):
 
         def _doc_if_cond(cond):
             """
-            Returns " if <condition>" formatted for focumentation if there is a condition.
+            Returns " if <condition>" formatted for documentation if there is a condition.
             """
             if cond is kconfig.y:
                 return ""
-            return f" if {kconfiglib.expr_str(cond, _doc_str)}"
+            return f" if {_cond_to_doc_str(cond, _doc_str)}"
 
         sym = node.item
 
@@ -606,7 +661,7 @@ def write_menu_item(f, node, visibility, kconfig, reverse_deps):
         can_be_set_when = _prepare_cond(node.prompt[1], visibility, kconfig)
         if can_be_set_when is not None and can_be_set_when is not kconfig.y:
             _write_list_section(
-                f, "Symbol can be set when", [f"{INDENT * 2}{kconfiglib.expr_str(can_be_set_when, _doc_str)}"]
+                f, "Symbol can be set when", [f"{INDENT * 2}{_cond_to_doc_str(can_be_set_when, _doc_str)}"]
             )
 
         # Strip direct_dep from range/default conditions: it is already covered by
