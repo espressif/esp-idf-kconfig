@@ -77,7 +77,7 @@ class TestDocOutput:
 
     def test_bool_default(self, data):
         s = self.get_doc_out("BOOL_OPTION", data)
-        assert "- Yes" in s
+        assert "- Enabled" in s
 
     def test_bool_default_dependency(self, data):
         # A symbol-valued default (default BOOL_OPTION) links to that symbol
@@ -107,7 +107,7 @@ class TestDocOutput:
         assert re.search(r"- op2\s+\(CONFIG_CHOICE_FOR_CHIPA_OP2\)", s)
 
         s = self.get_doc_out("OPT_DEPENDENT_ON_CHOICE_OP2", data)
-        assert "- Yes (enabled) if :ref:`CONFIG_CHOICE_FOR_CHIPA_OP2<CONFIG_CHOICE_FOR_CHIPA_OP2>` is enabled" in s
+        assert "- Enabled if :ref:`CONFIG_CHOICE_FOR_CHIPA_OP2<CONFIG_CHOICE_FOR_CHIPA_OP2>` is enabled" in s
 
     def test_can_be_set_when_combines_prompt_and_depends(self, data):
         s = self.get_doc_out("DEP_COND_PROMPT", data)

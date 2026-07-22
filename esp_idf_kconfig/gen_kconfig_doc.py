@@ -437,9 +437,9 @@ def _format_sym_value(val, expr_str_fn):
     else:
         d = str(val)
     if d in ("y", "Y"):
-        return "Yes (enabled)"
+        return "Enabled"
     if d in ("n", "N"):
-        return "No (disabled)"
+        return "Disabled"
     if re.search(r"[^0-9a-fA-F]", d):
         return f'"{d}"'
     return d
