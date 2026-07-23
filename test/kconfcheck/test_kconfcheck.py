@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 #
-# SPDX-FileCopyrightText: 2018-2025 Espressif Systems (Shanghai) CO LTD
+# SPDX-FileCopyrightText: 2018-2026 Espressif Systems (Shanghai) CO LTD
 # SPDX-License-Identifier: Apache-2.0
 import filecmp
 import os
@@ -195,6 +195,30 @@ class TestIndent(TestIndentAndNameChecker):
         self.expect_success("    help")
         self.expect_success("        text")
         self.expect_success('        # second not realcomment"')
+
+    def test_comment_entry_indent(self, prepare_checker):
+        # A `comment` is a menu entry (sibling of config/menu/choice), not help text.
+        # It must be re-parented to the enclosing menu even when it follows a help block.
+        self.checker = prepare_checker
+        self.expect_success('menu "test"')
+        self.expect_success("    config FOO_XMC")
+        self.expect_success('        bool "xmc"')
+        self.expect_success("        help")
+        self.expect_success("            some help text")
+        self.expect_success("")
+        self.expect_success('    comment "a comment at menu-entry level"')
+        self.expect_success("    config FOO_BAR")
+        self.expect_success('        bool "bar"')
+        self.expect_success("endmenu")
+
+    def test_comment_with_depends_on(self, prepare_checker):
+        # A `comment` can carry a `depends on`, so it opens an indentation level for its children.
+        self.checker = prepare_checker
+        self.expect_success('menu "test"')
+        self.expect_success('    comment "conditional comment"')
+        self.expect_success("        depends on FOO_BAR")
+        self.expect_error("            depends on FOO_BAZ", expect="        depends on FOO_BAZ")
+        self.expect_success("endmenu")
 
     def test_missing_endmenu(self, prepare_checker):
         """
