@@ -776,7 +776,7 @@ Example:
 Expressions
 -----------
 
-In the previous text, expressions were mentioned several times. Expressions are (menu)config and choice names connected by one of the allowed logic operators: ``=``, ``!=``, ``<``, ``>``, ``<=``, ``>=``, ``&&``, ``||``. Expressions can be nested with parentheses.
+In the previous text, expressions were mentioned several times. Expressions are ``config``/``menuconfig`` names, and constant values connected by one of the allowed logic operators: ``=``, ``!=``, ``<``, ``>``, ``<=``, ``>=``, ``&&``, ``||``. Expressions can be nested with parentheses.
 
 The formal syntax is as follows:
 
