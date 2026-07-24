@@ -7,7 +7,7 @@
 # generated, allowing options to be referenced in other documents
 # (using :ref:`CONFIG_FOO`)
 #
-# SPDX-FileCopyrightText: 2017-2025 Espressif Systems (Shanghai) CO LTD
+# SPDX-FileCopyrightText: 2017-2026 Espressif Systems (Shanghai) CO LTD
 # SPDX-License-Identifier: Apache-2.0
 import re
 
@@ -35,9 +35,9 @@ class ConfigTargetVisibility(object):
     it necessary to implement our own visibility and cannot use the visibility defined inside Kconfiglib.
     """
 
-    def __init__(self, config, target):
+    def __init__(self, kconfig, target):
         # target actually is not necessary here because kconfiglib.expr_value() will evaluate it internally
-        self.config = config
+        self.kconfig = kconfig
         self.visibility = dict()  # node name to (x, y) mapping where x is the visibility (True/False) and y is the
         # name of the config which implies the visibility
         self.target_env_var = "IDF_TARGET"
@@ -93,7 +93,7 @@ class ConfigTargetVisibility(object):
                     # expressions with visible configs can be changed to make the item visible
                     return (False, None)
             else:
-                raise RuntimeError("Unimplemented operation in {}".format(item))
+                raise RuntimeError(f"Unimplemented operation in {item}")
         else:  # Symbol or Choice
             vis_list = [self._visible(node) for node in item.nodes]
             if len(vis_list) > 0 and all([not visible for (visible, _) in vis_list]):
@@ -162,13 +162,16 @@ class ConfigTargetVisibility(object):
         return self._visible(node)[0]
 
 
-def write_docs(config, visibility, filename):
-    """Note: writing .rst documentation ignores the current value
+def write_docs(kconfig: kconfiglib.Kconfig, visibility: ConfigTargetVisibility, filename: str) -> None:
+    """
+    Note: writing .rst documentation ignores the current value
     of any items. ie the --config option can be ignored.
-    (However at time of writing it still needs to be set to something...)"""
+    (However at time of writing it still needs to be set to something...)
+    """
+    reverse_deps = _cache_reverse_dependency_mappings(kconfig)
     with open(filename, "w") as f:
-        for node in config.node_iter():
-            write_menu_item(f, node, visibility)
+        for node in kconfig.node_iter():
+            write_menu_item(f, node, visibility, kconfig, reverse_deps)
 
 
 def node_is_menu(node):
@@ -184,14 +187,14 @@ def get_breadcrumbs(node):
     node = node.parent
     while node.parent:
         if node.prompt:
-            result = [":ref:`%s`" % get_link_anchor(node)] + result
+            result = [f":ref:`{get_link_anchor(node)}`"] + result
         node = node.parent
     return " > ".join(result)
 
 
 def get_link_anchor(node):
     try:
-        return "CONFIG_%s" % node.item.name
+        return f"CONFIG_{node.item.name}"
     except AttributeError:
         assert node_is_menu(node)  # only menus should have no item.name
 
@@ -232,73 +235,342 @@ def format_rest_text(text, indent):
     return text
 
 
-def _minimize_expr(expr, visibility):
+def _minimize_expr(expr, visibility, kconfig):
+    """
+    Simplify expr for the current docs target and visibility.
+
+    Folds operands that are constant in this pass: IDF_TARGET_* symbols evaluate
+    to y/n, and invisible bools that the user cannot change collapse to y/n.
+    AND/OR/NOT and simple equalities are then constant-folded so e.g.
+    IDF_TARGET_CHIPA && FOO becomes FOO. Non-bools are left intact so relations
+    like FOO < 2 remain meaningful.
+    """
+    y = kconfig.y
+    n = kconfig.n
+
     def expr_nodes_invisible(e):
         return hasattr(e, "nodes") and len(e.nodes) > 0 and all(not visibility.visible(i) for i in e.nodes)
 
     if isinstance(expr, tuple):
         if expr[0] == kconfiglib.NOT:
-            new_expr = _minimize_expr(expr[1], visibility)
-            return kconfiglib.Kconfig.y if new_expr == kconfiglib.Kconfig.n else kconfiglib.Kconfig.n
+            new_expr = _minimize_expr(expr[1], visibility, kconfig)
+            if new_expr is n:
+                return y
+            if new_expr is y:
+                return n
+            return (kconfiglib.NOT, new_expr)
         else:
-            new_expr1 = _minimize_expr(expr[1], visibility)
-            new_expr2 = _minimize_expr(expr[2], visibility)
+            new_expr1 = _minimize_expr(expr[1], visibility, kconfig)
+            new_expr2 = _minimize_expr(expr[2], visibility, kconfig)
             if expr[0] == kconfiglib.AND:
-                if new_expr1 == kconfiglib.Kconfig.n or new_expr2 == kconfiglib.Kconfig.n:
-                    return kconfiglib.Kconfig.n
-                if new_expr1 == kconfiglib.Kconfig.y:
+                if new_expr1 is n or new_expr2 is n:
+                    return n
+                if new_expr1 is y:
                     return new_expr2
-                if new_expr2 == kconfiglib.Kconfig.y:
+                if new_expr2 is y:
                     return new_expr1
             elif expr[0] == kconfiglib.OR:
-                if new_expr1 == kconfiglib.Kconfig.y or new_expr2 == kconfiglib.Kconfig.y:
-                    return kconfiglib.Kconfig.y
-                if new_expr1 == kconfiglib.Kconfig.n:
+                if new_expr1 is y or new_expr2 is y:
+                    return y
+                if new_expr1 is n:
                     return new_expr2
-                if new_expr2 == kconfiglib.Kconfig.n:
+                if new_expr2 is n:
                     return new_expr1
             elif expr[0] == kconfiglib.EQUAL:
                 if not isinstance(new_expr1, type(new_expr2)):
-                    return kconfiglib.Kconfig.n
+                    return n
                 if new_expr1 == new_expr2:
-                    return kconfiglib.Kconfig.y
+                    return y
             elif expr[0] == kconfiglib.UNEQUAL:
                 if not isinstance(new_expr1, type(new_expr2)):
-                    return kconfiglib.Kconfig.y
+                    return y
                 if new_expr1 != new_expr2:
-                    return kconfiglib.Kconfig.n
+                    return n
             else:  # <, <=, >, >=
                 if not isinstance(new_expr1, type(new_expr2)):
-                    return kconfiglib.Kconfig.n  # e.g "True < 2"
-
-                if expr_nodes_invisible(new_expr1) or expr_nodes_invisible(new_expr2):
-                    return kconfiglib.Kconfig.y if kconfiglib.expr_value(expr) else kconfiglib.Kconfig.n
+                    return n  # e.g "True < 2"
+                # Do not fold via expr_value: invisible ints may be unset during
+                # docs generation, and the condition should still be shown.
 
             return (expr[0], new_expr1, new_expr2)
 
-    if not kconfiglib.expr_value(expr) and len(expr.config_string) == 0 and expr_nodes_invisible(expr):
+    # Only collapse bool symbols here. Non-bools (int/hex/...) must remain so
+    # relational expressions like "FOO < 2" can be evaluated on the original op.
+    is_bool_sym = type(expr) is kconfiglib.Symbol and expr.orig_type == kconfiglib.BOOL
+
+    if is_bool_sym and not kconfiglib.expr_value(expr) and len(expr.config_string) == 0 and expr_nodes_invisible(expr):
         # nodes which are invisible
         # len(expr.nodes) > 0 avoids constant symbols without actual node definitions, e.g. integer constants
         # len(expr.config_string) == 0 avoids hidden configs which reflects the values of choices
-        return kconfiglib.Kconfig.n
+        return n
 
-    if kconfiglib.expr_value(expr) and len(expr.config_string) > 0 and expr_nodes_invisible(expr):
+    if is_bool_sym and kconfiglib.expr_value(expr) and len(expr.config_string) > 0 and expr_nodes_invisible(expr):
         # hidden config dependencies which will be written to sdkconfig as enabled ones.
-        return kconfiglib.Kconfig.y
+        return y
 
     if any(node.item.name.startswith(visibility.target_env_var) for node in expr.nodes):
         # We know the actual values for IDF_TARGETs
-        return kconfiglib.Kconfig.y if kconfiglib.expr_value(expr) else kconfiglib.Kconfig.n
+        return y if kconfiglib.expr_value(expr) else n
 
     return expr
 
 
-def write_menu_item(f, node, visibility):
-    def is_choice(node):
-        """Skip choice nodes, they are handled as part of the parent (see below)"""
+def _cache_reverse_dependency_mappings(kconfig):
+    """
+    Build "target -> [(source, ...)]" mappings for strong reverse dependencies (select and set).
+    Building this mapping once and passing it to write_menu_item is more efficient than building it for each menu item.
+    """
+    selected_mapping = {}
+    set_mapping = {}
+    for src in kconfig.unique_defined_syms:
+        for target, cond in src.selects:
+            selected_mapping.setdefault(target, []).append((src, cond))
+        for target, value, cond in src.sets:
+            set_mapping.setdefault(target, []).append((src, value, cond))
+    return selected_mapping, set_mapping
+
+
+def _remove_deps_from_expr(expr, deps, y):
+    """
+    Return expr with deps replaced by y (no folding).
+
+    Select/set conditions include the source's depends on; that part is
+    redundant next to the source's "Symbol can be set when". AND/OR/NOT simplification
+    is left to _minimize_expr (so e.g. FOO && y becomes FOO there).
+
+    NOTE: deps is generally an expression, not a standalone symbol.
+    """
+    if expr is deps or expr == deps:
+        return y
+    if type(expr) is tuple:
+        if expr[0] == kconfiglib.NOT:
+            return (kconfiglib.NOT, _remove_deps_from_expr(expr[1], deps, y))
+        return (
+            expr[0],
+            _remove_deps_from_expr(expr[1], deps, y),
+            _remove_deps_from_expr(expr[2], deps, y),
+        )
+    return expr
+
+
+def _prepare_cond(cond, visibility, kconfig, direct_deps=None):
+    """
+    Prepare a condition for documentation:
+    * Remove direct dependencies (depends on) from the condition (described in "Symbol can be set when")
+    * Minimize the condition (e.g. FOO && y becomes FOO)
+
+
+    Returns None if the dependency never applies for this target, y if it always
+    applies (after optional direct_deps removal), or the remaining expression.
+    """
+    if direct_deps is not None:
+        cond = _remove_deps_from_expr(cond, direct_deps, kconfig.y)
+    cond = _minimize_expr(cond, visibility, kconfig)
+    if cond is kconfig.n:
+        return None
+    return cond
+
+
+def _is_bool_sym(expr):
+    """
+    True if expr is a bool symbol, i.e. one that reads as "enabled"/"disabled"
+    in a condition. The y/n constants are the only bool constants and are always
+    folded away by _minimize_expr before this is reached.
+    """
+    return type(expr) is kconfiglib.Symbol and expr.orig_type == kconfiglib.BOOL
+
+
+def _parenthesize_cond(expr, wrap_op, sc_str_fn):
+    """
+    _cond_to_doc_str() helper mirroring kconfiglib._parenthesize: wrap expr in
+    parentheses when its top operator is wrap_op.
+    """
+    if type(expr) is tuple and expr[0] is wrap_op:
+        return f"({_cond_to_doc_str(expr, sc_str_fn)})"
+    return _cond_to_doc_str(expr, sc_str_fn)
+
+
+def _cond_to_doc_str(expr, sc_str_fn):
+    """
+    Render a condition (assignability, range/default, select/set) for the docs.
+
+    A bare bool symbol is shown as "<sym> is enabled" and its negation as
+    "<sym> is disabled". Boolean operators keep &&/||/! and the same
+    parenthesization as kconfiglib.expr_str, so e.g. "(A || B) && C" is
+    preserved. Relations (A = B, A < B, ...) are rendered by expr_str.
+    """
+    if type(expr) is not tuple:
+        if _is_bool_sym(expr):
+            return f"{sc_str_fn(expr)} is enabled"
+        return sc_str_fn(expr)
+
+    op = expr[0]
+    if op == kconfiglib.AND:
+        return (
+            f"{_parenthesize_cond(expr[1], kconfiglib.OR, sc_str_fn)} && "
+            f"{_parenthesize_cond(expr[2], kconfiglib.OR, sc_str_fn)}"
+        )
+    if op == kconfiglib.OR:
+        return (
+            f"{_parenthesize_cond(expr[1], kconfiglib.AND, sc_str_fn)} || "
+            f"{_parenthesize_cond(expr[2], kconfiglib.AND, sc_str_fn)}"
+        )
+    if op == kconfiglib.NOT:
+        inner = expr[1]
+        if _is_bool_sym(inner):
+            return f"{sc_str_fn(inner)} is disabled"
+        if type(inner) is tuple:
+            return f"!({_cond_to_doc_str(inner, sc_str_fn)})"
+        return f"!{sc_str_fn(inner)}"
+    # Relation (=, !=, <, <=, >, >=)
+    return kconfiglib.expr_str(expr, sc_str_fn)
+
+
+def _format_sym_value(val, expr_str_fn):
+    """
+    Format a symbol or constant value to the format used in the documentation.
+    """
+    if type(val) is kconfiglib.Symbol:
+        if not val.is_constant and val.nodes:
+            return expr_str_fn(val)
+        d = val.str_value
+    else:
+        d = str(val)
+    if d in ("y", "Y"):
+        return "Enabled"
+    if d in ("n", "N"):
+        return "Disabled"
+    if re.search(r"[^0-9a-fA-F]", d):
+        return f'"{d}"'
+    return d
+
+
+def _write_list_section(f, title, lines):
+    """
+    Helper to write a list section with the given title and lines
+    """
+    if not lines:
+        return
+    f.write(f"{INDENT}{title}:\n")
+    f.write("\n".join(lines))
+    f.write("\n\n")
+
+
+def _conds_equal(a, b):
+    """
+    Structural equality for minimized conditions (Symbol / tuple / y / n).
+    """
+    if a is b or a == b:
+        return True
+    if type(a) is tuple and type(b) is tuple and len(a) == len(b):
+        return all(_conds_equal(x, y) for x, y in zip(a, b))
+    return False
+
+
+def _filter_possibly_applicable_rows(items, visibility, kconfig, direct_deps=None):
+    """
+    Yield (item, cond) rows from a default/range list that may still apply.
+
+    Drops entries that are n for this target, skips duplicate conditions, keeps
+    open conditions (e.g. FOO), and stops after the first always-true (y) entry
+    — later rows are shadowed under Kconfig's first-true-wins rules.
+    """
+    seen = []
+    y = kconfig.y
+    for item, cond in items:
+        display = _prepare_cond(cond, visibility, kconfig, direct_deps=direct_deps)
+        if display is None:
+            continue
+        if any(_conds_equal(display, prev) for prev in seen):
+            continue
+        yield item, display
+        seen.append(display)
+        if display is y:
+            break
+
+
+def _sym_has_visible_prompted_node(sym, visibility):
+    """
+    True if sym has a prompted node that is visible for this docs target.
+
+    Choice members are visible when their parent choice entry is visible; other
+    nodes when the node itself is visible. Shared by _has_docs_anchor (does the
+    symbol get an anchor) and _source_sym_may_force (may a source force a value)
+    so the two policies stay in sync.
+    """
+    for node in sym.nodes:
+        if not node.prompt:
+            continue
+        # Choice members get anchors under the parent choice entry
+        parent = node.parent
+        if parent is not None and type(parent.item) is kconfiglib.Choice:
+            if visibility.visible(parent):
+                return True
+            continue
+        if visibility.visible(node):
+            return True
+    return False
+
+
+def _has_docs_anchor(sym, visibility):
+    """
+    True if gen_kconfig_doc writes a Sphinx anchor for this symbol.
+
+    Promptless symbols and options invisible for the target are never written,
+    so :ref: must not point at them.
+    """
+    if type(sym) is not kconfiglib.Symbol or sym.is_constant or not sym.nodes:
+        return False
+    return _sym_has_visible_prompted_node(sym, visibility)
+
+
+def _source_sym_may_force(src, visibility):
+    """
+    True if src should appear as a Force-set by source for this docs target.
+
+    User-visible (documented) sources may be enabled by the user. Promptless or
+    target-invisible sources are treated as constant: only keep them when they
+    evaluate to y for the current target.
+    """
+    if type(src) is not kconfiglib.Symbol:
+        return False
+    if _sym_has_visible_prompted_node(src, visibility):
+        return True
+    return bool(kconfiglib.expr_value(src))
+
+
+def write_menu_item(f, node, visibility, kconfig, reverse_deps):
+    """
+    Write a docs block for one visible menu tree node.
+
+    Skips choice symbols (documented under the parent choice), target-invisible
+    nodes, and excluded menu names. Comments are never written (always treated
+    as invisible).
+
+    Common for written nodes: Sphinx anchor, heading, optional help text.
+
+    Symbol:
+        Prompt, "Found in" breadcrumbs, optional "Symbol can be set when",
+        Range, Default value, forward select/set effects, and reverse
+        select/set ("Following symbols affect...").
+
+    Choice:
+        Heading from the choice name or prompt, "Available options" list with
+        per-option anchors, CONFIG_ names, and help.
+
+    Menu (including menuconfig):
+        Heading from the prompt (or CONFIG_ name for menuconfig symbols), then
+        a sorted "Contains" list of links to visible children. menuconfig
+        symbols also get the Symbol sections above.
+    """
+
+    def is_choice_member(node):
+        """
+        True if node is an option inside a choice (written with the parent choice).
+        """
         return isinstance(node.parent.item, kconfiglib.Choice)
 
-    if is_choice(node) or not visibility.visible(node):
+    if is_choice_member(node) or not visibility.visible(node):
         return
 
     try:
@@ -313,19 +585,19 @@ def write_menu_item(f, node, visibility):
 
     # Heading
     if name:
-        title = "CONFIG_%s" % name
+        title = f"CONFIG_{name}"
     else:
         # if no symbol name, use the prompt as the heading
         title = node.prompt[0]
 
-    f.write(".. _%s:\n\n" % get_link_anchor(node))
-    f.write("%s\n" % title)
+    f.write(f".. _{get_link_anchor(node)}:\n\n")
+    f.write(f"{title}\n")
     f.write(HEADING_SYMBOLS[get_heading_level(node)] * len(title))
     f.write("\n\n")
 
     if name:
-        f.write("%s%s\n\n" % (INDENT, node.prompt[0]))
-        f.write("%s:emphasis:`Found in:` %s\n\n" % (INDENT, get_breadcrumbs(node)))
+        f.write(f"{INDENT}{node.prompt[0]}\n\n")
+        f.write(f"{INDENT}:emphasis:`Found in:` {get_breadcrumbs(node)}\n\n")
 
     try:
         if node.help:
@@ -338,26 +610,21 @@ def write_menu_item(f, node, visibility):
         pass  # No help
 
     if isinstance(node.item, kconfiglib.Choice):
-        f.write("%sAvailable options:\n\n" % INDENT)
+        f.write(f"{INDENT}Available options:\n\n")
         choice_node = node.list
         while choice_node:
             # Format available options as a list
             # First, link anchor for this option
-            f.write("%s  .. _%s:\n\n" % (INDENT * 2, get_link_anchor(choice_node)))
+            f.write(f"{INDENT * 2}  .. _{get_link_anchor(choice_node)}:\n\n")
             # Then, option itself, as a list item
-            f.write(
-                "%s- %-20s (%s%s)\n"
-                % (
-                    INDENT * 2,
-                    choice_node.prompt[0],
-                    node.kconfig.config_prefix,
-                    choice_node.item.name,
-                )
-            )
+            prompt = choice_node.prompt[0]
+            prefix = node.kconfig.config_prefix
+            opt = choice_node.item.name
+            f.write(f"{INDENT * 2}- {prompt:<20} ({prefix}{opt})\n")
             if choice_node.help:
                 HELP_INDENT = INDENT * 2
                 fmt_help = format_rest_text(choice_node.help, "  " + HELP_INDENT)
-                f.write("%s  \n%s\n" % (HELP_INDENT, fmt_help))
+                f.write(f"{HELP_INDENT}  \n{fmt_help}\n")
             choice_node = choice_node.next
             f.write("\n")
 
@@ -365,63 +632,97 @@ def write_menu_item(f, node, visibility):
 
     if isinstance(node.item, kconfiglib.Symbol):
 
-        def _expr_str(sc):
+        def _doc_str(sc):
+            """
+            Returns a string representation of a symbol or constant for documentation with :ref: if possible.
+            """
             if sc.is_constant or not sc.nodes:
-                return "{}".format(sc.name)
-            opt_name = "%s%s" % (sc.kconfig.config_prefix, sc.name)
+                return f"{sc.name}"
+            opt_name = f"{sc.kconfig.config_prefix}{sc.name}"
+            if not _has_docs_anchor(sc, visibility):
+                return opt_name
             if sc.choice:
                 # link targets not associated with a section cannot be referenced without providing the title
                 # https://github.com/sphinx-doc/sphinx/issues/9993
-                return ":ref:`%s<%s>`" % (opt_name, opt_name)
-            return ":ref:`%s`" % opt_name
+                return f":ref:`{opt_name}<{opt_name}>`"
+            return f":ref:`{opt_name}`"
 
-        range_strs = []
-        for low, high, cond in node.item.ranges:
-            cond = _minimize_expr(cond, visibility)
-            if cond == kconfiglib.Kconfig.n:
-                continue
-            if not isinstance(cond, tuple) and cond != kconfiglib.Kconfig.y:
-                if len(cond.nodes) > 0 and all(not visibility.visible(i) for i in cond.nodes):
-                    if not kconfiglib.expr_value(cond):
-                        continue
-            range_str = "%s- from %s to %s" % (
-                INDENT * 2,
-                low.str_value,
-                high.str_value,
+        def _doc_if_cond(cond):
+            """
+            Returns " if <condition>" formatted for documentation if there is a condition.
+            """
+            if cond is kconfig.y:
+                return ""
+            return f" if {_cond_to_doc_str(cond, _doc_str)}"
+
+        sym = node.item
+
+        # During finalization, Kconfig._propagate_deps() rewrites node.prompt[1]
+        # to "original if-cond AND visible_if AND dep", where dep is the symbol's
+        # own "depends on" plus deps propagated from parent menus/choices/if, and
+        # visible_if is the "visible if" of parent menus. So the prompt condition
+        # already captures everything that gates assignability.
+        can_be_set_when = _prepare_cond(node.prompt[1], visibility, kconfig)
+        if can_be_set_when is not None and can_be_set_when is not kconfig.y:
+            _write_list_section(
+                f, "Symbol can be set when", [f"{INDENT * 2}{_cond_to_doc_str(can_be_set_when, _doc_str)}"]
             )
-            if cond != kconfiglib.Kconfig.y and not kconfiglib.expr_value(cond):
-                range_str += " if %s" % kconfiglib.expr_str(cond, _expr_str)
-            range_strs.append(range_str)
-        if len(range_strs) > 0:
-            f.write("%sRange:\n" % INDENT)
-            f.write("\n".join(range_strs))
-            f.write("\n\n")
+
+        # Strip direct_dep from range/default conditions: it is already covered by
+        # "Symbol can be set when". That also turns "if IDF_TARGET_X" (+ depends) into y
+        # for the active target so the matching entry shadows the fallback.
+        range_strs = []
+        for (low, high), cond in _filter_possibly_applicable_rows(
+            [((lo, hi), c) for lo, hi, c in sym.ranges],
+            visibility,
+            kconfig,
+            direct_deps=sym.direct_dep,
+        ):
+            range_strs.append(f"{INDENT * 2}- from {low.str_value} to {high.str_value}{_doc_if_cond(cond)}")
+        _write_list_section(f, "Range", range_strs)
 
         default_strs = []
-        for default, cond in node.item.defaults:
-            cond = _minimize_expr(cond, visibility)
-            if cond == kconfiglib.Kconfig.n:
+        for default, cond in _filter_possibly_applicable_rows(
+            sym.defaults, visibility, kconfig, direct_deps=sym.direct_dep
+        ):
+            d = _format_sym_value(default, _doc_str)
+            default_strs.append(f"{INDENT * 2}- {d}{_doc_if_cond(cond)}")
+        _write_list_section(f, "Default value", default_strs)
+
+        when_enabled = []
+        for target, cond in sym.selects:
+            c = _prepare_cond(cond, visibility, kconfig, direct_deps=sym.direct_dep)
+            if c is None:
                 continue
-            if not isinstance(cond, tuple) and cond != kconfiglib.Kconfig.y:
-                if len(cond.nodes) > 0 and all(not visibility.visible(i) for i in cond.nodes):
-                    if not kconfiglib.expr_value(cond):
-                        continue
-            # default.type is mostly UNKNOWN so it cannot be used reliably for detecting the type
-            d = default.str_value
-            if d in ["y", "Y"]:
-                d = "Yes (enabled)"
-            elif d in ["n", "N"]:
-                d = "No (disabled)"
-            elif re.search(r"[^0-9a-fA-F]", d):  # simple string detection: if it not a valid number
-                d = '"%s"' % d
-            default_str = "%s- %s" % (INDENT * 2, d)
-            if cond != kconfiglib.Kconfig.y and not kconfiglib.expr_value(cond):
-                default_str += " if %s" % kconfiglib.expr_str(cond, _expr_str)
-            default_strs.append(default_str)
-        if len(default_strs) > 0:
-            f.write("%sDefault value:\n" % INDENT)
-            f.write("\n".join(default_strs))
-            f.write("\n\n")
+            when_enabled.append(f"{INDENT * 2}- forcefully enables {_doc_str(target)}{_doc_if_cond(c)}")
+        for target, value, cond in sym.sets:
+            c = _prepare_cond(cond, visibility, kconfig, direct_deps=sym.direct_dep)
+            if c is None:
+                continue
+            when_enabled.append(
+                f"{INDENT * 2}- sets {_doc_str(target)} to {_format_sym_value(value, _doc_str)}{_doc_if_cond(c)}"
+            )
+        _write_list_section(f, "This symbol affects the value of following symbols", when_enabled)
+
+        forced_by = []
+        selected_by, set_by = reverse_deps
+        for src, cond in selected_by.get(sym, []):
+            if not _source_sym_may_force(src, visibility):
+                continue
+            c = _prepare_cond(cond, visibility, kconfig, direct_deps=src.direct_dep)
+            if c is None:
+                continue
+            forced_by.append(f"{INDENT * 2}- forcefully enabled by {_doc_str(src)}{_doc_if_cond(c)}")
+        for src, value, cond in set_by.get(sym, []):
+            if not _source_sym_may_force(src, visibility):
+                continue
+            c = _prepare_cond(cond, visibility, kconfig, direct_deps=src.direct_dep)
+            if c is None:
+                continue
+            forced_by.append(
+                f"{INDENT * 2}- set by {_doc_str(src)} to {_format_sym_value(value, _doc_str)}{_doc_if_cond(c)}"
+            )
+        _write_list_section(f, "Following symbols affect the value of this symbol", forced_by)
 
     if is_menu:
         # enumerate links to child items
@@ -429,7 +730,7 @@ def write_menu_item(f, node, visibility):
         child = node.list
         while child:
             if (
-                not is_choice(child)
+                not is_choice_member(child)
                 and child.prompt
                 and visibility.visible(child)
                 and child.prompt[0] not in EXCLUDED_MENU_NAMES
@@ -439,6 +740,6 @@ def write_menu_item(f, node, visibility):
         if len(child_list) > 0:
             f.write("Contains:\n\n")
             sorted_child_list = sorted(child_list, key=lambda pair: pair[0].lower())
-            ref_list = ["- :ref:`{}`".format(anchor) for _, anchor in sorted_child_list]
+            ref_list = [f"- :ref:`{anchor}`" for _, anchor in sorted_child_list]
             f.write("\n".join(ref_list))
             f.write("\n\n")
