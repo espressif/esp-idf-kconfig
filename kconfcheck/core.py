@@ -222,6 +222,7 @@ class IndentAndNameChecker(BaseChecker):
                                               |(choice)
                                               |(config)
                                               |(menuconfig)
+                                              |(comment)
                                               |(help)
                                               |(if)
                                               |(source)
@@ -333,6 +334,7 @@ class IndentAndNameChecker(BaseChecker):
         if new_item in [
             "config",
             "menuconfig",
+            "comment",
             "menu",
             "choice",
             "if",
