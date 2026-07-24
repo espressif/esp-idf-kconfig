@@ -27,12 +27,29 @@ EXCLUDED_MENU_NAMES = [
     "Project configuration for components not included in the build",
 ]
 
+# Comparison operators whose truth value is fixed once all operands are target-constant.
+_COMPARISON_OPS = frozenset(
+    [
+        kconfiglib.EQUAL,
+        kconfiglib.UNEQUAL,
+        kconfiglib.LESS,
+        kconfiglib.LESS_EQUAL,
+        kconfiglib.GREATER,
+        kconfiglib.GREATER_EQUAL,
+    ]
+)
+
 
 class ConfigTargetVisibility(object):
     """
     Determine the visibility of Kconfig options based on IDF targets. Note that other environment variables should not
     imply invisibility and neither dependencies on visible options with default disabled state. This difference makes
     it necessary to implement our own visibility and cannot use the visibility defined inside Kconfiglib.
+
+    An option is hidden only when it can never become visible for the current IDF_TARGET, i.e. its dependency
+    reduces to n once every symbol the user cannot change for this target is folded to its constant value. See
+    _is_item_target_constant for what "user cannot change" means (promptless symbols, prompts gated off by the target,
+    symbols force-selected by a target-constant source, unsatisfiable dependencies).
     """
 
     def __init__(self, kconfig, target):
@@ -41,90 +58,119 @@ class ConfigTargetVisibility(object):
         self.visibility = dict()  # node name to (x, y) mapping where x is the visibility (True/False) and y is the
         # name of the config which implies the visibility
         self.target_env_var = "IDF_TARGET"
-        self.direct_eval_set = frozenset(
-            [
-                kconfiglib.EQUAL,
-                kconfiglib.UNEQUAL,
-                kconfiglib.LESS,
-                kconfiglib.LESS_EQUAL,
-                kconfiglib.GREATER,
-                kconfiglib.GREATER_EQUAL,
-            ]
+        self._constants_cache = dict()  # symbol name -> bool, memoizes _is_item_target_constant across the recursion
+
+    def _is_item_target_constant(self, item):
+        """
+        True if the user cannot change item's value for the current IDF_TARGET (even indirectly).
+
+        Algorithm: Start from the queried item and recurse down into what determines its value (rev_dep and
+        defaults), in a tree-like structure. The recursion bottoms out at IDF_TARGET/IDF_TARGET_* (the only truly
+        fixed inputs) and other (possibly already evaluated) target-constants, which are the recursion stoppers.
+
+        A symbol counts as target-constant when its value and state is fully dependent (even
+        transitively) on symbols with already constant value/state from the target alone:
+            * a symbol force-selected on by a target-constant source is pinned to y;
+            * a permanently disabled symbol (dependency evaluated as constant n - either on
+              IDF_TARGET or on a target-constant source) is pinned to n;
+            * invisible symbols (without prompt or prompt target-constantly disabled) with an
+              unconditional default, or a conditional default whose condition folds to y, are
+              pinned to their default value;
+            * undefined symbols (referenced but never defined for this target, e.g. an omitted
+              SOC_* cap) are pinned to n;
+
+        Note: symbols whose value is derived from an environment variable are treated
+        differently when the envvar was set at config generation time:
+            1) envvar unset: config treated as free even though it would otherwise be
+               target-constant;
+            2) envvar set: configuration system treats the envvar reference as a string
+               literal and the symbol may be target-constant.
+        Envvars are expanded at parse time; after expansion there is no record that a string
+        value came from an envvar.
+        """
+        if type(item) is not kconfiglib.Symbol:
+            return False
+        if item.name.startswith(self.target_env_var):
+            # IDF_TARGET / IDF_TARGET_* symbols are target-constant
+            return True
+        if item.is_constant:
+            # y/n or literals
+            return True
+        if self._depends_on_env_var(item):
+            # Value comes from an environment variable, which is not fixed by the target: another build
+            # could set it differently, so keep it free and let its dependents stay documented. (A variable set at
+            # build time is folded away at parse time and never reaches here, so it is treated as constant.)
+            return False
+        if item.orig_type == kconfiglib.UNKNOWN:
+            # A node-less UNKNOWN symbol is undefined: referenced but never defined for this target (e.g. an omitted
+            # SOC_* cap, or a bogus `depends on <choice_name>` -- a choice name is not a value and kconfiglib itself
+            # reports it as undefined). It is a hard n on every target -- no prompt, no default, and a type-less symbol
+            # cannot be promoted by select/imply -- so treat it as target-constant and let its dependents be hidden.
+            return not item.nodes
+
+        sym_is_const = self._constants_cache.get(item.name)
+        if sym_is_const is not None:
+            return sym_is_const
+
+        if _minimize_expr(item.rev_dep, self, self.kconfig) is self.kconfig.y:
+            # Force-selected on by a strong reverse dependency that holds for this target (e.g. IDF_TARGET_X select
+            # FOO).
+            is_constant = True
+        elif any(node.prompt is not None and self._visible(node)[0] for node in item.nodes):
+            # The user can set it directly through a reachable prompt (and symbol is not force-selected).
+            is_constant = False
+        else:
+            # Promptless or target-gated: constant iff everything determining its value is target-constant.
+            is_constant = self._expr_is_target_constant(item.rev_dep) and all(
+                self._expr_is_target_constant(cond) and self._expr_is_target_constant(value)
+                for value, cond in item.defaults
+            )
+
+        self._constants_cache[item.name] = is_constant
+        return is_constant
+
+    def _depends_on_env_var(self, item):
+        """
+        True if item's value derives from a non-IDF_TARGET environment variable, via either 'option env="NAME"' or an
+        unresolved '${NAME}' left in a default because NAME was unset at parse time. Macros ('$(NAME)') and env vars
+        that were set at build time are expanded away during parsing, so they never look env-driven here.
+        """
+        env = item.env_var  # set only by 'option env="NAME"'
+        if env and not env.startswith(self.target_env_var):
+            return True
+        return any(
+            _references_unresolved_env(value, self.target_env_var)
+            or _references_unresolved_env(cond, self.target_env_var)
+            for value, cond in item.defaults
         )
 
+    def _expr_is_target_constant(self, expr):
+        """
+        True if every symbol referenced in expr is target-constant, i.e. the whole expression evaluates to a value
+        fixed by the current IDF_TARGET.
+        """
+        if type(expr) is tuple:
+            return all(self._expr_is_target_constant(sub) for sub in expr[1:])
+        return self._is_item_target_constant(expr)
+
     def _implies_invisibility(self, item):
-        if isinstance(item, tuple):
-            if item[0] == kconfiglib.NOT:
-                (invisibility, source) = self._implies_invisibility(item[1])
-                if source is not None and source.startswith(self.target_env_var):
-                    return (not invisibility, source)
-                else:
-                    # we want to be visible all configs which are not dependent on target variables,
-                    # e.g. "depends on XY" and "depends on !XY" as well
-                    return (False, None)
-            elif item[0] == kconfiglib.AND:
-                (invisibility, source) = self._implies_invisibility(item[1])
-                if invisibility:
-                    return (True, source)
-                (invisibility, source) = self._implies_invisibility(item[2])
-                if invisibility:
-                    return (True, source)
-                return (False, None)
-            elif item[0] == kconfiglib.OR:
-                implication_list = [
-                    self._implies_invisibility(item[1]),
-                    self._implies_invisibility(item[2]),
-                ]
-                if all([implies for (implies, _) in implication_list]):
-                    source_list = [s for (_, s) in implication_list if s.startswith(self.target_env_var)]
-                    # if source_list has more items then it should not matter which will imply the invisibility
-                    return (True, source_list[0])
-                return (False, None)
-            elif item[0] in self.direct_eval_set:
-
-                def node_is_invisible(item):
-                    return all([node.prompt is None for node in item.nodes])
-
-                if node_is_invisible(item[1]) or node_is_invisible(item[1]):
-                    # it makes no sense to call self._implies_invisibility() here because it won't generate any useful
-                    # "source"
-                    return (not kconfiglib.expr_value(item), None)
-                else:
-                    # expressions with visible configs can be changed to make the item visible
-                    return (False, None)
-            else:
-                raise RuntimeError(f"Unimplemented operation in {item}")
-        else:  # Symbol or Choice
-            vis_list = [self._visible(node) for node in item.nodes]
-            if len(vis_list) > 0 and all([not visible for (visible, _) in vis_list]):
-                source_list = [s for (_, s) in vis_list if s is not None and s.startswith(self.target_env_var)]
-                # if source_list has more items then it should not matter which will imply the invisibility
-                return (True, source_list[0])
-
-            if item.name.startswith(self.target_env_var):
-                return (not kconfiglib.expr_value(item), item.name)
-
-            if len(vis_list) == 1:
-                (visible, source) = vis_list[0]
-                if visible:
-                    return (
-                        False,
-                        item.name,
-                    )  # item.name is important here in case the result will be inverted: if
-                    # the dependency is on another config then it can be still visible
-
-            return (False, None)
+        # Invisible iff the dependency reduces to n once target-constant symbols are folded to their values.
+        return (_minimize_expr(item, self, self.kconfig) is self.kconfig.n, None)
 
     def _visible(self, node):
         if node.item == kconfiglib.COMMENT:
             return (False, None)
-        if isinstance(node.item, kconfiglib.Symbol) or isinstance(node.item, kconfiglib.Choice):
+        if type(node.item) is kconfiglib.Symbol or type(node.item) is kconfiglib.Choice:
             dependencies = node.item.direct_dep  # "depends on" for configs
             name_id = node.item.name
             simple_def = len(node.item.nodes) <= 1  # defined only in one source file
             # Probably it is not necessary to check the default statements.
         else:
-            dependencies = node.visibility  # "visible if" for menu
+            # A menu is hidden when either its "visible if" or its own "depends on" (node.dep) is a hard n for this
+            # target. node.dep carries the menu's "depends on" plus deps inherited from enclosing if/menu blocks; it is
+            # not part of node.visibility, so fold both. Without node.dep, a menu gated off by an (undefined/omitted)
+            # dependency would still emit an empty heading even though all its children are hidden.
+            dependencies = self.kconfig._make_and(node.visibility, node.dep)
             name_id = node.prompt[0]
             simple_def = False  # menus can be defined with the same name at multiple locations and they don't know
             # about each other like configs through node.item.nodes. Therefore, they cannot be stored and have to be
@@ -235,31 +281,63 @@ def format_rest_text(text, indent):
     return text
 
 
+def _references_unresolved_env(expr, target_env_var):
+    """
+    True if expr still contains an unexpanded ${...} that is not the docs target, i.e. a value derived from an
+    environment variable that was unset at parse time. Macros ($(...)) and env vars set at build time are expanded
+    during parsing and leave no ${...}, so they are not matched.
+    """
+    if type(expr) is tuple:
+        return any(_references_unresolved_env(sub, target_env_var) for sub in expr[1:])
+    return type(expr) is kconfiglib.Symbol and "${" in expr.name and target_env_var not in expr.name
+
+
+def _is_undefined_reference(sym):
+    """
+    True if sym is referenced but never defined for this target and is a genuine
+    reference (not a numeric literal or quoted constant). This also covers a bogus
+    `depends on <choice_name>`: a choice name is not a value, so referencing it just
+    creates a node-less stub, and kconfiglib itself reports it as undefined.
+    Such a symbol is a hard n on every target: it has no prompt, no default, and a
+    type-less symbol cannot be promoted by select/imply, so its dependents can be
+    hidden.
+    """
+    return (
+        type(sym) is kconfiglib.Symbol
+        and not sym.is_constant
+        and not sym.nodes
+        and not kconfiglib._looks_like_number(sym.name)
+    )
+
+
 def _minimize_expr(expr, visibility, kconfig):
     """
     Simplify expr for the current docs target and visibility.
 
-    Folds operands that are constant in this pass: IDF_TARGET_* symbols evaluate
-    to y/n, and invisible bools that the user cannot change collapse to y/n.
+    Folds operands that are constant in this pass: target-constant symbols (see
+    ConfigTargetVisibility._is_item_target_constant) evaluate to y/n, and a
+    comparison whose operands are all target-constant is evaluated to y/n too.
     AND/OR/NOT and simple equalities are then constant-folded so e.g.
-    IDF_TARGET_CHIPA && FOO becomes FOO. Non-bools are left intact so relations
-    like FOO < 2 remain meaningful.
+    IDF_TARGET_CHIPA && FOO becomes FOO. Symbols the user can still influence are
+    left intact so relations like FOO < 2 remain meaningful.
     """
     y = kconfig.y
     n = kconfig.n
 
-    def expr_nodes_invisible(e):
-        return hasattr(e, "nodes") and len(e.nodes) > 0 and all(not visibility.visible(i) for i in e.nodes)
-
-    if isinstance(expr, tuple):
+    if type(expr) is tuple:
         if expr[0] == kconfiglib.NOT:
             new_expr = _minimize_expr(expr[1], visibility, kconfig)
             if new_expr is n:
                 return y
             if new_expr is y:
                 return n
+            # Operand is still a free variable the user can flip (e.g. !USER_OPTION); keep the negation.
             return (kconfiglib.NOT, new_expr)
         else:
+            if expr[0] in _COMPARISON_OPS and visibility._expr_is_target_constant(expr):
+                # Relation over target-constant operands has a fixed truth value for this target
+                # (e.g. IDF_TARGET="esp32p4" or a promptless, target-derived string/int).
+                return y if kconfiglib.expr_value(expr) else n
             new_expr1 = _minimize_expr(expr[1], visibility, kconfig)
             new_expr2 = _minimize_expr(expr[2], visibility, kconfig)
             if expr[0] == kconfiglib.AND:
@@ -277,40 +355,38 @@ def _minimize_expr(expr, visibility, kconfig):
                 if new_expr2 is n:
                     return new_expr1
             elif expr[0] == kconfiglib.EQUAL:
-                if not isinstance(new_expr1, type(new_expr2)):
+                if type(new_expr1) is not type(new_expr2):
                     return n
                 if new_expr1 == new_expr2:
                     return y
             elif expr[0] == kconfiglib.UNEQUAL:
-                if not isinstance(new_expr1, type(new_expr2)):
+                if type(new_expr1) is not type(new_expr2):
                     return y
                 if new_expr1 != new_expr2:
                     return n
             else:  # <, <=, >, >=
-                if not isinstance(new_expr1, type(new_expr2)):
+                if type(new_expr1) is not type(new_expr2):
                     return n  # e.g "True < 2"
                 # Do not fold via expr_value: invisible ints may be unset during
                 # docs generation, and the condition should still be shown.
 
             return (expr[0], new_expr1, new_expr2)
 
-    # Only collapse bool symbols here. Non-bools (int/hex/...) must remain so
-    # relational expressions like "FOO < 2" can be evaluated on the original op.
-    is_bool_sym = type(expr) is kconfiglib.Symbol and expr.orig_type == kconfiglib.BOOL
-
-    if is_bool_sym and not kconfiglib.expr_value(expr) and len(expr.config_string) == 0 and expr_nodes_invisible(expr):
-        # nodes which are invisible
-        # len(expr.nodes) > 0 avoids constant symbols without actual node definitions, e.g. integer constants
-        # len(expr.config_string) == 0 avoids hidden configs which reflects the values of choices
-        return n
-
-    if is_bool_sym and kconfiglib.expr_value(expr) and len(expr.config_string) > 0 and expr_nodes_invisible(expr):
-        # hidden config dependencies which will be written to sdkconfig as enabled ones.
-        return y
-
-    if any(node.item.name.startswith(visibility.target_env_var) for node in expr.nodes):
-        # We know the actual values for IDF_TARGETs
+    # Change bool symbols whose value the user cannot change for current target to their actual y/n value. Non-bools
+    # are never folded here (their str/int value is not a truth value); target-constant non-bools are handled inside
+    # comparisons above. User-toggleable bools are kept so the condition still reflects what the user can influence.
+    if (
+        type(expr) is kconfiglib.Symbol
+        and expr.orig_type == kconfiglib.BOOL
+        and visibility._is_item_target_constant(expr)
+    ):
         return y if kconfiglib.expr_value(expr) else n
+
+    # A genuinely undefined symbol is a hard n for every target. It is UNKNOWN-typed so the bool fold above skips it;
+    # collapse it here so dependents on an omitted symbol (e.g. a SOC_* cap absent for this chip) are hidden. Numeric
+    # literals and quoted constants are node-less too, so they are excluded (see _is_undefined_reference).
+    if _is_undefined_reference(expr):
+        return n
 
     return expr
 
@@ -568,7 +644,7 @@ def write_menu_item(f, node, visibility, kconfig, reverse_deps):
         """
         True if node is an option inside a choice (written with the parent choice).
         """
-        return isinstance(node.parent.item, kconfiglib.Choice)
+        return type(node.parent.item) is kconfiglib.Choice
 
     if is_choice_member(node) or not visibility.visible(node):
         return
@@ -609,7 +685,7 @@ def write_menu_item(f, node, visibility, kconfig, reverse_deps):
     except AttributeError:
         pass  # No help
 
-    if isinstance(node.item, kconfiglib.Choice):
+    if type(node.item) is kconfiglib.Choice:
         f.write(f"{INDENT}Available options:\n\n")
         choice_node = node.list
         while choice_node:
@@ -630,7 +706,7 @@ def write_menu_item(f, node, visibility, kconfig, reverse_deps):
 
         f.write("\n\n")
 
-    if isinstance(node.item, kconfiglib.Symbol):
+    if type(node.item) is kconfiglib.Symbol:
 
         def _doc_str(sc):
             """

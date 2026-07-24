@@ -67,7 +67,7 @@ class TestDocOutput:
         # Generic conditions are kept (not evaluated away from current values).
         # Promptless CHIPA_REV_MIN has no docs anchor → plain CONFIG_ name.
         assert "- 5 if CONFIG_CHIPA_REV_MIN < 2" in s
-        assert "- 4 if CHIPA_VERSION = 2" in s
+        assert "- 4 if CONFIG_CHIPA_REV_MIN = 2" in s
         assert "- 9 if CONFIG_CHIPA_REV_MIN = 3" in s
 
     def test_string_default(self, data):

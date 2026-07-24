@@ -4328,36 +4328,13 @@ class Kconfig(object):
         # Prints warnings for all references to undefined symbols within the
         # Kconfig files
 
-        def is_num(s):
-            # Returns True if the string 's' looks like a number.
-            #
-            # Internally, all operands in Kconfig are symbols, only undefined symbols
-            # (which numbers usually are) get their name as their value.
-            #
-            # Only hex numbers that start with 0x/0X are classified as numbers.
-            # Otherwise, symbols whose names happen to contain only the letters A-F
-            # would trigger false positives.
-
-            try:
-                int(s)
-            except ValueError:
-                if not s.startswith(("0x", "0X")):
-                    return False
-
-                try:
-                    int(s, 16)
-                except ValueError:
-                    return False
-
-            return True
-
         for sym in self.syms.values():
             # - sym.nodes empty means the symbol is undefined (has no
             #   definition locations)
             #
             # - Due to Kconfig internals, numbers show up as undefined Kconfig
             #   symbols, but shouldn't be flagged
-            if not sym.nodes and not is_num(sym.name):
+            if not sym.nodes and not _looks_like_number(sym.name):
                 msg = f"undefined symbol {sym.name}:"
                 for node in self.node_iter():
                     if sym in node.referenced:
@@ -7592,6 +7569,21 @@ def _is_base_n(s, n):
         return True
     except ValueError:
         return False
+
+
+def _looks_like_number(s):
+    """
+    Return True if the string 's' looks like a number.
+
+    Internally, all operands in Kconfig are symbols; only undefined symbols (which numbers usually are) get their
+    name as their value. Only hex numbers that start with 0x/0X are classified as numbers, otherwise symbols whose
+    names happen to contain only the letters A-F would trigger false positives.
+    """
+    try:
+        int(s)
+        return True
+    except ValueError:
+        return s.startswith(("0x", "0X")) and _is_base_n(s, 16)
 
 
 def is_float(s: str) -> bool:
