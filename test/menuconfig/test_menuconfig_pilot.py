@@ -157,6 +157,7 @@ def test_uppercase_save_binding_triggers_save(tmp_path, monkeypatch):
             await pilot.press("S")
             await pilot.pause()
             assert app.state.conf_changed is False
+            assert app.state.saved is True
 
         sdkconfig = Path(app.state.conf_filename)
         assert sdkconfig.exists()
@@ -323,6 +324,7 @@ def test_quit_with_changes_discard_branch_exits_without_saving(tmp_path, monkeyp
 
         assert app.return_value is not None
         assert "not saved" in app.return_value.lower()
+        assert app.state.saved is False
 
     _run(go)
 

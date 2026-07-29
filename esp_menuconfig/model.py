@@ -66,6 +66,7 @@ class MenuConfigState:
     cur_menu: MenuNode = field(init=False)
     shown: List[MenuNode] = field(default_factory=list, init=False)
     sel_node_i: int = field(default=0, init=False)
+    saved: bool = field(default=False, init=False)  # True once the configuration has been saved during this session.
 
     _sorted_sc_cache: List[MenuNode] = field(default_factory=list, init=False, repr=False)
     _sorted_mc_cache: List[MenuNode] = field(default_factory=list, init=False, repr=False)

@@ -446,11 +446,13 @@ class MenuConfigApp(App[str]):
         from .idf_headers import idf_sdkconfig_header
 
         try:
-            return self.state.kconf.write_config(
+            msg = self.state.kconf.write_config(
                 filepath,
                 header=idf_sdkconfig_header(),
                 write_deprecated=False,
             )
+            self.state.saved = True
+            return msg
         except EnvironmentError as e:
             self.notify(f"Error saving to '{filepath}': {e}", severity="error")
             return None
