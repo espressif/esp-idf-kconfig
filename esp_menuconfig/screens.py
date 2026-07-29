@@ -12,6 +12,7 @@ import subprocess
 from typing import TYPE_CHECKING
 from typing import Callable
 from typing import List
+from typing import NamedTuple
 from typing import Optional
 
 from textual.app import ComposeResult
@@ -19,6 +20,7 @@ from textual.binding import Binding
 from textual.containers import Horizontal
 from textual.containers import Vertical
 from textual.events import Key
+from textual.reactive import reactive
 from textual.screen import ModalScreen
 from textual.screen import Screen
 from textual.widgets import Button
@@ -199,32 +201,176 @@ class InvalidValueScreen(ModalScreen[None]):
         self.dismiss(None)
 
 
-class SaveScreen(ModalScreen[Optional[str]]):
-    """Save dialog with filename input."""
+class SaveMinimalResult(NamedTuple):
+    """Result of the minimal-config save dialog."""
+
+    filename: str
+    use_labels: bool
+
+
+class SimpleCheckbox(Static):
+    """A single-line checkbox without Textual's bordered toggle styling."""
+
+    can_focus = True
+    value = reactive(False)
+
+    def __init__(self, label: str, *, value: bool = False, id: Optional[str] = None) -> None:
+        super().__init__(id=id, markup=False)
+        self.label = label
+        self.value = value
+
+    def render(self) -> str:
+        mark = "x" if self.value else " "
+        return f"[{mark}] {self.label}"
+
+    def on_click(self) -> None:
+        self.value = not self.value
+
+    def on_key(self, event: Key) -> None:
+        if event.key in ("space", "enter"):
+            self.value = not self.value
+            event.prevent_default()
+            event.stop()
+
+
+class SaveMinimalConfigScreen(ModalScreen[Optional[SaveMinimalResult]]):
+    """Save dialog for the minimal config: filename plus a menu-labels toggle."""
 
     DEFAULT_CSS = """
-    SaveScreen {
+    SaveMinimalConfigScreen {
         align: center middle;
         background: $background 60%;
+    }
+    SaveMinimalConfigScreen #save-min-filename-label {
+        width: 100%;
+    }
+    SaveMinimalConfigScreen #checkbox-row {
+        width: 100%;
+        height: 1;
+        margin-top: 1;
+        align-horizontal: center;
+    }
+    SaveMinimalConfigScreen #labels-checkbox {
+        width: auto;
+        height: 1;
+    }
+    SaveMinimalConfigScreen #labels-checkbox:focus {
+        color: $block-cursor-foreground;
+        background: $block-cursor-background;
+        text-style: $block-cursor-text-style;
+    }
+    SaveMinimalConfigScreen #dialog-buttons {
+        width: 100%;
+        height: auto;
+        align-horizontal: center;
+        margin-top: 1;
+        border-top: solid $surface;
+        padding-top: 1;
+    }
+    SaveMinimalConfigScreen #dialog-buttons Button {
+        margin: 0 1;
     }
     """
     BINDINGS = [Binding("escape", "cancel", "Cancel", show=False)]
 
-    def __init__(self, default_filename: str, description: str) -> None:
+    def __init__(self, default_filename: str, default_labels: bool) -> None:
         super().__init__()
         self.default_filename = default_filename
-        self.description = description
+        self.default_labels = default_labels
 
     def compose(self) -> ComposeResult:
         with Vertical(id="dialog"):
-            yield Label(f"Save {self.description} to", id="dialog-title")
+            yield Label("Save minimal configuration", id="dialog-title")
+            yield Label("Filename:", id="save-min-filename-label")
             yield Input(value=self.default_filename, id="dialog-input")
+            with Horizontal(id="checkbox-row"):
+                yield SimpleCheckbox(
+                    "Include menu labels",
+                    value=self.default_labels,
+                    id="labels-checkbox",
+                )
+            with Horizontal(id="dialog-buttons"):
+                yield Button("Save", variant="primary", id="btn-save")
+                yield Button("Cancel", id="btn-cancel")
 
     def on_mount(self) -> None:
-        self.query_one("#dialog-input", Input).focus()
+        # Pre-select the whole path so it can be overwritten immediately.
+        inp = self.query_one("#dialog-input", Input)
+        inp.focus()
+        inp.select_all()
+
+    def _current_row(self) -> int:
+        """
+        Return the focused row index: 0=filename, 1=labels checkbox, 2=buttons.
+        """
+        focused = self.focused
+        if focused is None:
+            return 0
+        if focused.id == "dialog-input":
+            return 0
+        if focused.id == "labels-checkbox":
+            return 1
+        if focused.id in ("btn-save", "btn-cancel"):
+            return 2
+        return 0
+
+    def _focus_row(self, row: int) -> None:
+        if row == 0:
+            self.query_one("#dialog-input", Input).focus()
+        elif row == 1:
+            self.query_one("#labels-checkbox", SimpleCheckbox).focus()
+        else:
+            self.query_one("#btn-save", Button).focus()
+
+    def on_key(self, event: Key) -> None:
+        if event.key in ("up", "down"):
+            row = self._current_row()
+            row = (row + 1) % 3 if event.key == "down" else (row - 1) % 3
+            self._focus_row(row)
+            event.prevent_default()
+            event.stop()
+            return
+
+        if event.key not in ("left", "right"):
+            return
+
+        focused = self.focused
+        if focused is None or focused.id == "dialog-input":
+            # Leave ←/→ to the Input cursor.
+            return
+
+        if focused.id == "labels-checkbox":
+            # Right checks, left unchecks.
+            self.query_one("#labels-checkbox", SimpleCheckbox).value = event.key == "right"
+            event.prevent_default()
+            event.stop()
+            return
+
+        if focused.id in ("btn-save", "btn-cancel"):
+            buttons = list(self.query("#dialog-buttons Button"))
+            if buttons:
+                current = next((i for i, b in enumerate(buttons) if b is focused), 0)
+                nxt = (current + 1) % len(buttons) if event.key == "right" else (current - 1) % len(buttons)
+                buttons[nxt].focus()
+            event.prevent_default()
+            event.stop()
+
+    def _submit(self) -> None:
+        filename = self.query_one("#dialog-input", Input).value.strip()
+        if not filename:
+            self.app.push_screen(InvalidValueScreen("Filename must not be empty."))
+            return
+        use_labels = bool(self.query_one("#labels-checkbox", SimpleCheckbox).value)
+        self.dismiss(SaveMinimalResult(filename, use_labels))
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
-        self.dismiss(event.value)
+        self._submit()
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "btn-save":
+            self._submit()
+        elif event.button.id == "btn-cancel":
+            self.dismiss(None)
 
     def action_cancel(self) -> None:
         self.dismiss(None)
