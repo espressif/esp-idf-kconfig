@@ -7,6 +7,7 @@ mainmenu "Main menu"
         bool
         default "y" if IDF_TARGET="chipa"
         select DEP_FORCED_BY_TARGET
+        select FORCED_ON_CHIPA
 
     config IDF_TARGET_CHIPB
         bool
@@ -108,13 +109,39 @@ mainmenu "Main menu"
         bool "test NOT"
         depends on !IDF_TARGET_CHIPB
 
+    # A defined, promptless symbol driven by a non-target environment variable (${...} form). Its value is not fixed
+    # by IDF_TARGET -- another build could set IDF_XYZ -- so it stays non-constant and its dependents stay visible.
+    config IDF_XYZ
+        bool
+        default "${IDF_XYZ}"
+
     config CONFIG_DEPENDS_ENV_VAR1
-        bool "test other environment variable (should be visible because only IDF_TARGET should make something invisible)"
+        bool "depends on an env-driven symbol (env var, not target -> stays visible)"
         depends on IDF_XYZ
 
     config CONFIG_DEPENDS_ENV_VAR2
-        bool "test other environment variable (should be visible because only IDF_TARGET should make something invisible)"
+        bool "depends on the negation of the same env-driven symbol (stays visible)"
         depends on !IDF_XYZ
+
+    # Env var brought in via the legacy 'option env' form. Also non-constant -> dependent visible.
+    config ENV_OPTION_SYM
+        bool
+        option env="IDF_ENV_OPT_TESTONLY"
+
+    config NEEDS_ENV_OPTION
+        bool "depends on an option-env symbol (stays visible)"
+        depends on ENV_OPTION_SYM
+
+    # Macro ($(...)) is expanded at parse time to a fixed value, so it is constant: dependent folds and is hidden.
+    NEEDS_MACRO_VAL := n
+
+    config MACRO_SYM
+        bool
+        default "$(NEEDS_MACRO_VAL)"
+
+    config NEEDS_MACRO_SYM
+        bool "depends on a macro-driven symbol (constant -> hidden)"
+        depends on MACRO_SYM
 
     choice CHIPA_VERSION
         prompt "CHIPA version"
@@ -147,7 +174,7 @@ mainmenu "Main menu"
         int "option with default value depending on the chip version"
         depends on IDF_TARGET_CHIPA
         default 5 if CHIPA_REV_MIN < 2
-        default 4 if CHIPA_VERSION = 2
+        default 4 if CHIPA_REV_MIN = 2
         default 9 if CHIPA_REV_MIN = 3
 
     config COMPILER
@@ -235,3 +262,82 @@ mainmenu "Main menu"
         depends on BOOL_OPTION
         default 7 if DEP_GATE
         default 3
+
+    # --- permanently hidden options (IDFGH-9330, DOC-10791) ---
+
+    # IDFGH-9330: promptless SoC-cap-like symbol, value constant per target.
+    config SOC_CAP_CHIPA_ONLY
+        bool
+        default y if IDF_TARGET_CHIPA
+        default n
+
+    config USES_SOC_CAP_CHIPA_ONLY
+        bool "depends on a promptless cap present only on chipa"
+        depends on SOC_CAP_CHIPA_ONLY
+
+    # DOC-10791: prompted symbol force-selected on by the target (only on chipa).
+    config FORCED_ON_CHIPA
+        bool "force-selected on for chipa only"
+
+    config NEEDS_NOT_FORCED_ON_CHIPA
+        bool "depends on the force-selected symbol being off"
+        depends on !FORCED_ON_CHIPA
+
+    config NEEDS_FORCED_ON_CHIPA
+        bool "depends on the force-selected symbol being on"
+        depends on FORCED_ON_CHIPA
+
+    # Regression guard for rule 2: a plain user-toggleable option that defaults to n
+    # must NOT hide its dependents (the user can still enable it).
+    config PLAIN_USER_GATE
+        bool "plain user-toggleable gate"
+
+    config NEEDS_PLAIN_USER_GATE
+        bool "depends on a user option that defaults to n"
+        depends on PLAIN_USER_GATE
+
+    # Recursive re-evaluation must NOT pin a promptless bool whose value derives from a user-selectable
+    # choice. On chipa the user can reach CHIPA_VERSION1, so CHIPA_IS_V1 stays free and its dependent is
+    # visible; on chipb the choice is unreachable, so CHIPA_IS_V1 folds to n and the dependent is hidden.
+    config CHIPA_IS_V1
+        bool
+        default y if CHIPA_VERSION1
+        default n if CHIPA_VERSION2 || CHIPA_VERSION3
+
+    config NEEDS_CHIPA_IS_V1
+        bool "depends on a promptless bool driven by a user choice"
+        depends on CHIPA_IS_V1
+
+    # Recursive re-evaluation of a non-bool: TARGET_STR is fixed by IDF_TARGET, so a comparison on it
+    # resolves to a constant per target (dependent visible only on chipb).
+    config TARGET_STR
+        string
+        default "chipa" if IDF_TARGET_CHIPA
+        default "chipb" if IDF_TARGET_CHIPB
+
+    config NEEDS_TARGET_STR_CHIPB
+        bool "depends on a target-fixed string comparison"
+        depends on TARGET_STR = "chipb"
+
+    # IDFGH-9330: an omitted SOC_* cap is referenced but never defined for any target. A type-less undefined
+    # symbol is a hard n everywhere (no prompt, no default, cannot be select-promoted), so its dependent must be
+    # hidden on every chip.
+    config NEEDS_UNDEFINED_CAP
+        bool "depends on a symbol that is never defined (omitted cap)"
+        depends on SOC_CAP_NEVER_DEFINED
+
+    # A choice name is not a value: `depends on <choice_name>` just creates a value-less undefined stub (kconfiglib
+    # reports it as undefined too). It is a hard n on every target, so the dependent is hidden -- same as any other
+    # dependency on an undefined symbol.
+    config NEEDS_CHOICE_NAME
+        bool "depends on a choice name (bogus, always hidden)"
+        depends on ALWAYS_VISIBLE_CHOICE
+
+    # A plain `menu` whose own `depends on` is a hard n for this target must itself be hidden, not just its
+    # children -- otherwise an empty menu heading is emitted. Regression guard for the menu branch of _visible,
+    # which folds "visible if" (node.visibility) AND the menu's "depends on" (node.dep).
+    menu "MENU_DEPENDS_UNDEFINED_CAP"
+        depends on SOC_CAP_NEVER_DEFINED
+        config IN_MENU_DEPENDS_UNDEFINED_CAP
+            bool "inside a menu gated off by an omitted cap"
+    endmenu

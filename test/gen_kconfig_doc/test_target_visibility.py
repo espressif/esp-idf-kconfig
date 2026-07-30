@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# SPDX-FileCopyrightText: 2024 Espressif Systems (Shanghai) CO LTD
+# SPDX-FileCopyrightText: 2024-2026 Espressif Systems (Shanghai) CO LTD
 # SPDX-License-Identifier: Apache-2.0
 import os
 
@@ -24,6 +24,10 @@ class ConfigTargetVisibilityTestCase:
         choice = self.config.named_choices.get(name)
         if choice:
             return choice.nodes[0]
+        # Menus have no symbol/name; resolve them by their prompt text.
+        for node in self.config.node_iter():
+            if node.item is kconfiglib.MENU and node.prompt and node.prompt[0] == name:
+                return node
         raise RuntimeError("Unimplemented {}".format(name))
 
     def visible(self, config_name):
@@ -66,12 +70,34 @@ class TestConfigTargetVisibilityChipA(ConfigTargetVisibilityTestCase):
         self.visible("CONFIG_FOR_CHIPA_DEPENDS_VAR1")
         self.visible("CONFIG_FOR_CHIPA_DEPENDS_VAR2")
         self.visible("CONFIG_FOR_CHIPA_DEPENDS_VAR3")
+        # env-var-driven symbol is not fixed by the target -> non-constant -> dependents stay visible
         self.visible("CONFIG_DEPENDS_ENV_VAR1")
         self.visible("CONFIG_DEPENDS_ENV_VAR2")
+        self.visible("NEEDS_ENV_OPTION")
+        # macro ($(...)) is folded to a fixed value at parse time -> constant -> dependent hidden
+        self.invisible("NEEDS_MACRO_SYM")
         self.visible("CHIPA_VERSION")
         self.invisible("CHIPA_REV_MIN")
         self.visible("CHIPA_FEATURE_FROM_V1")
         self.visible("CHIPA_FEATURE_FROM_V3")
+        # IDFGH-9330: promptless cap is on for chipa -> dependent visible
+        self.visible("USES_SOC_CAP_CHIPA_ONLY")
+        # DOC-10791: FORCED_ON_CHIPA is force-selected on for chipa
+        self.invisible("NEEDS_NOT_FORCED_ON_CHIPA")
+        self.visible("NEEDS_FORCED_ON_CHIPA")
+        # rule 2 regression: user-toggleable gate must not hide its dependent
+        self.visible("NEEDS_PLAIN_USER_GATE")
+        # recursive re-eval: promptless bool driven by a reachable user choice stays free -> dependent visible
+        self.visible("NEEDS_CHIPA_IS_V1")
+        # recursive re-eval of a non-bool: TARGET_STR = "chipb" is false on chipa -> dependent hidden
+        self.invisible("NEEDS_TARGET_STR_CHIPB")
+        # IDFGH-9330: dependency on an omitted (undefined) cap is a hard n -> dependent hidden on every chip
+        self.invisible("NEEDS_UNDEFINED_CAP")
+        # a choice name is not a value: `depends on <choice_name>` is an undefined reference -> dependent hidden
+        self.invisible("NEEDS_CHOICE_NAME")
+        # a menu whose own `depends on` is a hard n must itself be hidden (no empty heading), not just its children
+        self.invisible("MENU_DEPENDS_UNDEFINED_CAP")
+        self.invisible("IN_MENU_DEPENDS_UNDEFINED_CAP")
 
 
 @pytest.mark.parametrize("setup_class", [1, 2], indirect=True)
@@ -107,9 +133,31 @@ class TestConfigTargetVisibilityChipB(ConfigTargetVisibilityTestCase):
         self.invisible("CONFIG_FOR_CHIPA_DEPENDS_VAR1")
         self.invisible("CONFIG_FOR_CHIPA_DEPENDS_VAR2")
         self.invisible("CONFIG_FOR_CHIPA_DEPENDS_VAR3")
+        # env-var-driven symbol is not fixed by the target -> non-constant -> dependents stay visible
         self.visible("CONFIG_DEPENDS_ENV_VAR1")
         self.visible("CONFIG_DEPENDS_ENV_VAR2")
+        self.visible("NEEDS_ENV_OPTION")
+        # macro ($(...)) is folded to a fixed value at parse time -> constant -> dependent hidden
+        self.invisible("NEEDS_MACRO_SYM")
         self.invisible("CHIPA_VERSION")
         self.invisible("CHIPA_REV_MIN")
         self.invisible("CHIPA_FEATURE_FROM_V1")
         self.invisible("CHIPA_FEATURE_FROM_V3")
+        # IDFGH-9330: promptless cap is off for chipb -> dependent hidden
+        self.invisible("USES_SOC_CAP_CHIPA_ONLY")
+        # DOC-10791: FORCED_ON_CHIPA is not selected for chipb, stays user-toggleable
+        self.visible("NEEDS_NOT_FORCED_ON_CHIPA")
+        self.visible("NEEDS_FORCED_ON_CHIPA")
+        # rule 2 regression: user-toggleable gate must not hide its dependent
+        self.visible("NEEDS_PLAIN_USER_GATE")
+        # recursive re-eval: choice is unreachable on chipb -> promptless bool folds to n -> dependent hidden
+        self.invisible("NEEDS_CHIPA_IS_V1")
+        # recursive re-eval of a non-bool: TARGET_STR = "chipb" is true on chipb -> dependent visible
+        self.visible("NEEDS_TARGET_STR_CHIPB")
+        # IDFGH-9330: dependency on an omitted (undefined) cap is a hard n -> dependent hidden on every chip
+        self.invisible("NEEDS_UNDEFINED_CAP")
+        # a choice name is not a value: `depends on <choice_name>` is an undefined reference -> dependent hidden
+        self.invisible("NEEDS_CHOICE_NAME")
+        # a menu whose own `depends on` is a hard n must itself be hidden (no empty heading), not just its children
+        self.invisible("MENU_DEPENDS_UNDEFINED_CAP")
+        self.invisible("IN_MENU_DEPENDS_UNDEFINED_CAP")
