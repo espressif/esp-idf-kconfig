@@ -523,7 +523,20 @@ def main(
         # Local import keeps non-interactive kconfgen runs free of textual.
         from esp_menuconfig import menuconfig as run_menuconfig
 
-        run_menuconfig(config)
+        needs_save = run_menuconfig(config)
+        if not needs_save:
+            # The user exited menuconfig without saving: nothing to do.
+            return
+
+        # Edge case: save, then edit more, then discard. run_menuconfig returns
+        # True, but three states exist:
+        # 1. config (Kconfig object) — still holds the discarded later edits
+        # 2. sdkconfig — last saved state (correct)
+        # 3. other files (.h, .cmake, ...) — pre-menuconfig state
+        # Reload sdkconfig so discarded edits are dropped before regenerating
+        # the other outputs.
+        if sdkconfig_file and os.path.exists(sdkconfig_file):
+            config.load_config(sdkconfig_file, replace=True, print_report=False)
 
     write_deprecated = not dont_write_deprecated
 

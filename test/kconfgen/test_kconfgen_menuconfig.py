@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 from typing import Iterator
 from typing import List
+from typing import Tuple
 
 import pytest
 
@@ -38,8 +39,10 @@ def captured_menuconfig(monkeypatch: pytest.MonkeyPatch) -> List[Kconfig]:
 
     calls: List[Kconfig] = []
 
-    def fake_menuconfig(kconf: Kconfig) -> None:
+    def fake_menuconfig(kconf: Kconfig) -> bool:
         calls.append(kconf)
+        # Simulate a session in which the user saved, so kconfgen emits output.
+        return True
 
     monkeypatch.setattr(esp_menuconfig, "menuconfig", fake_menuconfig)
     return calls
@@ -159,6 +162,134 @@ class TestKconfgenMenuconfigFlag:
         assert len(captured_menuconfig) == 1
         contents = out.read_text(encoding="utf-8")
         assert DEP_OP_BEGIN not in contents
+
+
+_TOGGLE_KCONFIG = """
+mainmenu "kconfgen menuconfig regression"
+    config BOOL_SYM
+        bool "A bool"
+        default y
+"""
+
+
+class TestKconfgenMenuconfigPersistence:
+    """After menuconfig, kconfgen must emit only what was saved to sdkconfig."""
+
+    def _write_fixture(self, tmp_path: Path) -> Tuple[Path, Path]:
+        kconfig = tmp_path / "Kconfig"
+        kconfig.write_text(_TOGGLE_KCONFIG, encoding="utf-8")
+        sdkconfig = tmp_path / "sdkconfig"
+        sdkconfig.write_text("CONFIG_BOOL_SYM=y\n", encoding="utf-8")
+        return kconfig, sdkconfig
+
+    def test_discarded_changes_are_not_written(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A change made in menuconfig but not saved must not leak into outputs."""
+        kconfig, sdkconfig = self._write_fixture(tmp_path)
+
+        import esp_menuconfig
+
+        def discard(kconf: Kconfig) -> bool:
+            # User flips BOOL_SYM y -> n and quits WITHOUT saving: the in-memory
+            # object changes, but nothing is written to disk and no save occurs.
+            kconf.syms["BOOL_SYM"].set_value(0)
+            return False
+
+        monkeypatch.setattr(esp_menuconfig, "menuconfig", discard)
+
+        _invoke_kconfgen(
+            monkeypatch,
+            [
+                "--kconfig",
+                str(kconfig),
+                "--config",
+                str(sdkconfig),
+                "--output",
+                "config",
+                str(sdkconfig),
+                "--menuconfig",
+            ],
+        )
+
+        contents = sdkconfig.read_text(encoding="utf-8")
+        assert "CONFIG_BOOL_SYM=y" in contents
+        assert "# CONFIG_BOOL_SYM is not set" not in contents
+
+    def test_saved_changes_are_written(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A change saved during menuconfig must be reflected in the outputs."""
+        kconfig, sdkconfig = self._write_fixture(tmp_path)
+
+        import esp_menuconfig
+
+        def save(kconf: Kconfig) -> bool:
+            # User flips BOOL_SYM y -> n and saves: menuconfig persists it to the
+            # sdkconfig file (here the same path kconfgen reads/writes).
+            kconf.syms["BOOL_SYM"].set_value(0)
+            kconf.write_config(str(sdkconfig))
+            return True
+
+        monkeypatch.setattr(esp_menuconfig, "menuconfig", save)
+
+        _invoke_kconfgen(
+            monkeypatch,
+            [
+                "--kconfig",
+                str(kconfig),
+                "--config",
+                str(sdkconfig),
+                "--output",
+                "config",
+                str(sdkconfig),
+                "--menuconfig",
+            ],
+        )
+
+        contents = sdkconfig.read_text(encoding="utf-8")
+        assert "# CONFIG_BOOL_SYM is not set" in contents
+
+    def test_changes_made_after_last_save_are_dropped(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Only the last saved state is emitted, not later unsaved edits."""
+        kconfig, sdkconfig = self._write_fixture(tmp_path)
+
+        import esp_menuconfig
+
+        def save_then_edit(kconf: Kconfig) -> bool:
+            # User saves BOOL_SYM=n, then flips it back to y but does NOT save.
+            kconf.syms["BOOL_SYM"].set_value(0)
+            kconf.write_config(str(sdkconfig))
+            kconf.syms["BOOL_SYM"].set_value(2)  # unsaved edit back to y
+            return True
+
+        monkeypatch.setattr(esp_menuconfig, "menuconfig", save_then_edit)
+
+        _invoke_kconfgen(
+            monkeypatch,
+            [
+                "--kconfig",
+                str(kconfig),
+                "--config",
+                str(sdkconfig),
+                "--output",
+                "config",
+                str(sdkconfig),
+                "--menuconfig",
+            ],
+        )
+
+        contents = sdkconfig.read_text(encoding="utf-8")
+        assert "# CONFIG_BOOL_SYM is not set" in contents
+        assert "CONFIG_BOOL_SYM=y" not in contents
 
 
 class TestKconfgenMenuconfigImportLocality:

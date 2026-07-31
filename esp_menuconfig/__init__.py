@@ -49,8 +49,15 @@ def _resolve_theme() -> Optional[str]:
     return _LEGACY_STYLE_MAP.get(first_token, first_token)
 
 
-def menuconfig(kconf: "Kconfig", headless: bool = False) -> None:
-    """Launch the Textual configuration interface, returning after the user exits."""
+def menuconfig(kconf: "Kconfig", headless: bool = False) -> bool:
+    """
+    Launch the Textual configuration interface, returning after the user exits.
+
+    Returns True if the user saved the configuration during the session, and
+    False otherwise (nothing saved / discarded / headless). Callers that reuse
+    the ``kconf`` object afterwards (e.g. kconfgen --menuconfig) can use this to
+    decide whether the in-memory state should be persisted downstream.
+    """
     global _module_state
 
     from .model import MenuConfigState
@@ -77,13 +84,13 @@ def menuconfig(kconf: "Kconfig", headless: bool = False) -> None:
         state.shown = state.shown_nodes(state.cur_menu)
         if not state.shown:
             log.warn("Empty configuration -- nothing to configure.\nCheck that environment variables are set properly.")
-            return
+            return False
 
     kconf.warn = False
     _module_state = state
 
     if headless:
-        return
+        return False
 
     from .app import MenuConfigApp
 
@@ -93,6 +100,8 @@ def menuconfig(kconf: "Kconfig", headless: bool = False) -> None:
 
     if result:
         log.print(result, file=sys.stderr)
+
+    return state.saved
 
 
 def _needs_save() -> bool:

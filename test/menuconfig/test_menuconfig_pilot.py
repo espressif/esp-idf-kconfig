@@ -33,6 +33,8 @@ from esp_menuconfig.model import MenuConfigState
 from esp_menuconfig.screens import InfoScreen
 from esp_menuconfig.screens import InputScreen
 from esp_menuconfig.screens import InvalidValueScreen
+from esp_menuconfig.screens import SaveMinimalConfigScreen
+from esp_menuconfig.screens import SimpleCheckbox
 from esp_menuconfig.widgets import MenuOptionList
 
 KCONFIGS_PATH = Path(__file__).parent / "kconfigs"
@@ -157,6 +159,7 @@ def test_uppercase_save_binding_triggers_save(tmp_path, monkeypatch):
             await pilot.press("S")
             await pilot.pause()
             assert app.state.conf_changed is False
+            assert app.state.saved is True
 
         sdkconfig = Path(app.state.conf_filename)
         assert sdkconfig.exists()
@@ -323,6 +326,7 @@ def test_quit_with_changes_discard_branch_exits_without_saving(tmp_path, monkeyp
 
         assert app.return_value is not None
         assert "not saved" in app.return_value.lower()
+        assert app.state.saved is False
 
     _run(go)
 
@@ -532,5 +536,220 @@ def test_choice_option_selection_changes(tmp_path, monkeypatch):
 
             assert sym_b.str_value == "y"
             assert sym_a.str_value == "n"
+
+    _run(go)
+
+
+# --- #11 Save minimal configuration (combined dialog) ---------------------
+
+
+async def _open_save_minimal_dirty(pilot: Pilot) -> None:
+    """Make BOOL_SYM non-default and open the combined save-minimal dialog."""
+    await _highlight(pilot, _IDX_BOOL)
+    await pilot.press("space")  # BOOL_SYM: y -> n (non-default)
+    await pilot.pause()
+    await pilot.press("d")
+    await pilot.pause()
+    assert isinstance(pilot.app.screen, SaveMinimalConfigScreen)
+
+
+def test_save_minimal_opens_combined_dialog(tmp_path, monkeypatch):
+    """Pressing ``d`` opens the single combined save-minimal dialog."""
+
+    async def go() -> None:
+        app = _make_app(tmp_path, monkeypatch)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            await pilot.press("d")
+            await pilot.pause()
+            assert isinstance(app.screen, SaveMinimalConfigScreen)
+
+    _run(go)
+
+
+def test_save_minimal_default_writes_without_labels(tmp_path, monkeypatch):
+    """Submitting with the default toggle (no) writes a plain minimal config."""
+
+    async def go() -> None:
+        app = _make_app(tmp_path, monkeypatch)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            await _open_save_minimal_dirty(pilot)
+            await pilot.press("enter")  # submit with default filename, labels off
+            await pilot.pause()
+
+        out = Path(app.state.minconf_filename)
+        assert out.exists()
+        assert "BOOL_SYM" in out.read_text(encoding="utf-8")
+
+    _run(go)
+
+
+def test_save_minimal_custom_filename_is_used(tmp_path, monkeypatch):
+    """A filename typed into the dialog is where the minimal config is written."""
+
+    async def go() -> None:
+        app = _make_app(tmp_path, monkeypatch)
+        custom = tmp_path / "sdkconfig.defaults.custom"
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            await _open_save_minimal_dirty(pilot)
+            app.screen.query_one("#dialog-input").value = str(custom)
+            await pilot.pause()
+            await pilot.press("enter")
+            await pilot.pause()
+
+        assert custom.exists()
+        assert app.state.minconf_filename == str(custom)
+
+    _run(go)
+
+
+def test_save_minimal_cancel_writes_nothing(tmp_path, monkeypatch):
+    """Pressing escape on the dialog leaves no file behind."""
+
+    async def go() -> None:
+        app = _make_app(tmp_path, monkeypatch)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            await _open_save_minimal_dirty(pilot)
+            await pilot.press("escape")
+            await pilot.pause()
+
+        assert not Path(app.state.minconf_filename).exists()
+
+    _run(go)
+
+
+def test_save_minimal_empty_filename_shows_invalid(tmp_path, monkeypatch):
+    """An empty filename is rejected with a feedback modal, writing nothing."""
+
+    async def go() -> None:
+        app = _make_app(tmp_path, monkeypatch)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            await _open_save_minimal_dirty(pilot)
+            app.screen.query_one("#dialog-input").value = "   "
+            await pilot.pause()
+            await pilot.press("enter")
+            await pilot.pause()
+            assert isinstance(app.screen, InvalidValueScreen)
+
+        assert not Path(app.state.minconf_filename).exists()
+
+    _run(go)
+
+
+def test_save_minimal_env_var_defaults_labels_to_yes(tmp_path, monkeypatch):
+    """ESP_IDF_KCONFIG_MIN_LABELS=1 pre-checks the menu-labels checkbox."""
+    monkeypatch.setenv("ESP_IDF_KCONFIG_MIN_LABELS", "1")
+
+    async def go() -> None:
+        app = _make_app(tmp_path, monkeypatch)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            await pilot.press("d")
+            await pilot.pause()
+            assert isinstance(app.screen, SaveMinimalConfigScreen)
+            assert app.screen.query_one("#labels-checkbox", SimpleCheckbox).value is True
+
+    _run(go)
+
+
+def test_save_minimal_labels_toggle_emits_menu_sections(tmp_path, monkeypatch):
+    """Checking the menu-labels box emits menu section labels in the output."""
+
+    async def go() -> None:
+        app = _make_app(tmp_path, monkeypatch, kconfig_path=KCONFIG_SUBMENU)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            # Make a symbol inside the "Inner menu" non-default.
+            app.state.kconf.syms["INNER_BOOL"].set_value(2)
+
+            await pilot.press("d")
+            await pilot.pause()
+            assert isinstance(app.screen, SaveMinimalConfigScreen)
+
+            app.screen.query_one("#labels-checkbox", SimpleCheckbox).value = True
+            await pilot.pause()
+            assert app.screen.query_one("#labels-checkbox", SimpleCheckbox).value is True
+
+            await pilot.press("enter")
+            await pilot.pause()
+
+        contents = Path(app.state.minconf_filename).read_text(encoding="utf-8")
+        assert "INNER_BOOL" in contents
+        assert "# Inner menu" in contents
+
+    _run(go)
+
+
+def test_save_minimal_without_labels_omits_menu_sections(tmp_path, monkeypatch):
+    """Default toggle (no) does not emit menu section labels."""
+
+    async def go() -> None:
+        app = _make_app(tmp_path, monkeypatch, kconfig_path=KCONFIG_SUBMENU)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            app.state.kconf.syms["INNER_BOOL"].set_value(2)
+
+            await pilot.press("d")
+            await pilot.pause()
+            assert isinstance(app.screen, SaveMinimalConfigScreen)
+            await pilot.press("enter")
+            await pilot.pause()
+
+        contents = Path(app.state.minconf_filename).read_text(encoding="utf-8")
+        assert "INNER_BOOL" in contents
+        assert "# Inner menu" not in contents
+
+    _run(go)
+
+
+def test_save_minimal_arrows_navigate_and_toggle(tmp_path, monkeypatch):
+    """Up/down move between rows; left/right check/uncheck and move buttons."""
+
+    async def go() -> None:
+        from textual.widgets import Button
+        from textual.widgets import Input
+
+        app = _make_app(tmp_path, monkeypatch)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            await pilot.press("d")
+            await pilot.pause()
+            assert isinstance(app.screen, SaveMinimalConfigScreen)
+            assert isinstance(app.focused, Input)
+
+            await pilot.press("down")
+            await pilot.pause()
+            assert isinstance(app.focused, SimpleCheckbox)
+            checkbox = app.screen.query_one("#labels-checkbox", SimpleCheckbox)
+            assert checkbox.value is False
+
+            await pilot.press("right")
+            await pilot.pause()
+            assert checkbox.value is True
+
+            await pilot.press("left")
+            await pilot.pause()
+            assert checkbox.value is False
+
+            await pilot.press("down")
+            await pilot.pause()
+            assert isinstance(app.focused, Button)
+            assert app.focused.id == "btn-save"
+
+            await pilot.press("right")
+            await pilot.pause()
+            assert app.focused.id == "btn-cancel"
+
+            await pilot.press("up")
+            await pilot.pause()
+            assert isinstance(app.focused, SimpleCheckbox)
+
+            await pilot.press("up")
+            await pilot.pause()
+            assert isinstance(app.focused, Input)
 
     _run(go)
