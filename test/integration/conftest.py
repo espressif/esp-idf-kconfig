@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any
 from typing import Callable
 from typing import Iterator
+from typing import List
 from typing import Optional
 
 import pytest
@@ -137,7 +138,7 @@ def idf_py(idf_path: Path) -> Callable[..., subprocess.CompletedProcess]:  # typ
 def test_app_copy(
     idf_path: Path,
     tmp_path: Path,
-) -> Callable[[str], Path]:
+) -> Iterator[Callable[[str], Path]]:
     """
     Return a callable that copies an IDF example to a temp directory.
     Equivalent to the ESP-IDF test fixture of the same name.
@@ -145,7 +146,13 @@ def test_app_copy(
     Usage inside a test::
 
         app = test_app_copy("examples/get-started/hello_world")
+
+    The copied trees (including the ``build/`` directory) are removed when the
+    test finishes. pytest keeps function-scoped ``tmp_path`` dirs for the whole
+    session otherwise, so every example's build tree would accumulate and
+    exhaust the disk on the shared windows-vm runner.
     """
+    created: List[Path] = []
 
     def _copy(rel_path: str) -> Path:
         src = idf_path / rel_path
@@ -159,9 +166,15 @@ def test_app_copy(
             str(dst),
             ignore=lambda directory, contents: [c for c in contents if c in IGNORE_COPY],
         )
+        created.append(dst)
         return dst
 
-    return _copy
+    yield _copy
+
+    for path in created:
+        # ignore_errors so teardown never fails the test (Windows build trees
+        # can hold read-only or long-path files that resist deletion).
+        shutil.rmtree(str(path), ignore_errors=True)
 
 
 @pytest.fixture

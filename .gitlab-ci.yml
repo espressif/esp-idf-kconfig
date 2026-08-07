@@ -193,6 +193,10 @@ test_kconfcheck_venv:
     COVERAGE_PROCESS_START: ""
     COVERAGE_RCFILE: ""
     COVERAGE_FILE: ""
+    # Cap idf.py's Ninja parallelism. Without this, Ninja defaults to one job
+    # per core and heavy C++ examples (e.g. openthread/ot_br) exhaust the
+    # runner's RAM, killing cc1plus. Tune up if runners get more memory.
+    IDF_PY_BUILD_JOBS: "2"
   cache:
     - key: "esp-idf-tools-${IDF_BRANCH}-${PYTHON_VERSION}"
       paths: [.cache/espressif/]
@@ -255,6 +259,11 @@ integration_fast_compat:
     - key: "esp-idf-tools-windows-${IDF_BRANCH}-${PYTHON_VERSION}"
       paths: [.cache/espressif/]
   allow_failure: true
+  # Windows integration jobs are manual by default to avoid load on the small
+  # windows-vm runner pool; trigger them as needed.
+  rules:
+    - when: manual
+      allow_failure: true
   before_script:
     - git config --global core.longpaths true
     - git config --global core.autocrlf false
@@ -282,6 +291,13 @@ integration_fast_compat:
     - cd $env:CI_PROJECT_DIR
     - python -V
     - python -m pip install -e .[dev] --prefer-binary
+  after_script:
+    # windows-vm is a persistent shell executor. pytest's temp trees live in
+    # %TEMP%\pytest-of-* (outside the project dir GitLab cleans up), so a job
+    # killed mid-run — e.g. by "No space left on device" — can leave full build
+    # trees behind and starve the next job. Sweep them here; after_script runs
+    # regardless of job outcome.
+    - Get-ChildItem -Path $env:TEMP -Filter 'pytest-of-*' -Directory -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
 
 integration_fast_windows:
   extends: .integration_template_windows
@@ -297,8 +313,8 @@ integration_fast_windows:
     - $env:INTEGRATION_SHARD_INDEX = [string]([int]$env:CI_NODE_INDEX - 1)
     - pytest -vv test/integration -m fast
 
-# Compatibility runs against IDF release branches. Manual to avoid load on
-# the small windows-vm runner pool; trigger as needed.
+# Compatibility runs against IDF release branches (manual, like all Windows
+# integration jobs); trigger when a change might affect older IDF revisions.
 integration_fast_windows_compat:
   extends: .integration_template_windows
   parallel:
@@ -306,9 +322,6 @@ integration_fast_windows_compat:
       - PYTHON_VERSION: ["3.14"]
         IDF_BRANCH: ["release/v6.0", "release/v6.1"]
         SHARD: ["0", "1", "2"]
-  rules:
-    - when: manual
-      allow_failure: true
   script:
     # cmakev2 (cmakev2_fast) is intentionally not run on Windows for now to keep
     # the slow windows-vm jobs short.
