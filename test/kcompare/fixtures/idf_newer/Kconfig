@@ -1,0 +1,7 @@
+mainmenu "Dummy ESP-IDF Configuration (newer)"
+
+source "$COMPONENT_KCONFIGS_PROJBUILD_SOURCE_FILE"
+
+menu "Component config"
+    source "$COMPONENT_KCONFIGS_SOURCE_FILE"
+endmenu

@@ -1,0 +1,9 @@
+mainmenu "Trap"
+
+config IDF_EXPERIMENTAL_FEATURES
+    bool
+    default n
+
+config TRAP_ONLY
+    bool
+    default y

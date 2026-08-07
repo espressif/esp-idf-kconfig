@@ -1,0 +1,3 @@
+config BAR
+    bool
+    default n

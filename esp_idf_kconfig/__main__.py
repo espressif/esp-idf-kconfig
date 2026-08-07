@@ -20,5 +20,7 @@ log.print(
     f"\n{' ' * int(len(msg) / 2)}"
     "Run JSON configuration server. (idf.py confserver or python -m kconfserver)"
     f"\n{' ' * int(len(msg) / 2)}"
-    f"Config Generation Tool. {' ' * 6} (python -m kconfgen)",
+    f"Config Generation Tool. {' ' * 6} (python -m kconfgen)"
+    f"\n{' ' * int(len(msg) / 2)}"
+    f"Compare IDF Kconfig commits. {' ' * 2} (python -m kcompare)",
 )

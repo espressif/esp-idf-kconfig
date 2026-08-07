@@ -18,6 +18,7 @@ Excluding the core functionality, the ``esp-idf-kconfig`` package has been exten
 - Checking the validity of Kconfig files (kconfcheck)
 - Support for configuration via IDEs (kconfserver)
 - Advanced Kconfig file manipulation (kconfgen)
+- Comparing the Kconfig configuration between two ESP-IDF commits (kcompare)
 
 Documentation Overview
 ----------------------
@@ -27,5 +28,6 @@ Documentation Overview
 
     Kconfig Language <kconfiglib/index>
     Checking Kconfig Files <kconfcheck/index>
+    Comparing Kconfig Between Commits <kcompare/index>
     Developer and Contributor Guide <developer-guide/index>
     Kconfserver <kconfserver/index>
