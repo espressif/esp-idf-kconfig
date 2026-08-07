@@ -11,10 +11,12 @@ import os
 import re
 import sys
 import typing
+from glob import escape as glob_escape
 from glob import iglob
 from os.path import dirname
 from os.path import exists
 from os.path import expandvars
+from os.path import isfile
 from os.path import islink
 from os.path import join
 from os.path import realpath
@@ -311,7 +313,13 @@ sub2/foobarfoo:
   source "sub[12]/foo*foo"
 
 The glob patterns accepted are the same as for the standard glob.glob()
-function.
+function, except that if the expanded path names an existing file, it is
+sourced literally rather than treated as a pattern. This keeps fully literal
+paths that contain glob metacharacters working, e.g. a project directory
+named 'hello_world[test]' passed in through an environment variable. Only
+the argument of the 'source'/'rsource' statement itself carries glob
+semantics; $srctree and the 'rsource' base directory are never interpreted
+as patterns.
 
 Two additional statements are provided for cases where it's acceptable for a
 pattern to match no files: 'osource' and 'orsource' (the o is for "optional").
@@ -3292,7 +3300,9 @@ class Kconfig(object):
                 pattern = self._expect_str_and_eol()
                 if t0 in _REL_SOURCE_TOKENS:
                     # Relative source
-                    pattern = join(dirname(self.filename), pattern)
+                    prefix = join(self._srctree_prefix, dirname(self.filename))
+                else:
+                    prefix = self._srctree_prefix
 
                 # - glob() doesn't support globbing relative to a directory, so
                 #   we need to prepend $srctree to 'pattern'. Use join()
@@ -3302,7 +3312,7 @@ class Kconfig(object):
                 # - Sort the glob results to ensure a consistent ordering of
                 #   Kconfig symbols, which indirectly ensures a consistent
                 #   ordering in e.g. .config files
-                filenames = sorted(iglob(join(self._srctree_prefix, pattern)))
+                filenames = _resolve_source_pattern(prefix, pattern)
 
                 if not filenames and t0 in _OBL_SOURCE_TOKENS:
                     raise KconfigError(
@@ -3312,7 +3322,7 @@ class Kconfig(object):
                         "environment variables expand to the empty string.".format(
                             self.filename,
                             self.linenr,
-                            pattern,
+                            join(dirname(self.filename), pattern) if t0 in _REL_SOURCE_TOKENS else pattern,
                             self._line.strip(),
                             f"set to '{self.srctree}'" if self.srctree else "unset or blank",
                         )
@@ -7484,6 +7494,35 @@ def standard_config_filename():
     without having to use this function.
     """
     return os.getenv("KCONFIG_CONFIG", ".config")
+
+
+def _resolve_source_pattern(prefix: str, pattern: str) -> List[str]:
+    """
+    Resolve a (potential) glob pattern used by a 'source' statement into a list
+    of filenames.
+
+    'prefix' is a filesystem path assembled by the library itself (srctree
+    and/or the directory of the sourcing file), while 'pattern' is the
+    (possibly glob) argument written in the 'source' statement.
+
+    If the joined path points at an existing file, it is sourced literally.
+    This keeps paths that contain glob metacharacters (e.g. a project directory
+    named 'hello_world[test]') working, since such characters usually come from
+    variable expansion rather than an intentional glob pattern. Otherwise
+    'prefix' is escaped (so accidental metacharacters in it can never affect
+    globbing) and the pattern is expanded via glob, with the results sorted to
+    ensure a consistent ordering.
+
+    This cannot help if 'pattern' itself mixes accidental and intentional
+    metacharacters after variable expansion (e.g. "my[path]/*/Kconfig", where
+    '[path]' is a literal directory name but '*' is meant as a glob) - the two
+    are indistinguishable once expanded, so no rule applied to 'pattern' can be
+    correct for both.
+    """
+    full_path = join(prefix, pattern)
+    if isfile(full_path):
+        return [full_path]
+    return sorted(iglob(join(glob_escape(prefix), pattern)))
 
 
 #
