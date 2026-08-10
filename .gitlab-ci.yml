@@ -197,9 +197,19 @@ test_kconfcheck_venv:
     # per core and heavy C++ examples (e.g. openthread/ot_br) exhaust the
     # runner's RAM, killing cc1plus. Tune up if runners get more memory.
     IDF_PY_BUILD_JOBS: "2"
-  cache:
-    - key: "esp-idf-tools-${IDF_BRANCH}-${PYTHON_VERSION}"
-      paths: [.cache/espressif/]
+    # Fetch the toolchains, GDB, OpenOCD and esp-rom-elfs from the Espressif
+    # mirror instead of github.com. These jobs install the tools on every run,
+    # so without the mirror every run pulls them from GitHub. Only release
+    # assets are redirected; the esp-idf clone below still goes to github.com.
+    # idf_tools.py rewrites the URLs unconditionally, so the mirror is a hard
+    # dependency of this stage - there is no fallback to github.com.
+    IDF_GITHUB_ASSETS: "dl.espressif.com/github_assets"
+  # No cache for IDF_TOOLS_PATH. Measured on this project, restore_cache plus
+  # archive_cache cost 141-2033 s per job while installing the tools from
+  # scratch (with the mirror above) costs about 112 s, and the gap widens as
+  # the cached tree grows (nothing prunes the extracted tools or the dist/
+  # archives beside them).
+  cache: []
   allow_failure: true
   before_script:
     - apt-get update && apt-get install -y -q git cmake ninja-build ccache libusb-1.0-0
@@ -255,9 +265,12 @@ integration_fast_compat:
     # They are derived from an absolutised CI_PROJECT_DIR in before_script.
     PYTHONUNBUFFERED: "1"
     GIT_SUBMODULE_STRATEGY: none
-  cache:
-    - key: "esp-idf-tools-windows-${IDF_BRANCH}-${PYTHON_VERSION}"
-      paths: [.cache/espressif/]
+    # See .integration_template for why the assets mirror is set.
+    IDF_GITHUB_ASSETS: "dl.espressif.com/github_assets"
+  # No cache, for the same reason as .integration_template. The Windows numbers
+  # are worse still: 554-1057 s of cache overhead per job, and the three
+  # parallel shards each upload the same tools over each other.
+  cache: []
   allow_failure: true
   # Windows integration jobs are manual by default to avoid load on the small
   # windows-vm runner pool; trigger them as needed.
