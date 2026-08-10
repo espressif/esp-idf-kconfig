@@ -7,6 +7,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 from typing import Any
 
+from rich.markup import escape
 from textual.binding import Binding
 from textual.message import Message
 from textual.widgets import OptionList
@@ -73,11 +74,13 @@ class MenuOptionList(OptionList):
             self.add_option(self._BACK_LABEL)
         for node in state.shown:
             self._menu_nodes.append(node)
-            label = node_str(
-                node,
-                show_name=state.show_name,
-                has_visible_child_fn=state.has_visible_child,
-                kconf=state.kconf,
+            label = escape(
+                node_str(
+                    node,
+                    show_name=state.show_name,
+                    has_visible_child_fn=state.has_visible_child,
+                    kconf=state.kconf,
+                )
             )
             if not (state._visible(node) or not state.show_all):
                 label = f"[dim]{label}[/dim]"

@@ -47,10 +47,6 @@ SUBMENU_INDENT = 4
 _VAL_N = STR_TO_BOOL["n"]
 _VAL_Y = STR_TO_BOOL["y"]
 
-INFO_HELP_LINES = """
-[ESC/q] Return to menu      [/] Jump to symbol
-"""[1:-1].split("\n")
-
 JUMP_TO_HELP_LINES = """
 [Enter] jump to the selected symbol
 [ESC] abort the search

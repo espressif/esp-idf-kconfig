@@ -1,0 +1,12 @@
+mainmenu "Bracket rendering test"
+
+    config BRACKET_BOOL
+        bool "Enable [experimental] mode"
+        default y
+        help
+            Uses [square] brackets and a [/] closing-like tag in help text.
+
+    menu "Menu [beta]"
+        config INNER_BOOL
+            bool "inner"
+    endmenu
