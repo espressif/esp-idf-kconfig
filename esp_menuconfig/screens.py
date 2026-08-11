@@ -15,6 +15,7 @@ from typing import List
 from typing import NamedTuple
 from typing import Optional
 
+from rich.markup import escape
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal
@@ -88,7 +89,7 @@ class KeyDialogScreen(ModalScreen[Optional[str]]):
         with Vertical(id="dialog"):
             yield Label(self.dialog_title, id="dialog-title")
             if self._body_text:
-                yield Label(self._body_text, id="dialog-body")
+                yield Label(self._body_text, id="dialog-body", markup=False)
             with Horizontal(id="dialog-buttons"):
                 for key_char, label in self._buttons:
                     yield Button(label, id=f"btn-{key_char}")
@@ -150,9 +151,9 @@ class InputScreen(ModalScreen[Optional[str]]):
 
     def compose(self) -> ComposeResult:
         with Vertical(id="dialog"):
-            yield Label(self.dialog_title, id="dialog-title")
+            yield Label(self.dialog_title, id="dialog-title", markup=False)
             if self.info_text:
-                yield Label(self.info_text, id="dialog-info")
+                yield Label(self.info_text, id="dialog-info", markup=False)
             yield Input(value=self.initial_text, id="dialog-input")
 
     def on_mount(self) -> None:
@@ -192,7 +193,7 @@ class InvalidValueScreen(ModalScreen[None]):
     def compose(self) -> ComposeResult:
         with Vertical(id="dialog"):
             yield Label("Invalid value", id="dialog-title")
-            yield Label(self.error, id="dialog-body")
+            yield Label(self.error, id="dialog-body", markup=False)
             yield Label("Press any key to continue.", id="dialog-hint")
 
     def on_key(self, event: Key) -> None:
@@ -406,6 +407,36 @@ class LoadScreen(ModalScreen[Optional[str]]):
         self.dismiss(None)
 
 
+def _page(ol: OptionList, direction: int) -> None:
+    """
+    Scroll ``ol`` by a full page, keeping the highlight on the same row.
+
+    ``OptionList.action_page_down``/``action_page_up`` move the highlight by a
+    page but then scroll only the minimal distance needed to reveal it, which
+    can leave the new highlight right at the edge of the view after just one
+    line of scrolling. Scrolling the viewport by a full page first, then
+    re-highlighting the option at the same row, matches the behavior of e.g.
+    terminal pagers.
+    """
+    option_count = ol.option_count
+    if not option_count:
+        return
+    page = ol.scrollable_content_region.height
+    if page <= 0:
+        return
+    if option_count <= page:
+        # Everything already fits in the view, so there is nothing to scroll:
+        # jump to the start/end, like the equivalent Home/End move.
+        ol.highlighted = 0 if direction < 0 else option_count - 1
+        return
+    scroll = int(ol.scroll_y)
+    row = (ol.highlighted or 0) - scroll
+    max_scroll = option_count - page
+    new_scroll = min(max(scroll + direction * page, 0), max_scroll)
+    ol.scroll_to(y=new_scroll, animate=False, immediate=True)
+    ol.highlighted = min(max(new_scroll + row, 0), option_count - 1)
+
+
 def _copy_via_system_tool(text: str) -> bool:
     """
     Copy text to the system clipboard using an OS-native helper.
@@ -541,6 +572,21 @@ class InfoScreen(ModalScreen[None]):
 class JumpToScreen(Screen[Optional["MenuNode"]]):
     """Fullscreen search dialog using OptionList for results."""
 
+    DEFAULT_CSS = """
+    JumpToScreen {
+        #search-input {
+            dock: top;
+        }
+        #matches-list {
+            height: 1fr;
+            max-height: 100%;
+        }
+        #jump-help {
+            dock: bottom;
+        }
+    }
+    """
+
     BINDINGS = [
         Binding("escape", "cancel", "Cancel", show=False),
     ]
@@ -551,9 +597,9 @@ class JumpToScreen(Screen[Optional["MenuNode"]]):
         self._matches: list[MenuNode] = []
 
     def compose(self) -> ComposeResult:
-        yield Input(placeholder="Search symbols...", id="search-input")
+        yield Input(placeholder="Search symbols by substring or regex...", id="search-input")
         yield OptionList(id="matches-list")
-        yield Static("\n".join(JUMP_TO_HELP_LINES), id="jump-help")
+        yield Static(JUMP_TO_HELP_LINES, id="jump-help", markup=False)
 
     def on_mount(self) -> None:
         self.query_one("#search-input", Input).focus()
@@ -563,10 +609,10 @@ class JumpToScreen(Screen[Optional["MenuNode"]]):
         ol = self.query_one("#matches-list", OptionList)
         ol.clear_options()
         if error:
-            ol.add_option(error)
+            ol.add_option(escape(error))
             return
         for node in self._matches:
-            ol.add_option(jump_to_match_str(node))
+            ol.add_option(escape(jump_to_match_str(node)))
         if self._matches:
             ol.highlighted = 0
 
@@ -578,6 +624,14 @@ class JumpToScreen(Screen[Optional["MenuNode"]]):
             event.stop()
         elif event.key == "up":
             ol.action_cursor_up()
+            event.prevent_default()
+            event.stop()
+        elif event.key == "pagedown":
+            _page(ol, 1)
+            event.prevent_default()
+            event.stop()
+        elif event.key == "pageup":
+            _page(ol, -1)
             event.prevent_default()
             event.stop()
         elif event.key == "enter":

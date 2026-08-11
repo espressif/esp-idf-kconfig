@@ -100,10 +100,10 @@ class MenuConfigApp(App[str]):
 
     def compose(self) -> ComposeResult:
         yield Header()
-        yield Static(id="path-bar")
+        yield Static(id="path-bar", markup=False)
         yield MenuOptionList(id="menu-list")
         yield Static(id="mode-bar")
-        yield Static(id="help-bar")
+        yield Static(id="help-bar", markup=False)
         yield Footer()
 
     def on_mount(self) -> None:
@@ -140,7 +140,7 @@ class MenuConfigApp(App[str]):
         if msg:
             self.state.conf_changed = False
             self.state.reload_sdkconfig_file(self.state.conf_filename)
-            self.notify(msg)
+            self.notify(msg, markup=False)
 
     def action_load(self) -> None:
         if self.state.conf_changed:
@@ -175,9 +175,9 @@ class MenuConfigApp(App[str]):
                     self.state.show_all = True
                 self.state._update_menu()
                 self._refresh_menu()
-                self.notify(f"Loaded {filename}")
+                self.notify(f"Loaded {filename}", markup=False)
             else:
-                self.notify(error or "Load failed", severity="error")
+                self.notify(error or "Load failed", severity="error", markup=False)
 
     def action_save_minimal(self) -> None:
         default_labels = os.environ.get("ESP_IDF_KCONFIG_MIN_LABELS") == "1"
@@ -202,9 +202,9 @@ class MenuConfigApp(App[str]):
                 normalize_unset=True,
             )
             self.state.minconf_filename = result.filename
-            self.notify(f"Saved minimal config to {result.filename}")
+            self.notify(f"Saved minimal config to {result.filename}", markup=False)
         except EnvironmentError as e:
-            self.notify(f"Error: {e}", severity="error")
+            self.notify(f"Error: {e}", severity="error", markup=False)
 
     def action_jump_to(self) -> None:
         self.push_screen(JumpToScreen(self.state), callback=self._handle_jump_result)
@@ -434,5 +434,5 @@ class MenuConfigApp(App[str]):
             self.state.saved = True
             return msg
         except EnvironmentError as e:
-            self.notify(f"Error saving to '{filepath}': {e}", severity="error")
+            self.notify(f"Error saving to '{filepath}': {e}", severity="error", markup=False)
             return None

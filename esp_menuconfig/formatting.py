@@ -47,17 +47,12 @@ SUBMENU_INDENT = 4
 _VAL_N = STR_TO_BOOL["n"]
 _VAL_Y = STR_TO_BOOL["y"]
 
-INFO_HELP_LINES = """
-[ESC/q] Return to menu      [/] Jump to symbol
-"""[1:-1].split("\n")
-
 JUMP_TO_HELP_LINES = """
-Type text to narrow the search. Regexes are supported (via Python's 're'
-module). The up/down cursor keys step in the list. [Enter] jumps to the
-selected symbol. [ESC] aborts the search. Type multiple space-separated
-strings/regexes to find entries that match all of them. Type Ctrl-F to
-view the help of the selected item without leaving the dialog.
-"""[1:-1].split("\n")
+[Enter] jump to the selected symbol
+[ESC] abort the search
+[Ctrl-F] view the help of the selected item without leaving the dialog
+[PgUp/PgDn] move by a page
+"""[1:-1]
 
 
 def node_str(

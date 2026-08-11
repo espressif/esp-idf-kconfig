@@ -41,6 +41,7 @@ KCONFIGS_PATH = Path(__file__).parent / "kconfigs"
 KCONFIG_ALL_SCALARS = str(KCONFIGS_PATH / "Kconfig.pilot_all_scalars")
 KCONFIG_SUBMENU = str(KCONFIGS_PATH / "Kconfig.pilot_submenu")
 KCONFIG_CHOICE = str(KCONFIGS_PATH / "Kconfig.pilot_choice")
+KCONFIG_BRACKETS = str(KCONFIGS_PATH / "Kconfig.pilot_brackets")
 
 
 def _make_app(
@@ -464,6 +465,38 @@ def test_jump_to_navigates_to_matched_symbol(tmp_path, monkeypatch):
     _run(go)
 
 
+def test_jump_to_pagedown_pageup_move_highlight(tmp_path, monkeypatch):
+    """PgDn/PgUp page through the search results while the input stays focused."""
+
+    async def go() -> None:
+        from textual.widgets import OptionList
+
+        from esp_menuconfig.screens import JumpToScreen
+
+        app = _make_app(tmp_path, monkeypatch)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            await pilot.press("slash")
+            await pilot.pause()
+            assert isinstance(app.screen, JumpToScreen)
+
+            app.screen.query_one("#search-input").value = "sym"
+            await pilot.pause()
+            ol = app.screen.query_one("#matches-list", OptionList)
+            assert ol.option_count > 1
+            assert ol.highlighted == 0
+
+            await pilot.press("pagedown")
+            await pilot.pause()
+            assert ol.highlighted != 0
+
+            await pilot.press("pageup")
+            await pilot.pause()
+            assert ol.highlighted == 0
+
+    _run(go)
+
+
 # --- #9 Validator messages per scalar type --------------------------------
 
 
@@ -751,5 +784,58 @@ def test_save_minimal_arrows_navigate_and_toggle(tmp_path, monkeypatch):
             await pilot.press("up")
             await pilot.pause()
             assert isinstance(app.focused, Input)
+
+    _run(go)
+
+
+# --- #12 Square brackets in prompts/help are not swallowed as markup --------
+
+
+def _rendered_option_text(prompt: object) -> str:
+    """Return the visible text of an OptionList option, resolving markup."""
+    from textual.content import Content
+
+    if isinstance(prompt, str):
+        return Content.from_markup(prompt).plain  # type: ignore
+    return getattr(prompt, "plain", str(prompt))
+
+
+def test_square_brackets_render_literally(tmp_path, monkeypatch):
+    """Prompts/help containing ``[...]`` render literally instead of being parsed as markup."""
+
+    async def go() -> None:
+        from textual.widgets import OptionList
+        from textual.widgets import Static
+
+        from esp_menuconfig.screens import JumpToScreen
+
+        app = _make_app(tmp_path, monkeypatch, kconfig_path=KCONFIG_BRACKETS)
+        app.state.show_help = True
+        async with app.run_test() as pilot:
+            await pilot.pause()
+
+            ml = app.query_one("#menu-list", MenuOptionList)
+            first = _rendered_option_text(ml.get_option_at_index(0).prompt)
+            assert "[experimental]" in first
+            assert "[*]" in first  # the bool checkbox glyph survives too
+            menu_label = _rendered_option_text(ml.get_option_at_index(1).prompt)
+            assert "[beta]" in menu_label
+
+            ml.highlighted = 0
+            await pilot.pause()
+            app._refresh_help()
+            await pilot.pause()
+            help_text = str(app.query_one("#help-bar", Static).render())
+            assert "[square]" in help_text
+            assert "[/]" in help_text  # a lone-looking closing tag must not crash/strip
+
+            await pilot.press("slash")
+            await pilot.pause()
+            assert isinstance(app.screen, JumpToScreen)
+            app.screen.query_one("#search-input").value = "experimental"
+            await pilot.pause()
+            ol = app.screen.query_one("#matches-list", OptionList)
+            assert ol.option_count >= 1
+            assert "[experimental]" in _rendered_option_text(ol.get_option_at_index(0).prompt)
 
     _run(go)
