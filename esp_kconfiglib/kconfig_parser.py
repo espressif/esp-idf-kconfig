@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: Apache-2.0
 import os
 from dataclasses import dataclass
-from glob import iglob
 from os.path import dirname
 from os.path import expandvars
 from os.path import join
@@ -44,6 +43,7 @@ from .core import KconfigError
 from .core import MenuNode
 from .core import Symbol
 from .core import Variable
+from .core import _resolve_source_pattern
 from .core import unescape
 
 ParserElement.enable_packrat(cache_size_limit=None)  # Speeds up parsing by caching intermediate results
@@ -203,12 +203,14 @@ class Parser:
 
     def parse_sourced(self, s: str, loc: int, parsed_source: ParseResults) -> None:
         self.kconfig.linenr = lineno(loc, s)
-        path = expandvars(parsed_source.path)
+        pattern = expandvars(parsed_source.path)
         if parsed_source[0] in ["rsource", "orsource"]:
-            path = join(dirname(self.file_stack[-1]), path)
+            prefix = join(self.kconfig._srctree_prefix, dirname(self.file_stack[-1]))
+        else:
+            prefix = self.kconfig._srctree_prefix
 
         # NOTE: We most probably do not use srctree -> remove when refactoring
-        filenames = sorted(iglob(join(self.kconfig._srctree_prefix, path)))
+        filenames = _resolve_source_pattern(prefix, pattern)
 
         if not filenames and parsed_source[0] in ["source", "rsource"]:
             raise KconfigError(
@@ -218,7 +220,7 @@ class Parser:
                 "environment variables expand to the empty string.".format(
                     self.file_stack[-1],
                     lineno(loc, s),
-                    path,
+                    join(dirname(self.file_stack[-1]), pattern) if parsed_source[0] == "rsource" else pattern,
                     pyparsing_line(loc, s).strip(),
                     f"set to '{self.kconfig.srctree}'" if self.kconfig.srctree else "unset or blank",
                 )

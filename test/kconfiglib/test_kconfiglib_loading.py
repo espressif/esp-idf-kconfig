@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: 2025-2026 Espressif Systems (Shanghai) CO LTD
 # SPDX-License-Identifier: Apache-2.0
 import os
+from pathlib import Path
 
 import pytest
 
@@ -852,5 +853,100 @@ class TestLowercaseSymbolNames(TestBase):
         # resolved as a symbol.
         assert kconfig.syms["UPPER_DEPENDENT"].visibility == 2
         assert kconfig.syms["UPPER_DEPENDENT"].str_value == "y"
+
+        kconfig.report.reset()
+
+
+@pytest.mark.parametrize("version", ["1", "2"], indirect=True)
+class TestSourceGlobMetacharsInPath(TestBase):
+    """
+    Regression test for IDF-7030: a 'source' path whose expanded value contains
+    glob metacharacters (e.g. a project directory named 'hello_world[test]')
+    must be sourced literally instead of being interpreted as a glob pattern.
+    Genuine glob patterns must still match multiple files.
+
+    A directory literally named 'hello_world[test]' cannot be committed as a
+    fixture, so the input tree is built under tmp_path and the bracketed path is
+    injected via an environment variable, mirroring how ESP-IDF passes generated
+    source-file paths (COMPONENT_KCONFIGS_*_SOURCE_FILE).
+    """
+
+    def test_source_path_with_bracket_is_literal(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        bracket_dir = tmp_path / "hello_world[test]"
+        bracket_dir.mkdir()
+        sub_file = bracket_dir / "Kconfig.sub"
+        sub_file.write_text('config SOURCED_OK\n    bool "sourced ok"\n    default y\n')
+        top = tmp_path / "Kconfig.top"
+        top.write_text('mainmenu "glob source"\nsource "$SUB_FILE"\n')
+
+        # The env var holds the full path (like ESP-IDF's
+        # COMPONENT_KCONFIGS_PROJBUILD_SOURCE_FILE); str() yields native
+        # separators, so the test is OS-independent.
+        monkeypatch.setenv("SUB_FILE", str(sub_file))
+        kconfig = Kconfig(str(top))
+
+        assert "SOURCED_OK" in kconfig.syms
+        assert kconfig.syms["SOURCED_OK"].str_value == "y"
+
+        kconfig.report.reset()
+
+    def test_glob_source_still_matches_multiple_files(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        comp_dir = tmp_path / "components"
+        (comp_dir / "a").mkdir(parents=True)
+        (comp_dir / "b").mkdir(parents=True)
+        (comp_dir / "a" / "Kconfig").write_text('config COMP_A\n    bool "a"\n    default y\n')
+        (comp_dir / "b" / "Kconfig").write_text('config COMP_B\n    bool "b"\n    default y\n')
+        top = tmp_path / "Kconfig.top"
+        top.write_text('mainmenu "glob source"\nsource "$COMP_GLOB"\n')
+
+        # Build the glob pattern with native separators so the test is
+        # OS-independent; the '*' must still be interpreted as a glob.
+        monkeypatch.setenv("COMP_GLOB", os.path.join(str(comp_dir), "*", "Kconfig"))
+        kconfig = Kconfig(str(top))
+
+        assert "COMP_A" in kconfig.syms
+        assert "COMP_B" in kconfig.syms
+
+        kconfig.report.reset()
+
+    def test_glob_source_not_shadowed_by_same_named_directory(self, tmp_path: Path) -> None:
+        # A directory literally named like the glob pattern must not shadow
+        # the files the pattern is meant to match (exists() matches
+        # directories too, isfile() does not).
+        amb_dir = tmp_path / "amb"
+        amb_dir.mkdir()
+        (amb_dir / "Ka").write_text('config COMP_A\n    bool "a"\n    default y\n')
+        (amb_dir / "Kb").write_text('config COMP_B\n    bool "b"\n    default y\n')
+        (amb_dir / "K[ab]").mkdir()
+
+        top = tmp_path / "Kconfig.top"
+        top.write_text('mainmenu "glob source"\nrsource "amb/K[ab]"\n')
+        kconfig = Kconfig(str(top))
+
+        assert "COMP_A" in kconfig.syms
+        assert "COMP_B" in kconfig.syms
+
+        kconfig.report.reset()
+
+    def test_rsource_prefix_with_metachars_is_escaped(self, tmp_path: Path) -> None:
+        # Metacharacters coming from the *directory* a 'rsource' is issued
+        # from (not from the pattern itself) must not affect globbing,
+        # otherwise a coincidentally-named sibling directory could be
+        # sourced instead of the real one.
+        real_dir = tmp_path / "proj[x]"
+        (real_dir / "sub").mkdir(parents=True)
+        (real_dir / "sub" / "Kconfig.sub").write_text('config REAL\n    bool "real"\n    default y\n')
+
+        decoy_dir = tmp_path / "projx"
+        (decoy_dir / "sub").mkdir(parents=True)
+        (decoy_dir / "sub" / "Kconfig.sub").write_text('config DECOY\n    bool "decoy"\n    default y\n')
+
+        top = real_dir / "Kconfig.top"
+        top.write_text('mainmenu "prefix escaping"\nrsource "*/Kconfig.sub"\n')
+        kconfig = Kconfig(str(top))
+
+        assert "REAL" in kconfig.syms
+        assert kconfig.syms["REAL"].str_value == "y"
+        assert "DECOY" not in kconfig.syms
 
         kconfig.report.reset()
