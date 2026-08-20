@@ -1,0 +1,35 @@
+config SRC
+    bool "src"
+    default y
+    select TGT
+
+config TGT
+    bool "tgt"
+    default n
+
+config VAL
+    int "val"
+    default 1 if SRC
+    default 2
+
+config FOO
+    bool
+    default y
+
+config GONE
+    bool
+    default n
+
+config IDF_EXPERIMENTAL_FEATURES
+    bool
+    default n
+
+choice MYCHOICE
+    bool "choice"
+    default OPT_A
+
+    config OPT_A
+        bool "A"
+    config OPT_B
+        bool "B"
+endchoice

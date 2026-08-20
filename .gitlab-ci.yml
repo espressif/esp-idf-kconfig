@@ -129,6 +129,14 @@ test_kconfcheck:
     - cd test/kconfcheck/
     - $RUN_TESTS
 
+test_kcompare:
+  extends: .base_template
+  stage: test
+  script:
+    - apt-get update && apt-get install -y -q git
+    - cd test/kcompare/
+    - $RUN_TESTS
+
 # TESTS in VENV
 test_kconfserver_venv:
   extends: .venv_template
@@ -170,6 +178,14 @@ test_kconfcheck_venv:
   stage: test
   script:
     - cd test/kconfcheck/
+    - $RUN_TESTS
+
+test_kcompare_venv:
+  extends: .venv_template
+  stage: test
+  script:
+    - apt-get update && apt-get install -y -q git
+    - cd test/kcompare/
     - $RUN_TESTS
 # -----------------------------------------------------------------------------------------------------
 

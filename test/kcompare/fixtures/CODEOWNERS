@@ -1,0 +1,15 @@
+# Test CODEOWNERS fixture for kcompare (subset of ESP-IDF's .gitlab/CODEOWNERS).
+# Exercises wildcards, nested overrides (last match wins) and multi-owner rules.
+
+* @esp-idf-codeowners/other
+
+/Kconfig                              @esp-idf-codeowners/build-config
+
+# sort-order-reset
+
+/components/app_trace/                @esp-idf-codeowners/debugging
+/components/console/                  @esp-idf-codeowners/system @esp-idf-codeowners/app-utilities/console
+/components/esp_driver_*/             @esp-idf-codeowners/peripherals
+/components/esp_driver_sdmmc/         @esp-idf-codeowners/peripherals @esp-idf-codeowners/storage
+/components/esp_hw_support/           @esp-idf-codeowners/system @esp-idf-codeowners/peripherals
+/components/esp_hw_support/lowpower/  @esp-idf-codeowners/power-management
