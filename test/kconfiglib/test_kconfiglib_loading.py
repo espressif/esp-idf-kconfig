@@ -146,6 +146,27 @@ class TestDefaultMismatchReport(TestDefaultsBase):
 
         kconfig.report.reset()
 
+    def test_info_string_only_in_verbose(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from esp_kconfiglib.report import VERBOSITY_DEFAULT
+        from esp_kconfiglib.report import VERBOSITY_VERBOSE
+        from esp_kconfiglib.report import DefaultValuesArea
+        from esp_kconfiglib.report import log as report_log
+
+        kconfig = Kconfig(os.path.join(KCONFIG_PATH, "Kconfig.inversed_dep_order_1"))
+        kconfig.load_config(os.path.join(SDKCONFIGS_PATH, "sdkconfig.inversed_dep_order_1"))
+
+        hints = []
+        monkeypatch.setattr(report_log, "hint", lambda msg: hints.append(msg))
+
+        area = kconfig.report.area_to_instance[DefaultValuesArea]
+        area._emit_info_string(VERBOSITY_DEFAULT)
+        assert hints == []
+
+        area._emit_info_string(VERBOSITY_VERBOSE)
+        assert hints and "This area reports issues with default values of the config options." in hints[0]
+
+        kconfig.report.reset()
+
 
 @pytest.mark.parametrize("version", ["1", "2"], indirect=True)
 class TestLoadingChoicesWithDefaults(TestDefaultsBase):

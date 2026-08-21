@@ -190,6 +190,13 @@ class Area(ABC):
         else:
             log.note(message)
 
+    def _emit_info_string(self, verbosity: str) -> None:
+        """
+        Print the area explanation. Only in verbose mode.
+        """
+        if verbosity == VERBOSITY_VERBOSE and self.info_string:
+            log.hint(self.info_string.strip())
+
     @staticmethod
     def severity_to_str(severity: int) -> str:
         if severity == STATUS_OK:
@@ -319,7 +326,7 @@ class DefaultValuesArea(Area):
                     "will be ignored"
                 )
 
-        log.hint(self.info_string.strip())
+        self._emit_info_string(verbosity)
 
     def return_json(self) -> Optional[dict]:
         """
@@ -535,7 +542,7 @@ class MultipleAssignmentArea(Area):
             final = choice.selection.name if choice.selection else "choice deselected"
             self._log_for_severity(f"{loc}{choice.name} assigned multiple times: {vals} -> using {final}")
 
-        log.hint(self.info_string)
+        self._emit_info_string(verbosity)
 
     def return_json(self) -> Optional[dict]:
         if not self.multiple_assignments_sym and not self.multiple_assignments_choice:
@@ -629,7 +636,7 @@ class DisabledSymbolArea(Area):
                     f"from {escape(user_source) if user_source else '(unknown)'} but is not visible"
                 )
 
-        log.hint(self.info_string)
+        self._emit_info_string(verbosity)
 
     def return_json(self) -> Optional[dict]:
         if self.report_severity() == STATUS_OK:
