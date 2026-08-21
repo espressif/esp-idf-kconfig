@@ -228,6 +228,9 @@ class TestLoadingChoicesWithDefaults(TestDefaultsBase):
 
         assert "CONFIG_THIRD is not set" in output_sdkconfig
 
+        ma_areas = [area for area in report_json["areas"] if area["title"] == "Multiple Assignments"]
+        assert not ma_areas or "CHOICE" not in ma_areas[0]["data"].get("choices", {})
+
         kconfig.report.reset()
 
     @pytest.mark.parametrize("policy", ["sdkconfig", "kconfig"], indirect=True)
@@ -244,6 +247,9 @@ class TestLoadingChoicesWithDefaults(TestDefaultsBase):
         used_from = os.environ["KCONFIG_DEFAULTS_POLICY"]
         assert unnamed["used_from"] == used_from
         assert unnamed["used"] == ("COLOR_BLUE" if used_from == "sdkconfig" else "COLOR_RED")
+
+        ma_areas = [area for area in report_json["areas"] if area["title"] == "Multiple Assignments"]
+        assert not ma_areas or "unnamed choice" not in ma_areas[0]["data"].get("choices", {})
 
         kconfig.report.reset()
 
