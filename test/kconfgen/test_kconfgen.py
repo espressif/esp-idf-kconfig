@@ -3,6 +3,7 @@
 import os
 import re
 import subprocess
+import sys
 import textwrap
 from dataclasses import asdict
 from dataclasses import dataclass
@@ -680,3 +681,133 @@ class TestSaveDefconfigIdfHeader(KconfgenBaseTestCase):
         assert 'CONFIG_IDF_TARGET="esp32c3"' in text
         # Header injects the target assignment before the rest of the file body.
         assert text.index("CONFIG_IDF_TARGET") < text.index("CONFIG_EXTRA=y")
+
+
+@pytest.mark.parametrize("set_parser_version", ["2"], indirect=True)
+class TestParserV2Diagnostic:
+    """kconfgen classifies v2 failures as intended legacy syntax, a parser bug, or a Kconfig error."""
+
+    def _run_kconfgen(self, tmp_path: Path, kconfig_text: str) -> subprocess.CompletedProcess:
+        kconfig_path = tmp_path / "Kconfig"
+        kconfig_path.write_text(textwrap.dedent(kconfig_text), encoding="utf-8")
+        out_path = tmp_path / "sdkconfig"
+        cmd = [
+            sys.executable,
+            "-m",
+            "kconfgen",
+            "--kconfig",
+            str(kconfig_path),
+            "--output",
+            "config",
+            str(out_path),
+            "--env",
+            "KCONFIG_REPORT_VERBOSITY=quiet",
+        ]
+        env = os.environ.copy()
+        env["KCONFIG_PARSER_VERSION"] = "2"
+        return subprocess.run(cmd, capture_output=True, text=True, env=env)
+
+    def test_unsupported_help_dashes_is_intended(self, tmp_path):
+        result = self._run_kconfgen(
+            tmp_path,
+            """
+            mainmenu "Test"
+
+                config FOO
+                    bool "foo"
+                    ---help---
+                      help text
+            """,
+        )
+        assert result.returncode != 0
+        combined = result.stdout + result.stderr
+        # The parse error itself must point at ---help---, not the previous line's newline.
+        assert "(line 6)" in combined
+        assert "This parse failure is intended" in combined
+        assert "'---help---'" in combined
+        assert "KCONFIG_PARSER_VERSION=1" in combined
+        assert "parser bug" not in combined
+
+    @pytest.mark.parametrize(
+        "kconfig_text, expected_fragment",
+        [
+            (
+                """
+                mainmenu "Test"
+
+                    choice
+                        optional
+                        prompt "c"
+                        config A
+                            bool "a"
+                        config B
+                            bool "b"
+                    endchoice
+                """,
+                "'optional' on a choice",
+            ),
+        ],
+    )
+    def test_unsupported_construct_is_intended(self, tmp_path, kconfig_text, expected_fragment):
+        result = self._run_kconfgen(tmp_path, kconfig_text)
+        assert result.returncode != 0
+        combined = result.stdout + result.stderr
+        assert "This parse failure is intended" in combined
+        assert expected_fragment in combined
+        assert "parser bug" not in combined
+
+    def test_hints_parser_bug_when_v1_succeeds_without_legacy_construct(self, tmp_path):
+        result = self._run_kconfgen(
+            tmp_path,
+            """
+            mainmenu "Test"
+
+                menu Unquoted
+                    config FOO
+                        bool "foo"
+                endmenu
+            """,
+        )
+        assert result.returncode != 0
+        combined = result.stdout + result.stderr
+        assert "legacy parser (v1)" in combined
+        assert "may indicate a parser bug" in combined
+        assert "KCONFIG_PARSER_VERSION=1" in combined
+        assert "This is intended" not in combined
+
+    def test_no_legacy_hint_when_both_parsers_fail(self, tmp_path):
+        result = self._run_kconfgen(
+            tmp_path,
+            """
+            mainmenu "Test"
+
+                config FOO
+                    bool "foo"
+                    this_is_garbage
+            """,
+        )
+        assert result.returncode != 0
+        combined = result.stdout + result.stderr
+        assert "legacy parser (v1)" not in combined
+        assert "KCONFIG_PARSER_VERSION=1" not in combined
+        assert "this_is_garbage" in combined
+        assert "unsupported option" in combined
+        assert "This parse failure is intended" not in combined
+
+    def test_no_legacy_hint_when_v1_also_rejects_construct(self, tmp_path):
+        # tristate is unsupported in both parsers in this tree, so do not classify it.
+        result = self._run_kconfgen(
+            tmp_path,
+            """
+            mainmenu "Test"
+
+                config FOO
+                    tristate "foo"
+                    default y
+            """,
+        )
+        assert result.returncode != 0
+        combined = result.stdout + result.stderr
+        assert "This parse failure is intended" not in combined
+        assert "KCONFIG_PARSER_VERSION=1" not in combined
+        assert "tristate" in combined

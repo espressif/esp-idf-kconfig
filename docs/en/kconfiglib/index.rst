@@ -13,6 +13,10 @@ The package also includes a `Pyparsing <https://github.com/pyparsing/pyparsing>`
 Kconfig parser (parser v2). Although it is slower than the original implementation
 (parser v1), it is intended to be developer friendly, easy to
 read, maintain and expand, which are the areas the previous parser was lacking.
+When ``kconfgen`` fails under parser v2, it re-parses with v1.
+If v1 also rejects the tree, the original v2 error is kept.
+If v1 accepts it, ``kconfgen`` checks the error location for :ref:`unsupported legacy constructs <differences>`.
+If one is found, the failure is reported as intended; otherwise it is reported as a possible parser bug.
 
 .. toctree::
     :maxdepth: 2

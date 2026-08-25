@@ -17,6 +17,12 @@ Although we tried to keep the ``esp-idf-kconfig`` package as close to the origin
 - Preprocessor macros are supported only in the form of ``symbol = value`` or ``symbol := value`` and strings need to be enclosed in quotes.
 - New parser recognizes default values in ``sdkconfig`` files (see :ref:`defaults`).
 
+When parser v2 fails and parser v1 accepts the same tree, ``kconfgen`` checks the error location (the reported line and the adjacent lines) for the unsupported constructs above.
+If one is found, the failure is reported as intended: please fix the Kconfig.
+If none is found, the failure is reported as a possible parser bug.
+If both parsers reject the tree, the original v2 error is kept.
+``KCONFIG_PARSER_VERSION=1`` is a temporary workaround only when parser v1 still accepts the tree.
+
 Deprecated Constructs
 ---------------------
 
