@@ -1,0 +1,6 @@
+# test if the legacy "boolean" type keyword is reported as deprecated
+mainmenu "mainmenu"
+
+    config LEGACY_TYPE
+        boolean "config using the legacy boolean keyword"
+        default y

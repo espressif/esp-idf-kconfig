@@ -1,0 +1,2 @@
+Deprecation notice: quotes recommended around default value
+for string symbol HOSTNAME. Will be required in the future.

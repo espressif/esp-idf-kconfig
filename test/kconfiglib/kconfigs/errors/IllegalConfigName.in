@@ -1,0 +1,6 @@
+mainmenu "Illegal config name"
+
+# Config names may contain only uppercase letters, digits and underscores.
+config FOO.BAR
+    bool "Illegally named config"
+    default y

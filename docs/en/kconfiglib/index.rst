@@ -9,7 +9,10 @@ Unfortunately, even though this has been the only Python implementation of the K
 
 The ``esp-idf-kconfig`` package, originated in 2018, includes wider suite of tools, tailored for ESP-IDF, and is actively maintained. The package is designed to be used with the `Espressif IoT Development Framework (ESP-IDF) <https://docs.espressif.com/projects/esp-idf/en/latest/index.html>`_, although it can be used with other projects as well, either as a whole suite or as individual tools.
 
-The package also includes new parser, based on `Pyparsing <https://github.com/pyparsing/pyparsing>`_. Although it is slower than the original implementation, the new parser is intended to be developer friendly and easy to read and maintain. The new parser is under active development and new features are being added.
+The package also includes a `Pyparsing <https://github.com/pyparsing/pyparsing>`_-based
+Kconfig parser (parser v2). Although it is slower than the original implementation
+(parser v1), it is intended to be developer friendly, easy to
+read, maintain and expand, which are the areas the previous parser was lacking.
 
 .. toctree::
     :maxdepth: 2

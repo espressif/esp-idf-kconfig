@@ -338,7 +338,13 @@ files matching "bar*" exist:
 Extra optional warnings
 -----------------------
 
-Some optional warnings can be controlled via environment variables:
+Parser selection and optional warnings can be controlled via environment
+variables:
+
+  - KCONFIG_PARSER_VERSION: Selects the Kconfig parser. ``1`` (default) is the
+    legacy parser; ``2`` is the pyparsing-based parser. If parser ``2`` fails
+    to parse a tree that parser ``1`` accepts, kconfgen reports this as a
+    likely parser bug and suggests falling back to ``1``.
 
   - KCONFIG_WARN_UNDEF: If set to 'y', warnings will be generated for all
     references to undefined symbols within Kconfig files. The only gotcha is
@@ -4216,7 +4222,9 @@ class Kconfig(object):
                             # the quotes were left out if 'foo' isn't all-uppercase
                             # (and no symbol named 'foo' exists).
                             log.note(
-                                f"{loc}: style: quotes recommended around default value for string symbol {sym.name}"
+                                f"{loc}: "
+                                f"Deprecation notice: quotes recommended around default value "
+                                f"for string symbol {sym.name}. Will be required in the future."
                             )
 
                     elif not num_ok(default, sym.orig_type):  # INT/HEX/FLOAT
@@ -4230,7 +4238,10 @@ class Kconfig(object):
                     log.note(f"{loc}: the {TYPE_TO_STR[sym.orig_type]} symbol {sym.name} has selects or implies")
 
             else:  # UNKNOWN
-                log.note(f"{loc}: {sym.name} defined without a type")
+                log.note(
+                    f"{loc}: Deprecation notice: {sym.name} defined without a type. "
+                    "Explicit type will be required in the future."
+                )
 
             if sym.ranges:
                 if sym.orig_type not in _INT_HEX_FLOAT:

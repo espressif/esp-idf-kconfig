@@ -1,0 +1,11 @@
+mainmenu "Lowercase choice name"
+
+choice lower_choice
+    prompt "Choice with a lowercase name"
+
+    config FIRST
+        bool "First"
+
+    config SECOND
+        bool "Second"
+endchoice

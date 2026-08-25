@@ -1,0 +1,26 @@
+# test if a quoted choice name is accepted as an unnamed choice
+mainmenu "Quoted choice name"
+
+    choice "Connection \"Method\""
+        prompt "prompt for choice with a quoted name"
+        default A
+
+        config A
+            bool "a"
+
+        config B
+            bool "b"
+
+    endchoice
+
+    choice 'Other Method'
+        prompt "prompt for a single-quoted choice name"
+        default C
+
+        config C
+            bool "c"
+
+        config D
+            bool "d"
+
+    endchoice

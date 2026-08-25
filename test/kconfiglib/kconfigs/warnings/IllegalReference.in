@@ -1,0 +1,10 @@
+mainmenu "Illegal characters in a symbol reference"
+
+config HOSTNAME
+    string "Hostname"
+    default some.illegal.host
+
+config USE_FEATURE
+    bool "Use feature"
+    depends on some.illegal.dep
+    default y

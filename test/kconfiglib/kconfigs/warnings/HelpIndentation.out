@@ -1,0 +1,10 @@
+#
+# Automatically generated file. DO NOT EDIT.
+# Espressif IoT Development Framework (ESP-IDF)  Project Configuration
+#
+# default:
+CONFIG_SAME_INDENT_AS_HELP=y
+# default:
+CONFIG_LESS_INDENT_THAN_HELP=y
+# default:
+CONFIG_AFTER_HELP=y

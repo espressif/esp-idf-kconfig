@@ -1,0 +1,12 @@
+mainmenu "Illegal choice name"
+
+# Choice names may contain only uppercase letters, digits and underscores.
+choice FOO.BAR
+    prompt "Illegally named choice"
+
+    config FIRST
+        bool "First"
+
+    config SECOND
+        bool "Second"
+endchoice
