@@ -1,0 +1,6 @@
+# Unquoted lowercase default on a string symbol is deprecated.
+mainmenu "mainmenu"
+
+    config HOSTNAME
+        string "hostname"
+        default host

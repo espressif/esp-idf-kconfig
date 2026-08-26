@@ -1,0 +1,28 @@
+# test if escaped quotes inside prompts and titles are working
+mainmenu "mainmenu with \"escaped\" quotes"
+
+    comment "comment with \"escaped # hash\" quotes"
+
+    config A
+        bool "config prompt with \"escaped\" quotes"
+        default y
+
+    menu "menu with \"escaped # hash\" quotes"
+
+        config B
+            bool "b"
+            default y
+
+    endmenu
+
+    choice
+        prompt "choice prompt with \"escaped\" quotes"
+        default C
+
+        config C
+            bool "c"
+
+        config D
+            bool "d"
+
+    endchoice

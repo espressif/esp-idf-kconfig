@@ -1,0 +1,6 @@
+mainmenu "Help dashes"
+
+config A
+    int "prompt"
+    --help--
+        help text

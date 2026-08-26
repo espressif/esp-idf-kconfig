@@ -1,0 +1,10 @@
+# test if a config without an explicit type is working
+mainmenu "mainmenu"
+
+    config SELECTOR
+        bool "selector"
+        default y
+
+    config BOARD_NAME
+        default "board_a" if SELECTOR
+        default "board_b"

@@ -33,6 +33,63 @@ from esp_kconfiglib.constants import build_idf_min_config_header
 from esp_kconfiglib.constants import build_idf_sdkconfig_header
 from esp_kconfiglib.deprecated import DeprecatedOptions
 from esp_kconfiglib.deprecated import load_rename_files_from_env
+from esp_kconfiglib.kconfig_grammar import KconfigParseError
+from esp_kconfiglib.legacy_constructs import find_legacy_constructs
+
+_PARSER_DIAG_EXCEPTIONS = (kconfiglib.KconfigError, KconfigParseError)
+
+
+def _v1_accepts(kconfig: str) -> bool:
+    try:
+        kconfiglib.Kconfig(kconfig, parser_version=1, print_report=False)
+    except _PARSER_DIAG_EXCEPTIONS:
+        return False
+    except Exception:
+        return False
+    return True
+
+
+def _diagnose_v2_parse_failure(exc: BaseException, kconfig: str) -> None:
+    """
+    Try to find out why parser v2 failed.
+
+    v1 accepts
+    -> check for legacy constructs near the error (find_legacy_constructs()):
+        * legacy/known unsupported constructs found
+          -> intended failure, log.die() with explanation and temporary workaround
+        * no legacy constructs found
+          -> probably genuine v2 bug, do not diagnose further
+    v1 rejects -> probably genuine Kconfig file error, do not diagnose further
+    """
+    if not _v1_accepts(kconfig):
+        # Both parsers reject the tree — let the caller handle that.
+        return
+
+    filename = getattr(exc, "file", None)
+    linenum = getattr(exc, "line", None)
+    if filename and linenum:
+        matches = find_legacy_constructs(filename, linenum)
+    else:
+        matches = []
+
+    if matches:
+        details = "\n".join(
+            f"  {escape(str(getattr(exc, 'file', kconfig)))}:{match.line_nr}: {match.description}" for match in matches
+        )
+        log.die(
+            f"{escape(str(exc))}\n\n"
+            "This parse failure is intended: parser v2 does not support the "
+            "following Kconfig legacy constructs near the error location:\n"
+            f"{details}\n"
+            "Temporary workaround: export KCONFIG_PARSER_VERSION=1 and retry."
+        )
+
+    log.die(
+        f"{escape(str(exc))}\n\n"
+        "This Kconfig tree parses successfully with the legacy parser (v1) "
+        "but fails with the new parser (v2). This may indicate a parser bug.\n"
+        "Workaround: export KCONFIG_PARSER_VERSION=1 and retry."
+    )
 
 
 def write_config(config: kconfiglib.Kconfig, filename: str, write_deprecated: bool = True) -> None:
@@ -463,15 +520,20 @@ def main(
     # TODO Once ESP-IDF will fully support kconfig report, we should switch to "quiet" as default
     #      to avoid printing the report several times during the build.
     print_report = os.environ.get("KCONFIG_REPORT_VERBOSITY", "default") != "quiet"
-    config = kconfiglib.Kconfig(
-        kconfig,
-        parser_version=parser_version,
-        print_report=(
-            print_report
-            and not (sdkconfig_file and os.path.exists(sdkconfig_file))  # report after sdkconfig loaded (if any)
-            and len(defaults) == 0  # if defaults are loaded, report will be printed after that
-        ),
-    )
+    try:
+        config = kconfiglib.Kconfig(
+            kconfig,
+            parser_version=parser_version,
+            print_report=(
+                print_report
+                and not (sdkconfig_file and os.path.exists(sdkconfig_file))  # report after sdkconfig loaded (if any)
+                and len(defaults) == 0  # if defaults are loaded, report will be printed after that
+            ),
+        )
+    except _PARSER_DIAG_EXCEPTIONS as e:
+        if parser_version == 2:
+            _diagnose_v2_parse_failure(e, kconfig)
+        raise
     kconfig_encoding = config._encoding
 
     load_rename_files_from_env(

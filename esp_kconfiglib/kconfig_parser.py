@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: 2024-2026 Espressif Systems (Shanghai) CO LTD
 # SPDX-License-Identifier: Apache-2.0
 import os
+import re
 from dataclasses import dataclass
 from os.path import dirname
 from os.path import expandvars
@@ -63,6 +64,14 @@ class Orphan:
         return "Orphan({}, {})".format(self.node, self.locations)
 
 
+# A bare (unquoted) token used in an expression is a legitimate literal -- not a symbol
+# reference -- if it looks like a number, a hex value, a float, or a "4.4"/"5.3.1"-style
+# version. Anything else containing characters outside [A-Za-z0-9_] is an identifier that
+# does not follow the naming rule enforced for declared config/choice names (see differences.rst).
+_LITERAL_TOKEN_RE = re.compile(r"^(0[xX][\da-fA-F]+|-?\d+(\.\d+){0,2}([eE][+-]?\d+)?)$")
+_NON_IDENTIFIER_CHAR_RE = re.compile(r"[^A-Za-z0-9_]")
+
+
 class Parser:
     """
     The Parser class is responsible for parsing the Kconfig file and building the menu tree.
@@ -81,6 +90,7 @@ class Parser:
         self.grammar = KconfigGrammar(self)
         self.orphans: List[Orphan] = []
 
+        self.file_stack: List[str]
         if not filename:
             self.file_stack = [self.kconfig.filename]
         else:
@@ -134,7 +144,8 @@ class Parser:
         # accept them (only emitting a note) until all occurrences in third-party Kconfigs are fixed.
         if any(c.islower() for c in name):
             log.note(
-                f"{escape(self.file_stack[-1])}:{lineno(loc, s)}: config symbol '{name}' contains lowercase letters"
+                f"{escape(self.file_stack[-1])}:{lineno(loc, s)}: Deprecation notice: config symbol '{name}' contains "
+                "lowercase letters. Lowercase config names will be treated as invalid in the future."
             )
         sym = self.kconfig._lookup_sym(name)
         self.kconfig.defined_syms.append(sym)
@@ -182,7 +193,8 @@ class Parser:
                 "menuconfig entries - option ignored"
             )
         if menu_options["depends_on"]:  # depends on
-            for depend in menu_options["depends_on"]:
+            for depend, depend_lineno in menu_options["depends_on"]:
+                self.kconfig.linenr = depend_lineno
                 expr = self.parse_expression(depend)
                 menunode.dep = self.kconfig._make_and(menunode.dep, expr)
         if menu_options["visible_if"]:  # visible if
@@ -238,7 +250,21 @@ class Parser:
     def parse_choice(self, s: str, loc: int, parsed_choice: ParseResults) -> None:
         self.kconfig.linenr = lineno(loc, s)
         line_number = lineno(loc, s)
+        if parsed_choice.quoted_choice_name:
+            log.note(
+                f"{escape(self.file_stack[-1])}:{line_number}: "
+                "Deprecation notice: a quoted choice name is not a valid identifier and is ignored, "
+                "the choice is treated as unnamed. Use a valid identifier or omit the name. Quoted choice "
+                "names support will be removed in the future."
+            )
         if parsed_choice.choice_name:  # using the same parse object for config and choice names, thus the name
+            # Lowercase names are accepted for the same backward compatibility reason as in parse_config().
+            if any(c.islower() for c in parsed_choice.choice_name):
+                log.note(
+                    f"{escape(self.file_stack[-1])}:{line_number}: "
+                    f"Deprecation notice: choice '{parsed_choice.choice_name}' contains lowercase letters. "
+                    "Lowercase choice names will be treated as invalid in the future."
+                )
             choice = self.kconfig.named_choices.get(parsed_choice.choice_name)
             if not choice:
                 choice = Choice(kconfig=self.kconfig, name=parsed_choice.choice_name, direct_dep=self.kconfig.n)
@@ -308,7 +334,8 @@ class Parser:
         self.orphans.append(orphan)
 
         if parsed_comment.comment_opts and parsed_comment.comment_opts["depends_on"]:
-            for depend in parsed_comment.comment_opts["depends_on"]:
+            for depend, depend_lineno in parsed_comment.comment_opts["depends_on"]:
+                self.kconfig.linenr = depend_lineno
                 expr = self.parse_expression(depend)
                 node.dep = self.kconfig._make_and(node.dep, expr)
         else:
@@ -399,19 +426,26 @@ class Parser:
 
         # set type (and optional prompt)
         if options["type"]:
-            self.kconfig._set_type(node.item, self.str_to_kconfig_type[options["type"]])
-        else:
-            if type(node.item) is not Choice:  # Choices can have implicit type by their first child
-                raise ValueError(
-                    f"Config {sym_or_choice_name}, defined in {self.file_stack[-1]}:{node.linenr} has no type."
+            if options["type"] == "boolean":
+                log.note(
+                    f"{escape(self.file_stack[-1])}:{node.linenr}: "
+                    f"Deprecation notice: {sym_or_choice_name} uses the legacy type keyword 'boolean'. "
+                    "Use 'bool' instead."
                 )
+            self.kconfig._set_type(node.item, self.str_to_kconfig_type[options["type"]])
+        # An entry without an explicit type is not an error here; it is reported by the Kconfig sanity
+        # checks once everything is parsed, the same way parser v1 reports it.
 
         # parse default
         if options["default"]:
             for default in options["default"]:
+                # default[2] is the line the "default" keyword is on; used so notes emitted while
+                # resolving the expression (e.g. an illegal reference) point at the right line,
+                # since self.kconfig.linenr still holds the enclosing config/choice's own line here.
+                self.kconfig.linenr = default[2]
                 # cannot use list() as an argument, because list("abc") is ["a", "b", "c"], not ["abc"]
                 value = self.parse_expression(default[0])
-                if len(default) > 1 and default[1]:
+                if default[1]:
                     expr = self.parse_expression(default[1])
                     node.defaults.append((value, expr))
                 else:
@@ -426,7 +460,8 @@ class Parser:
         # set depends_on
         node.dep = self.kconfig.y  # basic dependency is always true
         if options["depends_on"]:
-            for depend in options["depends_on"]:
+            for depend, depend_lineno in options["depends_on"]:
+                self.kconfig.linenr = depend_lineno
                 expr = self.parse_expression(depend)
                 node.dep = self.kconfig._make_and(node.dep, expr)
 
@@ -624,7 +659,7 @@ class Parser:
         """
 
         operators = ("&&", "||", "!", "=", "!=", "<", "<=", ">", ">=")
-        if type(expr) is str:
+        if type(expr) is str:  # noqa: E721
             if expr in operators:
                 return self.kconfigize_operator[expr]
             # $(NAME) first tries to expand as a macro, then as an environment variable,
@@ -681,6 +716,12 @@ class Parser:
                     if expr.startswith(("'", '"')):
                         sym = self.kconfig._lookup_const_sym(unescape(expr[1:-1]))
                     else:
+                        if not _LITERAL_TOKEN_RE.match(expr) and _NON_IDENTIFIER_CHAR_RE.search(expr):
+                            log.note(
+                                f"{escape(self.file_stack[-1])}:{self.kconfig.linenr}: "
+                                f"identifier '{expr}' contains characters that are not valid symbol name "
+                                "(only digits, uppercase letters and underscores are allowed)."
+                            )
                         sym = self.kconfig._lookup_sym(expr)
                     return sym
         elif type(expr) in (tuple, list):
@@ -718,6 +759,7 @@ class Parser:
     # NOTE: in the future, make e.g. "constants.py" file and move the constants form core and parser there
     str_to_kconfig_type = {
         "bool": BOOL,
+        "boolean": BOOL,
         "string": STRING,
         "int": INT,
         "hex": HEX,

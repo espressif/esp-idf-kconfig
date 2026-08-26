@@ -1,0 +1,22 @@
+#
+# Automatically generated file. DO NOT EDIT.
+# Espressif IoT Development Framework (ESP-IDF)  Project Configuration
+#
+
+#
+# comment with "escaped # hash" quotes
+#
+# default:
+CONFIG_A=y
+
+#
+# menu with "escaped # hash" quotes
+#
+# default:
+CONFIG_B=y
+# end of menu with "escaped # hash" quotes
+
+# default:
+CONFIG_C=y
+# default:
+# CONFIG_D is not set

@@ -6,8 +6,10 @@ from typing import Callable
 from typing import Dict
 from typing import List
 from typing import Optional
+from typing import Set
 from typing import Tuple
 
+from esp_pylib.logger import log
 from pyparsing import Forward
 from pyparsing import Group
 from pyparsing import Keyword
@@ -28,11 +30,13 @@ from pyparsing import ZeroOrMore
 from pyparsing import alphanums
 from pyparsing import lineno
 from pyparsing import one_of
+from rich.markup import escape
 
 if TYPE_CHECKING:
     from esp_kconfiglib.kconfig_parser import Parser
 
 from esp_kconfiglib.core import KconfigError
+from esp_kconfiglib.core import unescape
 from esp_kconfiglib.report import PRAGMA_PREFIX
 
 
@@ -50,6 +54,21 @@ def _expr_error_loc(line: str, line_start: int, expr_text: str, pe: Optional[Par
     if idx == -1:
         return line_start
     return line_start + idx + int(pe.loc if pe else 0)
+
+
+def _trailing_text_guard(message: str) -> Regex:
+    """
+    Build an element matching any leftover text on the current line and failing with *message*.
+
+    Entry headers such as "menu <title>" must end with the line. Text left unconsumed behind them
+    makes the enclosing entry list retry the entry over and over, which ends in unbounded recursion
+    instead of an error message. Matching the leftovers explicitly turns that into a proper error.
+    """
+
+    def report(instring: str, loc: int, tokens: ParseResults) -> None:
+        raise ParseFatalException(instring, loc, message, None)
+
+    return Regex(r"[ \t]+\S[^\n]*").leave_whitespace().add_parse_action(report)
 
 
 class KconfigBlock(Token):
@@ -101,7 +120,8 @@ class KconfigHelpBlock(KconfigBlock):
     the parser not to search for possible matches in it.
     """
 
-    def __init__(self):
+    def __init__(self, parser: "Parser"):
+        self.parser = parser
         super().__init__()
 
     def _generateDefaultName(self) -> str:
@@ -110,10 +130,6 @@ class KconfigHelpBlock(KconfigBlock):
     def parseImpl(self, instring: str, loc: int, doActions: bool = True) -> Tuple[int, List[str]]:
         result = []
         lines = instring[loc:].split("\n")
-
-        # This is the indentation of the first line of the help block.
-        # Every line with the same or bigger indentation (plus empty lines after which the same
-        # indentation level continues) is considered to be part of the help block.
         help_keyword_indent = self.leading_whitespace_len(lines[1])
 
         # Preserve whitespaces cause that loc originally point to the \n char on line preceding the help keyword,
@@ -125,9 +141,19 @@ class KconfigHelpBlock(KconfigBlock):
         idx = self.first_non_empty_line_idx(lines)
         if idx is None:
             raise ParseException(instring, loc, "Error parsing help block.", self)
+        # Every line with the same or bigger indentation (plus empty lines after which the same
+        # indentation level continues) is considered to be part of the help block.
         block_indent = self.leading_whitespace_len(lines[idx])
+        if not block_indent:
+            raise ParseException(instring, loc, "Help block must be indented.", self)
+        # Help text not indented deeper than the "help" keyword is still accepted, because parser v1
+        # accepts it, but it is deprecated: it makes the end of the block ambiguous for the reader.
         if block_indent <= help_keyword_indent:
-            raise ParseException(instring, loc, "Help block must be indented more than the help keyword.", self)
+            log.note(
+                f"{escape(self.parser.file_stack[-1])}:{lineno(loc, instring)}: "
+                "Deprecation notice: help text is not indented deeper than the 'help' keyword. "
+                "Indent the help text one level deeper. Indentation will be required in the future."
+            )
 
         line: str
         for i, line in enumerate(lines):
@@ -161,7 +187,9 @@ symbol_regex = r"""(?<!\S)
                     |-?\d+\.\d+(?:[eE][+-]?\d+)?  # floats: 1.5, -3.14, 1.5e-6, -2.5E10
                     |-?\d+[eE][+-]?\d+  # floats with exponent but no decimal: 1e-6, -2E10
                     |-?\d+   # numbers: 1234, -1234
-                    |[A-Za-z\d_]+  # variables: FOO, BAR_BAR, ENABLE_ESP64
+                    |[A-Za-z\d_./-]+  # variables: FOO, BAR_BAR, ENABLE_ESP64
+                                      # . / and - are part of the identifier character set of parser v1
+                                      # and are mostly seen in unquoted string defaults, e.g. my.host.name
                     |'(?:\\.|[^'\\])*'  # strings: 'a string', with \\. backslash escapes
                     |\"(?:\\.|[^\"\\])*\" # strings: "hello world", "", with \\. backslash escapes
                     |\"?\$[({]?[A-Z\d_]+[)}]?\"?"""  # $ENV, ENV can be in () or {} and the whole thing can be in ""
@@ -328,8 +356,8 @@ class KconfigOptionBlock(KconfigBlock):
     In order to speed up the parsing, option blocks are now parsed manually, which speeds up the parsing by up to 50 %.
     """
 
-    def __init__(self):
-        self.help_block = KconfigHelpBlock()
+    def __init__(self, parser: "Parser"):
+        self.help_block = KconfigHelpBlock(parser)
         self.entry_keywords = (
             "config",
             "menu",
@@ -397,17 +425,25 @@ class KconfigOptionBlock(KconfigBlock):
             quote_type = tokens[0][0]
             if quote_type not in ('"', "'"):
                 raise ParseException(instring, loc, "Error parsing option block: prompt missing leading quote.", self)
+
+            def ends_prompt(token: str) -> bool:
+                # A quote preceded by an odd number of backslashes is escaped and does not end the prompt.
+                if not token.endswith(quote_type):
+                    return False
+                body = token[:-1]
+                return (len(body) - len(body.rstrip("\\"))) % 2 == 0
+
             current_token_idx = 0
             for token in tokens:
-                if not token.endswith(quote_type):
+                if not ends_prompt(token):
                     current_token_idx += 1
                 else:
                     break
 
-            if not tokens[current_token_idx].endswith(quote_type):
+            if current_token_idx >= len(tokens) or not ends_prompt(tokens[current_token_idx]):
                 raise ParseException(
                     instring,
-                    current_loc,
+                    line_start,
                     (
                         "Error parsing option block: prompt either missing ending quote "
                         "or is ended with a different quote than started with."
@@ -415,7 +451,7 @@ class KconfigOptionBlock(KconfigBlock):
                     self,
                 )
 
-            return " ".join(tokens[: current_token_idx + 1])[1:-1], current_token_idx + 1
+            return unescape(" ".join(tokens[: current_token_idx + 1])[1:-1]), current_token_idx + 1
 
         # Unfortunately, pyparsing sometimes points KconfigOptionBlock to the end of the previous line,
         # sometimes directly to the start of current line,
@@ -459,13 +495,14 @@ class KconfigOptionBlock(KconfigBlock):
             # Parsing the option block
             ############################################
             # parse type
-            if tokens[0] in ("bool", "int", "string", "hex", "float"):
+            # "boolean" is a legacy alias for "bool"; it is deprecated in parse_options().
+            if tokens[0] in ("bool", "boolean", "int", "string", "hex", "float"):
                 option_dict["type"] = tokens[0]
 
                 if len(tokens) > 1:  # inline prompt
                     if not tokens[1].startswith(('"', "'")):
                         raise ParseException(
-                            instring, current_loc, "Error parsing option block: prompt must be a quoted string.", self
+                            instring, line_start, "Error parsing option block: prompt must be a quoted string.", self
                         )
 
                     prompt_str, prompt_end_idx = prompt_from_token_list(tokens[1:])
@@ -512,7 +549,7 @@ class KconfigOptionBlock(KconfigBlock):
                             f"invalid 'default' condition: {pe.msg}",
                             self,
                         )
-                    option_dict["default"].append((default_val, default_cond))
+                    option_dict["default"].append((default_val, default_cond, lineno(line_start, instring)))
                 else:
                     expr_text = " ".join(tokens[1:])
                     try:
@@ -524,13 +561,16 @@ class KconfigOptionBlock(KconfigBlock):
                             f"invalid 'default' value: {pe.msg}",
                             self,
                         )
-                    option_dict["default"].append((default_val, None))
+                    option_dict["default"].append((default_val, None, lineno(line_start, instring)))
 
                 current_loc += len(line) + 1  # +1 for \n
 
             elif tokens[0] == "help":
                 new_loc, parsed_help = self.help_block.parseImpl(instring, current_loc)
-                option_dict["help"] = "\n".join(parsed_help)
+                # rstrip() only the assembled text (matching parser v1), not each line individually,
+                # so trailing whitespace inside the block is preserved and only the block's trailing
+                # blank lines/whitespace are dropped.
+                option_dict["help"] = "\n".join(parsed_help).rstrip()
                 current_loc = new_loc
                 help_text_indices = [i for i in range(idx + 1, idx + 1 + len(parsed_help))]
 
@@ -538,7 +578,7 @@ class KconfigOptionBlock(KconfigBlock):
                 if not tokens[1] == "on":
                     raise ParseException(
                         instring,
-                        current_loc,
+                        line_start,
                         'Error parsing option block: "depends" must be followed by "on" keyword.',
                         self,
                     )
@@ -553,7 +593,7 @@ class KconfigOptionBlock(KconfigBlock):
                             f"invalid 'depends on' expression: {pe.msg}",
                             self,
                         )
-                    option_dict["depends_on"].append(expr)
+                    option_dict["depends_on"].append((expr, lineno(line_start, instring)))
                     current_loc += len(line) + 1  # +1 for \n
 
             elif tokens[0] == "range":
@@ -592,7 +632,7 @@ class KconfigOptionBlock(KconfigBlock):
             elif tokens[0] == "prompt":
                 if not tokens[1].startswith(('"', "'")):
                     raise ParseException(
-                        instring, current_loc, "Error parsing option block: prompt must be a quoted string.", self
+                        instring, line_start, "Error parsing option block: prompt must be a quoted string.", self
                     )
                 prompt_str, prompt_end_idx = prompt_from_token_list(tokens[1:])
                 # prompt_end_idx is relative to tokens[1:]; offset by 1 for the "prompt" keyword
@@ -651,7 +691,7 @@ class KconfigOptionBlock(KconfigBlock):
                 if not tokens[1] == "if":
                     raise ParseException(
                         instring,
-                        current_loc,
+                        line_start,
                         "Error parsing option block: visible if must be followed by if keyword.",
                         self,
                     )
@@ -725,7 +765,7 @@ class KconfigOptionBlock(KconfigBlock):
                 if not tokens[1].startswith("env="):
                     raise ParseException(
                         instring,
-                        current_loc,
+                        line_start,
                         'Error parsing option block: option must be in a form "option env=<env_var>".',
                         self,
                     )
@@ -738,7 +778,7 @@ class KconfigOptionBlock(KconfigBlock):
                 if len(tokens) > 1:  # inline prompt
                     if not tokens[1].startswith(('"', "'")):
                         raise ParseException(
-                            instring, current_loc, "Error parsing option block: prompt must be a quoted string.", self
+                            instring, line_start, "Error parsing option block: prompt must be a quoted string.", self
                         )
 
                     prompt_str, prompt_end_idx = prompt_from_token_list(tokens[1:])
@@ -747,7 +787,7 @@ class KconfigOptionBlock(KconfigBlock):
                 else:
                     raise ParseException(
                         instring,
-                        current_loc,
+                        line_start,
                         "Error parsing option block: warning option missing prompt.",
                         self,
                     )
@@ -755,8 +795,11 @@ class KconfigOptionBlock(KconfigBlock):
             else:
                 raise ParseException(
                     instring,
-                    current_loc,
-                    f'Error parsing option block: unsupported option at line {loc}:"{line}".',
+                    line_start,
+                    (
+                        "Error parsing option block: unsupported option at "
+                        f'line {lineno(line_start, instring)}: "{line.strip()}".'
+                    ),
                     self,
                 )
 
@@ -814,7 +857,7 @@ class KconfigGrammar:
         # Every config/choice can have max. one prompt which is used to show to the user.
         # Optionally, it can be conditioned.
         # Explicit inline prompt parsing occurs because in some cases, inline prompt is not part of an option block.
-        inline_prompt = (QuotedString('"') | QuotedString("'")) + Opt(inline_condition)
+        inline_prompt = (QuotedString('"', esc_char="\\") | QuotedString("'", esc_char="\\")) + Opt(inline_condition)
 
         ###########################
         # Config
@@ -825,8 +868,11 @@ class KconfigGrammar:
         # leave_whitespace() + leading [ \t]+ ensures the match stays on
         # the same line as the keyword — pyparsing won't skip a newline
         # and accidentally grab the next line's first token.
+        # The trailing lookahead makes the name span the rest of the line, so that an illegal
+        # name such as "config FOO.BAR" is reported instead of silently matching the "FOO" prefix
+        # and leaving the rest of the line for the following entry to choke on.
         symbol_name = (
-            Regex(r"[ \t]+[A-Za-z0-9_]+")
+            Regex(r"[ \t]+[A-Za-z0-9_]+(?=[ \t]*$)", flags=re.MULTILINE)
             .leave_whitespace()
             .add_parse_action(lambda t: t[0].strip())
             .set_results_name("config_name", list_all_matches=True)
@@ -835,7 +881,7 @@ class KconfigGrammar:
         # Macro names start at column 0 (no preceding keyword), so they
         # need normal pyparsing whitespace handling.
         macro_name = Word(alphanums + "_").set_name("macro name")
-        config_opts = KconfigOptionBlock().leave_whitespace().set_results_name("config_opts")
+        config_opts = KconfigOptionBlock(parser).leave_whitespace().set_results_name("config_opts")
         config = (
             (Keyword("config") - symbol_name - config_opts)
             .set_parse_action(parser.parse_config)
@@ -846,10 +892,15 @@ class KconfigGrammar:
         # Comment
         ###########################
         # Not a #-like comment (which is ignored), but a comment block showed in generated sdkconfig file.
-        comment_opts = KconfigOptionBlock().leave_whitespace().set_results_name("comment_opts")
+        comment_opts = KconfigOptionBlock(parser).leave_whitespace().set_results_name("comment_opts")
 
         comment = (
-            (Keyword("comment") - inline_prompt + Opt(comment_opts))
+            (
+                Keyword("comment")
+                - inline_prompt
+                + Opt(_trailing_text_guard("unexpected text after the comment text"))
+                + Opt(comment_opts)
+            )
             .set_parse_action(parser.parse_comment)
             .set_name("comment block")
         )
@@ -884,12 +935,23 @@ class KconfigGrammar:
         # Choice
         ########################
         entries = Forward()
+        # Legacy syntax "choice <quoted text>", accepted by parser v1. The quoted text is not a valid
+        # identifier, so the choice is treated as unnamed. Matching it explicitly is also what keeps
+        # the token from being left unconsumed by Opt(symbol_name), which leads to unbounded recursion.
+        quoted_choice_name = (
+            Regex(r"""[ \t]+(?:"(?:\\.|[^"\\\n])*"|'(?:\\.|[^'\\\n])*')""")
+            .leave_whitespace()
+            .set_results_name("quoted_choice_name")
+        )
+
         # Choice is a group of configs that can have only one active at a time.
         choice = (
             (
                 Keyword("choice")
-                - Opt(symbol_name).set_results_name("choice_name")
-                + Opt(KconfigOptionBlock().leave_whitespace()).set_results_name("choice_opts")
+                - Opt(quoted_choice_name)
+                + Opt(symbol_name).set_results_name("choice_name")
+                + Opt(_trailing_text_guard("invalid choice name"))
+                + Opt(KconfigOptionBlock(parser).leave_whitespace()).set_results_name("choice_opts")
                 # Group() isolates the nested entries' named results (e.g. a nested
                 # choice's "choice_name"/"choice_opts") so they do not leak into and
                 # overwrite this choice's results. Without it, an outer choice would
@@ -929,8 +991,9 @@ class KconfigGrammar:
 
         menu << (
             Keyword("menu")
-            - QuotedString('"')
-            + Opt(KconfigOptionBlock().leave_whitespace())
+            - QuotedString('"', esc_char="\\")
+            + Opt(_trailing_text_guard("unexpected text after the menu title"))
+            + Opt(KconfigOptionBlock(parser).leave_whitespace())
             + entries
             + Keyword("endmenu")
         ).set_parse_action(parser.parse_menu).set_results_name("menu").set_name("menu block")
@@ -947,7 +1010,7 @@ class KconfigGrammar:
         # Main menu
         ###########################
         mainmenu = (
-            (Keyword("mainmenu") - (QuotedString('"') | QuotedString("'")) + entries)
+            (Keyword("mainmenu") - (QuotedString('"', esc_char="\\") | QuotedString("'", esc_char="\\")) + entries)
             .set_parse_action(parser.parse_mainmenu)
             .set_name("mainmenu")
         )
@@ -962,6 +1025,56 @@ class KconfigGrammar:
         # sourced file can have different structure than the main Kconfig file, thus using a separate root.
         self.sourced_root = OneOrMore(entry_records).set_name("sourced Kconfig file")
 
+    def _find_help_block_line_indices(self, lines: List[str]) -> Set[int]:
+        """
+        Returns indices of rows from `lines` that belong to the help text.
+        Used to skip help text lines in preprocess_file().
+
+        Help text is plain text without any Kconfig syntax, so a "#" inside it is not a comment
+        marker and must be preserved verbatim by preprocess_file(). This mirrors the exact
+        indentation/blank-line rule KconfigHelpBlock.parseImpl uses at parse time, applied here
+        to the raw (not yet comment-stripped) lines, so that a comment-looking line (e.g. "# see
+        below") is correctly treated as literal help text instead of disappearing as if blank.
+        """
+
+        def leading_whitespace_len(line: str) -> int:
+            return len(line) - len(line.lstrip())
+
+        def first_non_blank_idx(start: int) -> Optional[int]:
+            for i in range(start, len(lines)):
+                if lines[i].strip():
+                    return i
+            return None
+
+        help_lines: Set[int] = set()
+        idx = 0
+        while idx < len(lines):
+            if lines[idx].strip().split()[:1] != ["help"]:
+                idx += 1
+                continue
+            body_start = first_non_blank_idx(idx + 1)
+            if body_start is None:
+                break
+            block_indent = leading_whitespace_len(lines[body_start])
+            if block_indent == 0:  # malformed help block, reported later by KconfigHelpBlock
+                idx = body_start
+                continue
+            j = body_start
+            while j < len(lines):
+                if not lines[j].strip():
+                    k = first_non_blank_idx(j + 1)
+                    if k is None or leading_whitespace_len(lines[k]) < block_indent:
+                        break
+                    help_lines.add(j)
+                    j += 1
+                    continue
+                if leading_whitespace_len(lines[j]) < block_indent:
+                    break
+                help_lines.add(j)
+                j += 1
+            idx = j
+        return help_lines
+
     def preprocess_file(self, file: str, ensure_end_newline: bool = True) -> str:
         """
         Helper method for preprocessing the Kconfig files.
@@ -969,7 +1082,7 @@ class KconfigGrammar:
         that it is easier to preprocess the files.
         Specifically, it:
             * merges lines split with '\'
-            * removes inline comments
+            * removes inline comments (except inside help blocks, where "#" is literal text)
         """
 
         def remove_inline_comments(line: str) -> str:
@@ -980,17 +1093,20 @@ class KconfigGrammar:
                 self.parser.kconfig.report.add_ignore_line(line)
 
             quote = None  # Tracks if we're inside a quote
+            escaped = False
             result = []
 
             for char in line:
                 if quote:
                     # Close the quote if we encounter a matching quote character
-                    if char == quote:
+                    if char == quote and not escaped:
                         quote = None
+                    escaped = char == "\\" and not escaped
                     result.append(char)
                 elif char in {'"', "'"}:
                     # Start a new quote if we encounter a quote character
                     quote = char
+                    escaped = False
                     result.append(char)
                 elif char == "#":
                     # Stop processing if we encounter a `#` **outside** quotes
@@ -1004,6 +1120,7 @@ class KconfigGrammar:
 
         with open(file, "r") as f:
             lines = f.readlines()
+            help_line_indices = self._find_help_block_line_indices([line.expandtabs() for line in lines])
             return_file = ""
             split_lines_idxs: List[int] = []
 
@@ -1014,8 +1131,9 @@ class KconfigGrammar:
                     return_file += "\n"
                     continue
 
-                # Remove inline comments
-                line = remove_inline_comments(line)
+                # Remove inline comments, unless this line is part of a help block's body.
+                if line_idx not in help_line_indices:
+                    line = remove_inline_comments(line)
 
                 # Merge lines split with '\' and place blank lines to preserve line numbering.
                 if line_idx in split_lines_idxs:
@@ -1025,12 +1143,16 @@ class KconfigGrammar:
                 if line.endswith("\\\n"):
                     merged_line = line.rstrip("\\\n")
                     for next_line_idx, next_line in enumerate(lines[line_idx + 1 :]):
+                        absolute_idx = next_line_idx + line_idx + 1
+                        next_line_text = (
+                            next_line if absolute_idx in help_line_indices else remove_inline_comments(next_line)
+                        )
                         if next_line.endswith("\\\n"):
-                            merged_line += remove_inline_comments(next_line).lstrip(" ").rstrip("\\\n")
-                            split_lines_idxs.append(next_line_idx + line_idx + 1)
+                            merged_line += next_line_text.lstrip(" ").rstrip("\\\n")
+                            split_lines_idxs.append(absolute_idx)
                         else:  # first line without '\' is still part of the merged line
-                            merged_line += " " + remove_inline_comments(next_line).lstrip(" ")
-                            split_lines_idxs.append(next_line_idx + line_idx + 1)
+                            merged_line += " " + next_line_text.lstrip(" ")
+                            split_lines_idxs.append(absolute_idx)
                             break
                     return_file += merged_line
                     continue

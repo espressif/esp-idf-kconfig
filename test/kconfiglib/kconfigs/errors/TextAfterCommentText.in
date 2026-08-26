@@ -1,0 +1,7 @@
+mainmenu "Text after comment text"
+
+config FOO
+    bool "Foo"
+
+# Only an "if" condition may follow the comment text on the same line.
+comment "Comment text" leftover

@@ -1,0 +1,8 @@
+mainmenu "Text after menu title"
+
+# Nothing may follow the menu title on the same line.
+menu "Menu title" leftover
+
+config FOO
+    bool "Foo"
+endmenu

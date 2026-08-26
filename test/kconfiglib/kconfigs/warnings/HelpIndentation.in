@@ -1,0 +1,19 @@
+# test if help text indented at most as much as the help keyword is working
+mainmenu "mainmenu"
+
+    config SAME_INDENT_AS_HELP
+        bool "help text at the same indentation as the help keyword"
+        default y
+        help
+        first line of the help text
+        second line of the help text
+
+    config LESS_INDENT_THAN_HELP
+        bool "help text indented less than the help keyword"
+        default y
+            help
+        the help keyword is over-indented here
+
+    config AFTER_HELP
+        bool "entry following a help block must not be swallowed by it"
+        default y

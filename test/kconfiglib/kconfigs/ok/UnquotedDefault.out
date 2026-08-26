@@ -1,0 +1,10 @@
+#
+# Automatically generated file. DO NOT EDIT.
+# Espressif IoT Development Framework (ESP-IDF)  Project Configuration
+#
+# default:
+CONFIG_HOSTNAME="coap.example.io"
+# default:
+CONFIG_PATH_PREFIX="/usr/local/share"
+# default:
+CONFIG_DASHED="some-value"

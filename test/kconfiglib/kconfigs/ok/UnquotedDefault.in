@@ -1,0 +1,14 @@
+# test if unquoted default values containing . / and - are working
+mainmenu "mainmenu"
+
+    config HOSTNAME
+        string "hostname"
+        default coap.example.io
+
+    config PATH_PREFIX
+        string "path prefix"
+        default /usr/local/share
+
+    config DASHED
+        string "dashed value"
+        default some-value

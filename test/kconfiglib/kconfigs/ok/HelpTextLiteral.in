@@ -1,0 +1,11 @@
+mainmenu "Help text is plain text"
+
+config A
+    bool "a"
+    default y
+    help
+        # This looks like a comment but is literal help text.
+        See issue #123 for more details on PKCS#5.
+
+        # Another comment-looking line, after a blank line.
+        Second paragraph.
