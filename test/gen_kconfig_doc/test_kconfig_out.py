@@ -186,3 +186,27 @@ class TestDocOutput:
         assert "- 7 if :ref:`CONFIG_DEP_GATE` is enabled" in s
         assert "- 3" in s
         assert "- 3 if" not in s
+
+    def test_unavailable_options_get_link_target(self, data):
+        with io.StringIO() as output:
+            gen_kconfig_doc.write_unavailable_options(output, data.config, data.visibility)
+            output.seek(0)
+            s = output.read()
+
+        # prompted options hidden for chipa: a link target and a note, not a full entry
+        assert ".. _CONFIG_CONFIG_FOR_CHIPB:\n" in s
+        assert "CONFIG_CONFIG_FOR_CHIPB\n^^^" in s  # a section, so a plain :ref: resolves too
+        assert "Config for chip B" in s
+        assert ":emphasis:`Not available for this target.`" in s
+        assert ".. _CONFIG_CHOICE_FOR_CHIPB:\n" in s  # choices as well
+        assert ".. _CONFIG_NEEDS_UNDEFINED_CAP:\n" in s
+        assert ".. _CONFIG_IN_MENU_DEPENDS_UNDEFINED_CAP:\n" in s
+        assert "Available options:" not in s
+
+        # documented options must not get a second link target
+        assert ".. _CONFIG_ALWAYS_VISIBLE:\n" not in s
+        assert ".. _CONFIG_CONFIG_FOR_CHIPA:\n" not in s
+        # promptless symbols stay undocumented
+        assert ".. _CONFIG_SOC_CAP_CHIPA_ONLY:\n" not in s
+        # options inside a choice are covered by the parent choice entry
+        assert ".. _CONFIG_CHOICE_FOR_CHIPB_OP1:\n" not in s

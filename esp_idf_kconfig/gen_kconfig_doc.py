@@ -207,6 +207,7 @@ def write_docs(kconfig: kconfiglib.Kconfig, visibility: ConfigTargetVisibility, 
     with open(filename, "w") as f:
         for node in kconfig.node_iter():
             write_menu_item(f, node, visibility, kconfig, reverse_deps)
+        write_unavailable_options(f, kconfig, visibility)
 
 
 def node_is_menu(node):
@@ -797,3 +798,55 @@ def write_menu_item(f, node, visibility, kconfig, reverse_deps):
             ref_list = [f"- :ref:`{anchor}`" for _, anchor in sorted_child_list]
             f.write("\n".join(ref_list))
             f.write("\n\n")
+
+
+def write_unavailable_options(f, kconfig, visibility):
+    """
+    Write anchors for config options unavailable for current target.
+
+    Sometimes, documentation reference option unavailable/target-constant for current target.
+    If no rst anchor is present, Sphinx treats it as undefined label and warns, which is evaluated
+    as an error by esp-docs.
+
+    From the practical PoV, it is also better to list even unavailable config options and explicitly state
+    they are unavailable rather than just omit them from the docs and leave the user wondering why they do not see them.
+    """
+    documented = set()
+    unavailable = dict()
+
+    for node in kconfig.node_iter():
+        try:
+            name = node.item.name
+        except AttributeError:
+            continue  # menus and comments have no CONFIG_ label
+        if name is None:
+            continue  # unnamed choice
+        if type(node.parent.item) is kconfiglib.Choice:
+            continue
+        if visibility.visible(node):
+            documented.add(name)
+        elif node.prompt:
+            unavailable.setdefault(name, node.prompt[0])
+
+    # An option defined in several places is documented as long as one of its nodes is visible.
+    names = sorted(name for name in unavailable if name not in documented)
+    if not names:
+        return
+
+    title = "Options not available for this target"
+    # leading blank line: the last written entry does not always end with one
+    f.write(f"\n{title}\n")
+    f.write(HEADING_SYMBOLS[INITIAL_HEADING_LEVEL] * len(title))
+    f.write("\n\n")
+    f.write(
+        "The following options are defined in the Kconfig files, but their dependencies cannot be "
+        "satisfied for the target this documentation is built for, so they cannot be set.\n\n"
+    )
+    for name in names:
+        heading = f"CONFIG_{name}"
+        f.write(f".. _{heading}:\n\n")
+        f.write(f"{heading}\n")
+        f.write(HEADING_SYMBOLS[INITIAL_HEADING_LEVEL + 1] * len(heading))
+        f.write("\n\n")
+        f.write(f"{INDENT}{unavailable[name]}\n\n")
+        f.write(f"{INDENT}:emphasis:`Not available for this target.`\n\n")
