@@ -2684,7 +2684,7 @@ class Kconfig(object):
         # working across multiple lines. Lookback and compatibility with old
         # janky versions of the C tools complicate things though.
 
-        self._line = s  # Used for error reporting
+        self._line = s  # Used for error reporting and env. variable detection
         self.check_pragmas(s)
 
         # Initial token on the line
@@ -2798,7 +2798,8 @@ class Kconfig(object):
                         #
                         # The preprocessor functionality changed how
                         # environment variables are referenced, to $(FOO).
-                        val = expandvars(s[i + 1 : end_i - 1].replace("$UNAME_RELEASE", _UNAME_RELEASE))
+                        raw_val = s[i + 1 : end_i - 1].replace("$UNAME_RELEASE", _UNAME_RELEASE)
+                        val = expandvars(raw_val)
 
                         i = end_i
 
@@ -3515,6 +3516,8 @@ class Kconfig(object):
 
             elif t0 == _T_DEFAULT:
                 node.defaults.append((self._parse_expr(), self._parse_cond()))
+                if "$" in self._line and type(node.item) is Symbol and _env_ref_search(self._line):
+                    node.item.defaults_from_env = True
 
             elif t0 == _T_PROMPT:
                 self._parse_prompt(node)
@@ -4410,6 +4413,7 @@ class Symbol:
         "_user_value",
         "weak_rev_dep",
         "env_var",
+        "defaults_from_env",
         "sets",
         "weak_sets",
         "rev_values",
@@ -4427,6 +4431,7 @@ class Symbol:
     help: Optional[str]
     is_constant: bool
     env_var: Optional[str]
+    defaults_from_env: bool
     ranges: List[Tuple]
     _loaded_as_default: bool
     _sdkconfig_value: Optional[str]
@@ -4549,6 +4554,16 @@ class Symbol:
             C implementation.
         """
         self.env_var = None
+
+        """
+        defaults_from_env:
+            True if at least one of the symbol's 'default' properties (value or condition)
+            references an environment variable ($NAME or ${NAME}), whether or not that
+            variable was set at parse time. Unlike env_var, this does not require
+            'option env'; it simply records that the symbol's value depends on the build
+            environment rather than being a fixed constant.
+        """
+        self.defaults_from_env = False
 
         """
         nodes:
@@ -8465,3 +8480,8 @@ _name_special_search = re.compile(r"[^A-Za-z0-9_$/.-]|\$\(|$", re.ASCII).search
 # A valid right-hand side for an assignment to a string symbol in a .config
 # file, including escaped characters. Extracts the contents.
 _conf_string_match = re.compile(r'"((?:[^\\"]|\\.)*)"', re.ASCII).match
+
+# A POSIX-style environment variable reference, $NAME or ${NAME}, as understood by
+# os.path.expandvars(). Used to detect that a 'default' references an environment
+# variable, whether or not that variable is currently set (see Symbol.defaults_from_env).
+_env_ref_search = re.compile(r"\$(\w+|\{[^}]*\})", re.ASCII).search

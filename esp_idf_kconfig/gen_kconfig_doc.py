@@ -79,14 +79,8 @@ class ConfigTargetVisibility(object):
             * undefined symbols (referenced but never defined for this target, e.g. an omitted
               SOC_* cap) are pinned to n;
 
-        Note: symbols whose value is derived from an environment variable are treated
-        differently when the envvar was set at config generation time:
-            1) envvar unset: config treated as free even though it would otherwise be
-               target-constant;
-            2) envvar set: configuration system treats the envvar reference as a string
-               literal and the symbol may be target-constant.
-        Envvars are expanded at parse time; after expansion there is no record that a string
-        value came from an envvar.
+        Note: a symbol whose default value or condition references an environment variable is always
+              treated as free (one exception is IDF_TARGET envvar indicating target-constant).
         """
         if type(item) is not kconfiglib.Symbol:
             return False
@@ -94,12 +88,10 @@ class ConfigTargetVisibility(object):
             # IDF_TARGET / IDF_TARGET_* symbols are target-constant
             return True
         if item.is_constant:
-            # y/n or literals
+            # y/n or string literals (not true config options)
             return True
         if self._depends_on_env_var(item):
-            # Value comes from an environment variable, which is not fixed by the target: another build
-            # could set it differently, so keep it free and let its dependents stay documented. (A variable set at
-            # build time is folded away at parse time and never reaches here, so it is treated as constant.)
+            # Value comes from a (non-IDF_TARGET) environment variable
             return False
         if item.orig_type == kconfiglib.UNKNOWN:
             # A node-less UNKNOWN symbol is undefined: referenced but never defined for this target (e.g. an omitted
@@ -131,18 +123,15 @@ class ConfigTargetVisibility(object):
 
     def _depends_on_env_var(self, item):
         """
-        True if item's value derives from a non-IDF_TARGET environment variable, via either 'option env="NAME"' or an
-        unresolved '${NAME}' left in a default because NAME was unset at parse time. Macros ('$(NAME)') and env vars
-        that were set at build time are expanded away during parsing, so they never look env-driven here.
+        True if item's value derives from a non-IDF_TARGET environment variable, via either
+        'option env="NAME"' or a 'default' whose value/condition referenced an environment
+        variable while being parsed (item.defaults_from_env, set regardless of whether that
+        variable was set at parse time).
         """
         env = item.env_var  # set only by 'option env="NAME"'
         if env and not env.startswith(self.target_env_var):
             return True
-        return any(
-            _references_unresolved_env(value, self.target_env_var)
-            or _references_unresolved_env(cond, self.target_env_var)
-            for value, cond in item.defaults
-        )
+        return item.defaults_from_env
 
     def _expr_is_target_constant(self, expr):
         """
@@ -279,17 +268,6 @@ def format_rest_text(text, indent):
     )
     text += "\n"
     return text
-
-
-def _references_unresolved_env(expr, target_env_var):
-    """
-    True if expr still contains an unexpanded ${...} that is not the docs target, i.e. a value derived from an
-    environment variable that was unset at parse time. Macros ($(...)) and env vars set at build time are expanded
-    during parsing and leave no ${...}, so they are not matched.
-    """
-    if type(expr) is tuple:
-        return any(_references_unresolved_env(sub, target_env_var) for sub in expr[1:])
-    return type(expr) is kconfiglib.Symbol and "${" in expr.name and target_env_var not in expr.name
 
 
 def _is_undefined_reference(sym):
