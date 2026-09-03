@@ -44,6 +44,7 @@ from .core import KconfigError
 from .core import MenuNode
 from .core import Symbol
 from .core import Variable
+from .core import _env_ref_search
 from .core import _resolve_source_pattern
 from .core import unescape
 
@@ -89,6 +90,10 @@ class Parser:
 
         self.grammar = KconfigGrammar(self)
         self.orphans: List[Orphan] = []
+
+        # Set while an expression referencing an environment variable is being converted,
+        # read right after a 'default' is parsed (see Symbol.defaults_from_env).
+        self._env_ref_seen = False
 
         self.file_stack: List[str]
         if not filename:
@@ -443,6 +448,7 @@ class Parser:
                 # resolving the expression (e.g. an illegal reference) point at the right line,
                 # since self.kconfig.linenr still holds the enclosing config/choice's own line here.
                 self.kconfig.linenr = default[2]
+                self._env_ref_seen = False
                 # cannot use list() as an argument, because list("abc") is ["a", "b", "c"], not ["abc"]
                 value = self.parse_expression(default[0])
                 if default[1]:
@@ -450,6 +456,8 @@ class Parser:
                     node.defaults.append((value, expr))
                 else:
                     node.defaults.append((value, self.kconfig.y))
+                if self._env_ref_seen and type(node.item) is Symbol:
+                    node.item.defaults_from_env = True
             self.kconfig._sanitize_bool_literal_defaults(node)
 
         # set help
@@ -622,6 +630,7 @@ class Parser:
         """
         Creates an environment variable from a string
         """
+        self._env_ref_seen = True
         if name in os.environ:
             self.kconfig.env_vars.add(name)
             value = os.environ.get(name) or ""
@@ -641,6 +650,8 @@ class Parser:
         then expandvars handles ${...} and $NAME (POSIX shell-style).
         """
         result: str = self.kconfig._expand_whole(s, ())
+        if _env_ref_search(result):
+            self._env_ref_seen = True
         return expandvars(result)
 
     def _const_sym_with_embedded_vars(self, s: str) -> "Symbol":

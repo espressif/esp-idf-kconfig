@@ -1118,7 +1118,7 @@ class KconfigGrammar:
             cleaned_line = "".join(result).rstrip()
             return cleaned_line + "\n"
 
-        with open(file, "r") as f:
+        with open(file, "r", encoding=self.parser.kconfig._encoding) as f:
             lines = f.readlines()
             help_line_indices = self._find_help_block_line_indices([line.expandtabs() for line in lines])
             return_file = ""

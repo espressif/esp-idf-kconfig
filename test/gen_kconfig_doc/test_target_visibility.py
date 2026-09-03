@@ -42,6 +42,7 @@ class TestConfigTargetVisibilityChipA(ConfigTargetVisibilityTestCase):
     @pytest.fixture(scope="class", autouse=True)
     def setup_chip(self):
         os.environ["IDF_TARGET"] = "chipa"
+        os.environ["ENV_SET_FOR_TEST"] = "chipa"
 
     def test_config_visibility(self):
         assert os.environ.get("IDF_TARGET") == "chipa"
@@ -74,6 +75,10 @@ class TestConfigTargetVisibilityChipA(ConfigTargetVisibilityTestCase):
         self.visible("CONFIG_DEPENDS_ENV_VAR1")
         self.visible("CONFIG_DEPENDS_ENV_VAR2")
         self.visible("NEEDS_ENV_OPTION")
+        # env var set at parse time is still not fixed by the target -> dependent stays visible
+        self.visible("NEEDS_ENV_SET_STR")
+        # the unbraced $NAME form counts as an env reference too
+        self.visible("NEEDS_BARE_ENV_VAR")
         # macro ($(...)) is folded to a fixed value at parse time -> constant -> dependent hidden
         self.invisible("NEEDS_MACRO_SYM")
         self.visible("CHIPA_VERSION")
@@ -105,6 +110,7 @@ class TestConfigTargetVisibilityChipB(ConfigTargetVisibilityTestCase):
     @pytest.fixture(scope="class", autouse=True)
     def setup_chip(self):
         os.environ["IDF_TARGET"] = "chipb"
+        os.environ["ENV_SET_FOR_TEST"] = "chipa"
 
     def test_config_visibility(self):
         assert os.environ.get("IDF_TARGET") == "chipb"
@@ -137,6 +143,10 @@ class TestConfigTargetVisibilityChipB(ConfigTargetVisibilityTestCase):
         self.visible("CONFIG_DEPENDS_ENV_VAR1")
         self.visible("CONFIG_DEPENDS_ENV_VAR2")
         self.visible("NEEDS_ENV_OPTION")
+        # env var set at parse time is still not fixed by the target -> dependent stays visible
+        self.visible("NEEDS_ENV_SET_STR")
+        # the unbraced $NAME form counts as an env reference too
+        self.visible("NEEDS_BARE_ENV_VAR")
         # macro ($(...)) is folded to a fixed value at parse time -> constant -> dependent hidden
         self.invisible("NEEDS_MACRO_SYM")
         self.invisible("CHIPA_VERSION")

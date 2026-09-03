@@ -79,14 +79,8 @@ class ConfigTargetVisibility(object):
             * undefined symbols (referenced but never defined for this target, e.g. an omitted
               SOC_* cap) are pinned to n;
 
-        Note: symbols whose value is derived from an environment variable are treated
-        differently when the envvar was set at config generation time:
-            1) envvar unset: config treated as free even though it would otherwise be
-               target-constant;
-            2) envvar set: configuration system treats the envvar reference as a string
-               literal and the symbol may be target-constant.
-        Envvars are expanded at parse time; after expansion there is no record that a string
-        value came from an envvar.
+        Note: a symbol whose default value or condition references an environment variable is always
+              treated as free (one exception is IDF_TARGET envvar indicating target-constant).
         """
         if type(item) is not kconfiglib.Symbol:
             return False
@@ -94,12 +88,10 @@ class ConfigTargetVisibility(object):
             # IDF_TARGET / IDF_TARGET_* symbols are target-constant
             return True
         if item.is_constant:
-            # y/n or literals
+            # y/n or string literals (not true config options)
             return True
         if self._depends_on_env_var(item):
-            # Value comes from an environment variable, which is not fixed by the target: another build
-            # could set it differently, so keep it free and let its dependents stay documented. (A variable set at
-            # build time is folded away at parse time and never reaches here, so it is treated as constant.)
+            # Value comes from a (non-IDF_TARGET) environment variable
             return False
         if item.orig_type == kconfiglib.UNKNOWN:
             # A node-less UNKNOWN symbol is undefined: referenced but never defined for this target (e.g. an omitted
@@ -131,18 +123,15 @@ class ConfigTargetVisibility(object):
 
     def _depends_on_env_var(self, item):
         """
-        True if item's value derives from a non-IDF_TARGET environment variable, via either 'option env="NAME"' or an
-        unresolved '${NAME}' left in a default because NAME was unset at parse time. Macros ('$(NAME)') and env vars
-        that were set at build time are expanded away during parsing, so they never look env-driven here.
+        True if item's value derives from a non-IDF_TARGET environment variable, via either
+        'option env="NAME"' or a 'default' whose value/condition referenced an environment
+        variable while being parsed (item.defaults_from_env, set regardless of whether that
+        variable was set at parse time).
         """
         env = item.env_var  # set only by 'option env="NAME"'
         if env and not env.startswith(self.target_env_var):
             return True
-        return any(
-            _references_unresolved_env(value, self.target_env_var)
-            or _references_unresolved_env(cond, self.target_env_var)
-            for value, cond in item.defaults
-        )
+        return item.defaults_from_env
 
     def _expr_is_target_constant(self, expr):
         """
@@ -218,6 +207,7 @@ def write_docs(kconfig: kconfiglib.Kconfig, visibility: ConfigTargetVisibility, 
     with open(filename, "w") as f:
         for node in kconfig.node_iter():
             write_menu_item(f, node, visibility, kconfig, reverse_deps)
+        write_unavailable_options(f, kconfig, visibility)
 
 
 def node_is_menu(node):
@@ -279,17 +269,6 @@ def format_rest_text(text, indent):
     )
     text += "\n"
     return text
-
-
-def _references_unresolved_env(expr, target_env_var):
-    """
-    True if expr still contains an unexpanded ${...} that is not the docs target, i.e. a value derived from an
-    environment variable that was unset at parse time. Macros ($(...)) and env vars set at build time are expanded
-    during parsing and leave no ${...}, so they are not matched.
-    """
-    if type(expr) is tuple:
-        return any(_references_unresolved_env(sub, target_env_var) for sub in expr[1:])
-    return type(expr) is kconfiglib.Symbol and "${" in expr.name and target_env_var not in expr.name
 
 
 def _is_undefined_reference(sym):
@@ -819,3 +798,55 @@ def write_menu_item(f, node, visibility, kconfig, reverse_deps):
             ref_list = [f"- :ref:`{anchor}`" for _, anchor in sorted_child_list]
             f.write("\n".join(ref_list))
             f.write("\n\n")
+
+
+def write_unavailable_options(f, kconfig, visibility):
+    """
+    Write anchors for config options unavailable for current target.
+
+    Sometimes, documentation reference option unavailable/target-constant for current target.
+    If no rst anchor is present, Sphinx treats it as undefined label and warns, which is evaluated
+    as an error by esp-docs.
+
+    From the practical PoV, it is also better to list even unavailable config options and explicitly state
+    they are unavailable rather than just omit them from the docs and leave the user wondering why they do not see them.
+    """
+    documented = set()
+    unavailable = dict()
+
+    for node in kconfig.node_iter():
+        try:
+            name = node.item.name
+        except AttributeError:
+            continue  # menus and comments have no CONFIG_ label
+        if name is None:
+            continue  # unnamed choice
+        if type(node.parent.item) is kconfiglib.Choice:
+            continue
+        if visibility.visible(node):
+            documented.add(name)
+        elif node.prompt:
+            unavailable.setdefault(name, node.prompt[0])
+
+    # An option defined in several places is documented as long as one of its nodes is visible.
+    names = sorted(name for name in unavailable if name not in documented)
+    if not names:
+        return
+
+    title = "Options not available for this target"
+    # leading blank line: the last written entry does not always end with one
+    f.write(f"\n{title}\n")
+    f.write(HEADING_SYMBOLS[INITIAL_HEADING_LEVEL] * len(title))
+    f.write("\n\n")
+    f.write(
+        "The following options are defined in the Kconfig files, but their dependencies cannot be "
+        "satisfied for the target this documentation is built for, so they cannot be set.\n\n"
+    )
+    for name in names:
+        heading = f"CONFIG_{name}"
+        f.write(f".. _{heading}:\n\n")
+        f.write(f"{heading}\n")
+        f.write(HEADING_SYMBOLS[INITIAL_HEADING_LEVEL + 1] * len(heading))
+        f.write("\n\n")
+        f.write(f"{INDENT}{unavailable[name]}\n\n")
+        f.write(f"{INDENT}:emphasis:`Not available for this target.`\n\n")

@@ -132,6 +132,31 @@ mainmenu "Main menu"
         bool "depends on an option-env symbol (stays visible)"
         depends on ENV_OPTION_SYM
 
+    # Unlike IDF_XYZ above, this env var IS set at parse time, to a value that does not satisfy the
+    # comparison below. Folding it to the literal this build happens to provide would hide the
+    # dependent, but another build can set the variable to "clang", so it has to stay documented.
+    # This is the shape of the real-world IDF_TOOLCHAIN case. The value set by the test deliberately
+    # collides with the "chipa" literal used elsewhere (e.g. IDF_TARGET_CHIPA's default) to confirm
+    # that only the symbol is tagged as env-derived, never the shared constant behind that literal.
+    config ENV_SET_STR
+        string
+        default "${ENV_SET_FOR_TEST}"
+
+    config NEEDS_ENV_SET_STR
+        bool "depends on a comparison against an env-driven symbol whose env var is set (stays visible)"
+        depends on ENV_SET_STR = "clang"
+
+    # The unbraced $NAME form must be detected as an environment reference as well, not just ${NAME}.
+    # This is the pattern of the real-world IDF_TOOLCHAIN case (default "$IDF_TOOLCHAIN", variable
+    # unset while documentation is being generated).
+    config IDF_BARE_XYZ
+        bool
+        default "$IDF_BARE_XYZ"
+
+    config NEEDS_BARE_ENV_VAR
+        bool "depends on an env-driven symbol using the unbraced $NAME form (stays visible)"
+        depends on IDF_BARE_XYZ
+
     # Macro ($(...)) is expanded at parse time to a fixed value, so it is constant: dependent folds and is hidden.
     NEEDS_MACRO_VAL := n
 
