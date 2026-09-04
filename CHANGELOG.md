@@ -20,6 +20,39 @@
 </div>
 <hr>
 
+## v3.13.0 (2026-09-04)
+
+### ✨ New Features
+
+- **kconfgen**: diagnose v2 parse failures by re-parsing with v1 *(Jan Beran - eacd163)*
+- **menuconfig**: allow to alter location when saving minimal config *(Jan Beran - dbe1bdb)*
+- add a kcompare tool to compare configuration between commits *(Jan Beran - f48fddc)*
+
+### 🐛 Bug Fixes
+
+- **kconfiglib**: do not treat choice n-members as a selection *(Jan Beran - c557595)*
+- **report**: name unnamed choices and show which default is used *(Jan Beran - 6184321)*
+- **report**: print area info strings only in verbose mode *(Jan Beran - 6ae6bcc)*
+- **kconfiglib**: track env vars used in symbol defaults *(Jan Beran - 014b2be)*
+- **parser**: accept v1 edge case constructs *(Jan Beran - 3b5355b)*
+- **menuconfig**: render bracketed prompt and help text literally *(Jan Beran - 0389e77)*
+- **menuconfig**: scroll through search results with PgUp/PgDn *(Jan Beran - 06055eb)*
+- **menuconfig**: do not update sdkconfig files if not requested *(Jan Beran - e7b9346)*
+- **gen_kconfig_doc**: hide symbols that are constant for given target *(Jan Beran - 395f64e)*
+- **gen_kconfig_doc**: unify bool value wording to Enabled/Disabled *(Jan Beran - cce0634)*
+- **gen_kconfig_doc**: keep negated visible deps when minimizing conditions *(Jan Beran - 54c5366)*
+- **gen_kconfig_doc**: render bool conditions as "is enabled"/"is disabled" *(Jan Beran - 5f444dd)*
+- **kconfcheck**: treat comment as any other entry *(Jan Beran - 51a80c0)*
+- use "utf-8" encoding in parser v2 code path *(Jan Beran - 8d70d91)*
+- paths with glob patterns are first attempted to access *(Jan Beran - b167a2a)*
+- set default should respect target's depends on (like imply) *(Jan Beran - d0c23f4)*
+
+### 📖 Documentation
+
+- **kconfiglib**: named choices cannot be used in expressions *(Jan Beran - b4fd636)*
+- print dependency info in Config Option Reference *(Jan Beran - e2af911)*
+
+
 ## v3.12.0 (2026-07-17)
 
 ### ✨ New Features
