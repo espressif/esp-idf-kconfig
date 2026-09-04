@@ -1,0 +1,4 @@
+# default:
+# CONFIG_COLOR_RED is not set
+# default:
+CONFIG_COLOR_BLUE=y

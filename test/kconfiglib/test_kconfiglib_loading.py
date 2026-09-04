@@ -139,10 +139,38 @@ class TestDefaultMismatchReport(TestDefaultsBase):
         changed_defaults = defaults_area["data"]["changed_defaults"]
         changed_names = {entry["name"] for entry in changed_defaults}
         assert {"FREE_0", "FREE_1", "FREE_2", "FREE_3"}.issubset(changed_names)
-        if os.environ["KCONFIG_DEFAULTS_POLICY"] == "sdkconfig":
+        used_from = os.environ["KCONFIG_DEFAULTS_POLICY"]
+        for entry in changed_defaults:
+            assert entry["used_from"] == used_from
+            if used_from == "sdkconfig":
+                assert entry["used"] == entry["sdkconfig_default"]
+            else:
+                assert entry["used"] == entry["kconfig_default"]
+        if used_from == "sdkconfig":
             assert {"DEPENDENT_0", "DEPENDENT_1"}.issubset(changed_names)
-        elif os.environ["KCONFIG_DEFAULTS_POLICY"] == "kconfig":
+        elif used_from == "kconfig":
             assert {"DEPENDENT_0", "DEPENDENT_1"}.isdisjoint(changed_names)
+
+        kconfig.report.reset()
+
+    def test_info_string_only_in_verbose(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from esp_kconfiglib.report import VERBOSITY_DEFAULT
+        from esp_kconfiglib.report import VERBOSITY_VERBOSE
+        from esp_kconfiglib.report import DefaultValuesArea
+        from esp_kconfiglib.report import log as report_log
+
+        kconfig = Kconfig(os.path.join(KCONFIG_PATH, "Kconfig.inversed_dep_order_1"))
+        kconfig.load_config(os.path.join(SDKCONFIGS_PATH, "sdkconfig.inversed_dep_order_1"))
+
+        hints = []
+        monkeypatch.setattr(report_log, "hint", lambda msg: hints.append(msg))
+
+        area = kconfig.report.area_to_instance[DefaultValuesArea]
+        area._emit_info_string(VERBOSITY_DEFAULT)
+        assert hints == []
+
+        area._emit_info_string(VERBOSITY_VERBOSE)
+        assert hints and "This area reports issues with default values of the config options." in hints[0]
 
         kconfig.report.reset()
 
@@ -185,6 +213,10 @@ class TestLoadingChoicesWithDefaults(TestDefaultsBase):
                 if changed_choice["name"] == "CHOICE"
             ][0]
         )
+        choice_entry = next(changed_choice for changed_choice in changed_choices if changed_choice["name"] == "CHOICE")
+        used_from = os.environ["KCONFIG_DEFAULTS_POLICY"]
+        assert choice_entry["used_from"] == used_from
+        assert choice_entry["used"] == ("SECOND" if used_from == "sdkconfig" else "FIRST")
 
         if os.environ["KCONFIG_DEFAULTS_POLICY"] == "kconfig":
             assert "kconfig" in report_json["header"]["defaults_policy"]
@@ -195,6 +227,29 @@ class TestLoadingChoicesWithDefaults(TestDefaultsBase):
             assert "CONFIG_SECOND=y" in output_sdkconfig
 
         assert "CONFIG_THIRD is not set" in output_sdkconfig
+
+        ma_areas = [area for area in report_json["areas"] if area["title"] == "Multiple Assignments"]
+        assert not ma_areas or "CHOICE" not in ma_areas[0]["data"].get("choices", {})
+
+        kconfig.report.reset()
+
+    @pytest.mark.parametrize("policy", ["sdkconfig", "kconfig"], indirect=True)
+    def test_unnamed_choice_default_mismatch(self, policy: pytest.FixtureDef) -> None:
+        kconfig = Kconfig(os.path.join(KCONFIG_PATH, "Kconfig.unnamed_choices"))
+        kconfig.load_config(os.path.join(SDKCONFIGS_PATH, "sdkconfig.unnamed_choice.different_default"))
+        report_json = kconfig.report._return_json()
+        changed_choices = [area for area in report_json["areas"] if area["title"] == "Default Value Mismatch"][0][
+            "data"
+        ]["changed_choices"]
+        unnamed = next(entry for entry in changed_choices if entry["name"] == "unnamed choice")
+        assert unnamed["kconfig_selection"] == "COLOR_RED"
+        assert unnamed["sdkconfig_selection"] == "COLOR_BLUE"
+        used_from = os.environ["KCONFIG_DEFAULTS_POLICY"]
+        assert unnamed["used_from"] == used_from
+        assert unnamed["used"] == ("COLOR_BLUE" if used_from == "sdkconfig" else "COLOR_RED")
+
+        ma_areas = [area for area in report_json["areas"] if area["title"] == "Multiple Assignments"]
+        assert not ma_areas or "unnamed choice" not in ma_areas[0]["data"].get("choices", {})
 
         kconfig.report.reset()
 

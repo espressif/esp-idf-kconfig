@@ -1581,13 +1581,13 @@ class Kconfig(object):
                         if is_main_sdkconfig:
                             sym._sdkconfig_value = val
                             sym._loaded_as_default = False
-                        sym.present_in_current_sdkconfig = True
+                        sym.mark_present_from_assignment(val)
                         if all(node.prompt is None for node in sym.nodes):
                             if sym.name not in self.promptless_no_warn:
                                 self.report.add_record(DefaultValuesArea, sym_or_choice=sym, promptless=True)
                 # If value is supposed to be a default and symbol has a prompt, save it for later
                 elif any(node.prompt is not None for node in sym.nodes):
-                    sym.present_in_current_sdkconfig = True
+                    sym.mark_present_from_assignment(val)
                     if is_main_sdkconfig:
                         sym._sdkconfig_value = val
                         sym._loaded_as_default = True
@@ -1662,7 +1662,7 @@ class Kconfig(object):
                     if is_main_sdkconfig:
                         sym._sdkconfig_value = val
                         sym._loaded_as_default = False
-                    sym.present_in_current_sdkconfig = True
+                    sym.mark_present_from_assignment(val)
 
             for sym in symbols_with_default_values:
                 sym.resolve_defaults()
@@ -4922,6 +4922,17 @@ class Symbol:
 
         return self.visibility  # we need to actually call self.visibility to trigger the calculation
 
+    def mark_present_from_assignment(self, assigned_val: str) -> None:
+        """
+        Record that this symbol was assigned in the current sdkconfig file.
+
+        A choice is marked present only when the assignment is y. n-set choice
+        members are written for completeness and must not count as a selection.
+        """
+        self._present_in_current_sdkconfig = True
+        if self.choice and assigned_val == "y":
+            self.choice.present_in_current_sdkconfig = True
+
     @property
     def present_in_current_sdkconfig(self):
         return self._present_in_current_sdkconfig
@@ -4929,21 +4940,6 @@ class Symbol:
     @present_in_current_sdkconfig.setter
     def present_in_current_sdkconfig(self, value: bool) -> None:
         self._present_in_current_sdkconfig = value
-        # NOTE: If the choice symbol is set to n, do not set the choice's present_in_current_sdkconfig flag;
-        #       choice is selected by its y-set symbol, n-set symbols are just "the rest" of choice symbols
-        #       and are present in sdkconfig just for completeness.
-        # WARNING: If users mistreat choice and set its y-selected symbol to n, it will take no effect.
-        #          (correct approach is to set the symbol choice should select to "y" and leave the rest to Kconfig).
-        if self.choice and (
-            self.bool_value == STR_TO_BOOL["y"]  # still can be y even if user set it to n...
-            and
-            # ...so we ensure it is not that case.
-            not (self._user_value == STR_TO_BOOL["n"] and self.choice.selection == self)
-        ):
-            self.choice.present_in_current_sdkconfig = value
-            # Because of our lookup to choice.selection, we need to invalidate choice's cached values
-            # (we can be in the middle of _load_config() and values can change).
-            self.choice._invalidate()
 
     @property
     def type(self):

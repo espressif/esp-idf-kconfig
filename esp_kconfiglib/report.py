@@ -190,6 +190,13 @@ class Area(ABC):
         else:
             log.note(message)
 
+    def _emit_info_string(self, verbosity: str) -> None:
+        """
+        Print the area explanation. Only in verbose mode.
+        """
+        if verbosity == VERBOSITY_VERBOSE and self.info_string:
+            log.hint(self.info_string.strip())
+
     @staticmethod
     def severity_to_str(severity: int) -> str:
         if severity == STATUS_OK:
@@ -244,6 +251,34 @@ class DefaultValuesArea(Area):
             return f"{node.filename}:{node.linenr}"
         return ""
 
+    @staticmethod
+    def _used_default(kconfig_value: str, sdkconfig_value: str) -> Tuple[str, Optional[str]]:
+        """
+        Return ``(source, value)`` for the default actually used, based on policy.
+        """
+        policy = (
+            KconfigReport._instance.defaults_policy
+            if KconfigReport._instance is not None
+            else DefaultsPolicy.USE_SDKCONFIG
+        )
+        if policy == DefaultsPolicy.USE_SDKCONFIG:
+            return (policy.value, sdkconfig_value)
+        if policy == DefaultsPolicy.USE_KCONFIG:
+            return (policy.value, kconfig_value)
+        return (policy.value, None)
+
+    @classmethod
+    def _used_default_suffix(cls, kconfig_value: str, sdkconfig_value: str) -> str:
+        """
+        Phrase appended to a mismatch note stating which default is used.
+        """
+        source, used = cls._used_default(kconfig_value, sdkconfig_value)
+        if used is not None:
+            return f", using {used} from {source}"
+        if source == DefaultsPolicy.INTERACTIVE.value:
+            return ", using value chosen interactively"
+        return ""
+
     def add_record(self, sym_or_choice: "Union[Symbol, Choice]", **kwargs: Optional[dict]) -> None:
         promptless: bool = kwargs.get("promptless", False)  # type: ignore
         record_type: str = kwargs.get("record_type", "symbol")  # type: ignore
@@ -267,7 +302,7 @@ class DefaultValuesArea(Area):
                 self.changed_values_promptless.add(record_with_default_flag)
         else:  # Choice
             record = (
-                str(sym_or_choice.name or "nameless" + sym_or_choice.name_and_loc),
+                str(sym_or_choice.name or "unnamed choice"),
                 str(sym_or_choice.selection.name if sym_or_choice.selection else "choice deselected"),  # type: ignore
                 str(kwargs.get("sdkconfig_selection", False)),
                 loc,
@@ -296,17 +331,19 @@ class DefaultValuesArea(Area):
         if self.changed_defaults:
             for sym_name, kconfig_value, sdkconfig_value, loc in self.changed_defaults:
                 prefix = f"{escape(loc)}: " if loc else ""
+                used = self._used_default_suffix(kconfig_value, sdkconfig_value)
                 self._log_for_severity(
                     f"{prefix}{sym_name}: Kconfig default value: {kconfig_value}, "
-                    f"sdkconfig default value: {sdkconfig_value}"
+                    f"sdkconfig default value: {sdkconfig_value}{used}"
                 )
 
         if self.changed_choices:
             for choice_name, kconfig_selection, sdkconfig_selection, loc in self.changed_choices:
                 prefix = f"{escape(loc)}: " if loc else ""
+                used = self._used_default_suffix(kconfig_selection, sdkconfig_selection)
                 self._log_for_severity(
                     f"{prefix}{choice_name}: Kconfig default selection: {kconfig_selection}, "
-                    f"sdkconfig default selection: {sdkconfig_selection}"
+                    f"sdkconfig default selection: {sdkconfig_selection}{used}"
                 )
 
         if verbosity == VERBOSITY_VERBOSE and self.changed_values_promptless:
@@ -319,7 +356,7 @@ class DefaultValuesArea(Area):
                     "will be ignored"
                 )
 
-        log.hint(self.info_string.strip())
+        self._emit_info_string(verbosity)
 
     def return_json(self) -> Optional[dict]:
         """
@@ -335,8 +372,15 @@ class DefaultValuesArea(Area):
         if self.changed_defaults:
             ret_json["data"]["changed_defaults"] = list()
             for sym_name, kconfig_value, sdkconfig_value, _loc in self.changed_defaults:
+                used_from, used = self._used_default(kconfig_value, sdkconfig_value)
                 ret_json["data"]["changed_defaults"].append(
-                    {"name": sym_name, "kconfig_default": kconfig_value, "sdkconfig_default": sdkconfig_value}
+                    {
+                        "name": sym_name,
+                        "kconfig_default": kconfig_value,
+                        "sdkconfig_default": sdkconfig_value,
+                        "used_from": used_from,
+                        "used": used,
+                    }
                 )
         if self.changed_values_promptless:  # There is all the info in json every time
             ret_json["data"]["mismatched_promptless"] = list()
@@ -352,11 +396,14 @@ class DefaultValuesArea(Area):
         if self.changed_choices:
             ret_json["data"]["changed_choices"] = list()
             for choice_name, kconfig_selection, sdkconfig_selection, _loc in self.changed_choices:
+                used_from, used = self._used_default(kconfig_selection, sdkconfig_selection)
                 ret_json["data"]["changed_choices"].append(
                     {
                         "name": choice_name,
                         "kconfig_selection": kconfig_selection,
                         "sdkconfig_selection": sdkconfig_selection,
+                        "used_from": used_from,
+                        "used": used,
                     }
                 )
 
@@ -533,9 +580,11 @@ class MultipleAssignmentArea(Area):
                 for val, is_default in self.multiple_assignments_choice[choice]
             )
             final = choice.selection.name if choice.selection else "choice deselected"
-            self._log_for_severity(f"{loc}{choice.name} assigned multiple times: {vals} -> using {final}")
+            self._log_for_severity(
+                f"{loc}{choice.name or 'unnamed choice'} assigned multiple times: {vals} -> using {final}"
+            )
 
-        log.hint(self.info_string)
+        self._emit_info_string(verbosity)
 
     def return_json(self) -> Optional[dict]:
         if not self.multiple_assignments_sym and not self.multiple_assignments_choice:
@@ -553,12 +602,13 @@ class MultipleAssignmentArea(Area):
                 ret_json["data"]["symbols"][sym.name]["values"][val] = "default" if is_default else "user-set"
 
         for choice in self.multiple_assignments_choice:
-            ret_json["data"]["choices"][choice.name] = {
+            choice_name = choice.name or "unnamed choice"
+            ret_json["data"]["choices"][choice_name] = {
                 "values": dict(),
                 "final_value": choice.selection.name if choice.selection else "choice deselected",
             }
             for val, is_default in self.multiple_assignments_choice[choice]:
-                ret_json["data"]["choices"][choice.name]["values"][val] = "default" if is_default else "user-set"
+                ret_json["data"]["choices"][choice_name]["values"][val] = "default" if is_default else "user-set"
 
         return ret_json
 
@@ -629,7 +679,7 @@ class DisabledSymbolArea(Area):
                     f"from {escape(user_source) if user_source else '(unknown)'} but is not visible"
                 )
 
-        log.hint(self.info_string)
+        self._emit_info_string(verbosity)
 
     def return_json(self) -> Optional[dict]:
         if self.report_severity() == STATUS_OK:
@@ -647,7 +697,7 @@ class DisabledSymbolArea(Area):
             }
         for choice in self.hidden_choices:
             y_name = self.hidden_choices[choice]
-            ret_json["data"]["choices"][choice.name] = {
+            ret_json["data"]["choices"][choice.name or "unnamed choice"] = {
                 "value": y_name,
                 "source": choice._user_source or getattr(choice._user_selection, "_user_source", ""),
             }
