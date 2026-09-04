@@ -12,6 +12,7 @@ from textual import on
 from textual.app import App
 from textual.app import ComposeResult
 from textual.binding import Binding
+from textual.containers import Horizontal
 from textual.widgets import Footer
 from textual.widgets import Header
 from textual.widgets import OptionList
@@ -24,9 +25,11 @@ from esp_kconfiglib.core import TYPE_TO_STR
 from esp_kconfiglib.core import Choice
 from esp_kconfiglib.core import Symbol
 
+from .formatting import mismatch_notice_text
 from .formatting import range_info
 from .model import ChangeResult
 from .model import MenuConfigState
+from .screens import DefaultMismatchScreen
 from .screens import InfoScreen
 from .screens import InputScreen
 from .screens import JumpToScreen
@@ -76,6 +79,25 @@ class MenuConfigApp(App[str]):
         text-align: center;
         margin-bottom: 1;
     }
+    #mismatch-notice-rack {
+        layer: _toastrack;
+        dock: bottom;
+        width: 1fr;
+        height: auto;
+        align: right bottom;
+        display: none;
+        margin: 0 1 2 0;
+        overflow: hidden;
+    }
+    #mismatch-notice {
+        width: auto;
+        max-width: 50%;
+        height: auto;
+        padding: 1 1;
+        background: $panel-lighten-1;
+        color: $text;
+        border-left: outer $warning;
+    }
     """
 
     BINDINGS = [
@@ -84,6 +106,7 @@ class MenuConfigApp(App[str]):
         Binding("o,O", "load", "Load"),
         Binding("d,D", "save_minimal", "Save min"),
         Binding("slash", "jump_to", "Search"),
+        Binding("m,M", "show_mismatches", "Resolve mismatches in defaults"),
         Binding("question_mark", "show_info", "Info"),
         Binding("f,F", "toggle_help", "Help"),
         Binding("c,C", "toggle_name", "Name"),
@@ -105,6 +128,8 @@ class MenuConfigApp(App[str]):
         yield Static(id="mode-bar")
         yield Static(id="help-bar", markup=False)
         yield Footer()
+        with Horizontal(id="mismatch-notice-rack"):
+            yield Static(id="mismatch-notice")
 
     def on_mount(self) -> None:
         self.title = self.state.kconf.mainmenu_text
@@ -209,10 +234,16 @@ class MenuConfigApp(App[str]):
     def action_jump_to(self) -> None:
         self.push_screen(JumpToScreen(self.state), callback=self._handle_jump_result)
 
+    def action_show_mismatches(self) -> None:
+        self.push_screen(DefaultMismatchScreen(self.state), callback=self._handle_mismatch_result)
+
     def _handle_jump_result(self, node: Optional["MenuNode"]) -> None:
         if node:
             self.state.jump_to(node)
             self._refresh_menu()
+
+    def _handle_mismatch_result(self, _: None) -> None:
+        self._refresh_menu()
 
     def action_show_info(self) -> None:
         self._sync_sel_node_i()
@@ -398,6 +429,16 @@ class MenuConfigApp(App[str]):
 
         self._refresh_modes()
         self._refresh_help()
+        self._refresh_mismatch_notice()
+
+    def _refresh_mismatch_notice(self) -> None:
+        count = self.state.unresolved_default_mismatch_count()
+        rack = self.query_one("#mismatch-notice-rack", Horizontal)
+        if count == 0:
+            rack.display = False
+            return
+        self.query_one("#mismatch-notice", Static).update(mismatch_notice_text(count))
+        rack.display = True
 
     def _refresh_modes(self) -> None:
         modes = []

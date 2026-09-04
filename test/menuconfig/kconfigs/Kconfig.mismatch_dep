@@ -1,0 +1,19 @@
+mainmenu "Mismatch list dependency test"
+
+config A
+    bool "A"
+    default n
+
+config B
+    int "B"
+    default 1
+    depends on A
+
+menu "S"
+
+config C
+    int "C"
+    default 1
+    depends on A
+
+endmenu
