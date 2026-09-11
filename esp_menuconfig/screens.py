@@ -9,11 +9,15 @@ import platform
 import re
 import shutil
 import subprocess
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 from typing import Callable
 from typing import List
 from typing import NamedTuple
 from typing import Optional
+from typing import Sequence
+from typing import Tuple
+from typing import Union
 
 from rich.markup import escape
 from textual.app import ComposeResult
@@ -23,7 +27,6 @@ from textual.containers import Vertical
 from textual.events import Key
 from textual.reactive import reactive
 from textual.screen import ModalScreen
-from textual.screen import Screen
 from textual.widgets import Button
 from textual.widgets import Footer
 from textual.widgets import Input
@@ -31,14 +34,36 @@ from textual.widgets import Label
 from textual.widgets import OptionList
 from textual.widgets import Static
 from textual.widgets import TextArea
+from textual.widgets.option_list import Option
 
-from .formatting import JUMP_TO_HELP_LINES
+from esp_kconfiglib.constants import DefaultsPolicy
+
+from .formatting import MISMATCH_COL_FIRST
+from .formatting import MISMATCH_COL_NAME
+from .formatting import MISMATCH_COL_SECOND
+from .formatting import MISMATCH_DETAIL_HELP_LINES
+from .formatting import MISMATCH_FOCUS_COLS
+from .formatting import MISMATCH_SCREEN_HELP_TEXT
 from .formatting import info_str
 from .formatting import info_title
 from .formatting import jump_to_match_str
+from .formatting import mismatch_column_headers
+from .formatting import mismatch_column_widths
+from .formatting import mismatch_detail_column_headers
+from .formatting import mismatch_detail_info
+from .formatting import mismatch_detail_values
+from .formatting import mismatch_divider
+from .formatting import mismatch_format_row
+from .formatting import mismatch_item_label
+from .formatting import mismatch_policy_banner
+from .formatting import mismatch_table_header
+from .formatting import mismatch_value_label
+from .formatting import mismatch_value_order
 
 if TYPE_CHECKING:
+    from esp_kconfiglib.core import Choice
     from esp_kconfiglib.core import MenuNode
+    from esp_kconfiglib.core import Symbol
 
     from .model import MenuConfigState
 
@@ -195,6 +220,37 @@ class InvalidValueScreen(ModalScreen[None]):
             yield Label("Invalid value", id="dialog-title")
             yield Label(self.error, id="dialog-body", markup=False)
             yield Label("Press any key to continue.", id="dialog-hint")
+
+    def on_key(self, event: Key) -> None:
+        event.prevent_default()
+        event.stop()
+        self.dismiss(None)
+
+
+class HelpPopupScreen(ModalScreen[None]):
+    """Centered popup with a title and body text. Closed by any key."""
+
+    DEFAULT_CSS = """
+    HelpPopupScreen {
+        align: center middle;
+        background: $background 60%;
+    }
+    HelpPopupScreen #dialog-body {
+        width: 100%;
+        height: auto;
+        text-wrap: wrap;
+    }
+    """
+
+    def __init__(self, title: str, text: str) -> None:
+        super().__init__()
+        self.dialog_title = title
+        self.dialog_text = text
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="dialog"):
+            yield Label(self.dialog_title, id="dialog-title", markup=False)
+            yield Label(self.dialog_text, id="dialog-body")
 
     def on_key(self, event: Key) -> None:
         event.prevent_default()
@@ -569,11 +625,12 @@ class InfoScreen(ModalScreen[None]):
             self.app.pop_screen()
 
 
-class JumpToScreen(Screen[Optional["MenuNode"]]):
+class JumpToScreen(ModalScreen[Optional["MenuNode"]]):
     """Fullscreen search dialog using OptionList for results."""
 
     DEFAULT_CSS = """
     JumpToScreen {
+        background: $surface;
         #search-input {
             dock: top;
         }
@@ -581,14 +638,24 @@ class JumpToScreen(Screen[Optional["MenuNode"]]):
             height: 1fr;
             max-height: 100%;
         }
-        #jump-help {
-            dock: bottom;
-        }
     }
     """
 
     BINDINGS = [
-        Binding("escape", "cancel", "Cancel", show=False),
+        Binding("enter", "jump", "Go to selected", show=True, priority=True),
+        Binding("escape", "cancel", "Cancel", show=True, priority=True),
+        Binding(
+            "ctrl+f",
+            "show_info",
+            "Info",
+            show=True,
+            priority=True,
+            tooltip="View the help of the selected item without leaving the search",
+        ),
+        Binding("pageup", "page_up", "Up by page", show=True, priority=True, key_display="PgUp"),
+        Binding("pagedown", "page_down", "Down by page", show=True, priority=True, key_display="PgDn"),
+        Binding("up", "cursor_up", "Up", show=True, priority=True),
+        Binding("down", "cursor_down", "Down", show=True, priority=True),
     ]
 
     def __init__(self, state: MenuConfigState) -> None:
@@ -599,52 +666,560 @@ class JumpToScreen(Screen[Optional["MenuNode"]]):
     def compose(self) -> ComposeResult:
         yield Input(placeholder="Search symbols by substring or regex...", id="search-input")
         yield OptionList(id="matches-list")
-        yield Static(JUMP_TO_HELP_LINES, id="jump-help", markup=False)
+        yield Footer()
 
     def on_mount(self) -> None:
         self.query_one("#search-input", Input).focus()
 
     def on_input_changed(self, event: Input.Changed) -> None:
         self._matches, error = self._state.search_nodes(event.value)
-        ol = self.query_one("#matches-list", OptionList)
-        ol.clear_options()
+        optlist = self._matches_list()
+        optlist.clear_options()
         if error:
-            ol.add_option(escape(error))
+            optlist.add_option(escape(error))
             return
         for node in self._matches:
-            ol.add_option(escape(jump_to_match_str(node)))
+            optlist.add_option(escape(jump_to_match_str(node)))
         if self._matches:
-            ol.highlighted = 0
+            optlist.highlighted = 0
+
+    def _matches_list(self) -> OptionList:
+        return self.query_one("#matches-list", OptionList)
+
+    def _selected_node(self) -> Optional["MenuNode"]:
+        optlist = self._matches_list()
+        index = optlist.highlighted
+        if not self._matches or type(index) is not int:
+            return None
+        return self._matches[index]
+
+    def action_jump(self) -> None:
+        node = self._selected_node()
+        if node is not None:
+            self.dismiss(node)
+
+    def action_show_info(self) -> None:
+        node = self._selected_node()
+        if node is not None:
+            self.app.push_screen(InfoScreen(node, self._state, from_jump_to=True))
+
+    def action_cursor_down(self) -> None:
+        self._matches_list().action_cursor_down()
+
+    def action_cursor_up(self) -> None:
+        self._matches_list().action_cursor_up()
+
+    def action_page_down(self) -> None:
+        _page(self._matches_list(), 1)
+
+    def action_page_up(self) -> None:
+        _page(self._matches_list(), -1)
+
+    def action_cancel(self) -> None:
+        self.dismiss(None)
+
+
+@dataclass
+class _MismatchEntry:
+    item: Union["Symbol", "Choice"]
+    name: str
+    kconfig_value: str
+    sdkconfig_value: str
+    is_choice: bool = False
+    resolution: Optional[str] = None
+    # Resolution this row had when the screen was opened, so leaving the screen
+    # only touches the configuration for rows the user actually changed.
+    baseline: Optional[str] = None
+
+
+class DefaultMismatchScreen(ModalScreen[None]):
+    """Fullscreen list of symbols and choices with a default-value mismatch."""
+
+    DEFAULT_CSS = """
+    DefaultMismatchScreen {
+        background: $surface;
+    }
+    DefaultMismatchScreen #mismatch-title {
+        dock: top;
+        height: 1;
+        background: $accent;
+        color: $text;
+        text-style: bold;
+    }
+    DefaultMismatchScreen #mismatch-policy {
+        dock: top;
+        height: auto;
+        color: $text-muted;
+    }
+    DefaultMismatchScreen #mismatch-list {
+        height: 1fr;
+        max-height: 100%;
+    }
+    """
+
+    BINDINGS = [
+        Binding(
+            "left",
+            "col_left",
+            "Move left",
+            show=True,
+            priority=True,
+            key_display="←",
+            tooltip="Focus name, current value, or alternative value",
+        ),
+        Binding(
+            "right",
+            "col_right",
+            "Move right",
+            show=True,
+            priority=True,
+            key_display="→",
+            tooltip="Focus name, current value, or alternative value",
+        ),
+        Binding(
+            "enter",
+            "apply_focused",
+            "Apply/Enter details",
+            show=True,
+            priority=True,
+            tooltip="Use the focused value, or open details on the name",
+        ),
+        Binding("k,K", "set_all_kconfig", "Set all to Kconfig", show=True, priority=True),
+        Binding("s,S", "set_all_sdkconfig", "Set all to sdkconfig", show=True, priority=True),
+        Binding("r,R", "unresolve", "Clear selection", show=True, priority=True),
+        Binding("escape,backspace", "cancel", "Return", show=True, priority=True),
+        Binding("h,H", "show_help", "Help", show=True, priority=True),
+        Binding("pageup,pagedown", "noop", show=False, priority=True),
+    ]
+
+    def __init__(self, state: MenuConfigState) -> None:
+        super().__init__()
+        self._state = state
+        self._entries: List[Optional[_MismatchEntry]] = []
+        self._col_focus = MISMATCH_COL_NAME
+        self._highlighted_i: Optional[int] = None
+        self._name_width = 0
+        self._first_width = 0
+        self._second_width = 0
+        self._resolution_width = 0
+        self._policy = self._state.kconf.defaults_policy
+        self._value_order = mismatch_value_order(self._policy)
+        self._first_header, self._second_header = mismatch_column_headers(self._policy)
+
+    def _ordered_values(self, kconfig_value: str, sdkconfig_value: str) -> Tuple[str, str]:
+        """
+        Reorder ``(kconfig_value, sdkconfig_value)`` into ``(first, second)`` column
+        order per :attr:`_value_order`, so the current value is always shown first.
+        """
+        values = {"kconfig": kconfig_value, "sdkconfig": sdkconfig_value}
+        first_source, second_source = self._value_order
+        return values[first_source], values[second_source]
+
+    def compose(self) -> ComposeResult:
+        yield Static("Default value mismatches", id="mismatch-title")
+        yield Static(mismatch_policy_banner(self._policy), id="mismatch-policy")
+        yield OptionList(id="mismatch-list")
+        yield Footer()
+
+    def on_mount(self) -> None:
+        self._populate()
+        self._mismatch_list().focus()
+
+    def _mismatch_list(self) -> OptionList:
+        return self.query_one("#mismatch-list", OptionList)
+
+    def _populate(self) -> None:
+        symbols, choices = self._state.default_mismatches()
+        optlist = self._mismatch_list()
+        optlist.clear_options()
+        self._entries = []
+        self._highlighted_i = None
+        self._col_focus = MISMATCH_COL_NAME
+
+        symbol_rows = [
+            (
+                mismatch_item_label(sym),
+                *self._ordered_values(
+                    mismatch_value_label(sym, kconfig_value), mismatch_value_label(sym, sdkconfig_value)
+                ),
+            )
+            for sym, kconfig_value, sdkconfig_value in symbols
+        ]
+        choice_rows = [
+            (
+                mismatch_item_label(choice),
+                *self._ordered_values(
+                    mismatch_value_label(choice, kconfig_value), mismatch_value_label(choice, sdkconfig_value)
+                ),
+            )
+            for choice, kconfig_value, sdkconfig_value in choices
+        ]
+        (
+            self._name_width,
+            self._first_width,
+            self._second_width,
+            self._resolution_width,
+        ) = mismatch_column_widths(symbol_rows + choice_rows, self._first_header, self._second_header)
+
+        self._add_mismatch_section(
+            optlist,
+            "Config options",
+            "Config name",
+            symbols,
+            is_choice=False,
+        )
+        optlist.add_option(
+            Option(
+                mismatch_divider(
+                    self._first_header,
+                    self._second_header,
+                    self._name_width,
+                    self._first_width,
+                    self._second_width,
+                    self._resolution_width,
+                ),
+                disabled=True,
+            )
+        )
+        self._entries.append(None)
+        self._add_mismatch_section(
+            optlist,
+            "Choices",
+            "Choice name",
+            choices,
+            is_choice=True,
+        )
+
+        first_item = next((i for i, entry in enumerate(self._entries) if entry is not None), None)
+        if first_item is not None:
+            optlist.highlighted = first_item
+            self._highlighted_i = first_item
+            self._refresh_row(first_item)
+
+    def _add_mismatch_section(
+        self,
+        optlist: OptionList,
+        title: str,
+        name_header: str,
+        items: Sequence[Tuple[Union["Symbol", "Choice"], str, str]],
+        *,
+        is_choice: bool,
+    ) -> None:
+        optlist.add_option(Option(f"[b]{escape(title)}[/b]", disabled=True))
+        self._entries.append(None)
+        optlist.add_option(
+            Option(
+                mismatch_table_header(
+                    name_header,
+                    self._first_header,
+                    self._second_header,
+                    self._name_width,
+                    self._first_width,
+                    self._second_width,
+                    self._resolution_width,
+                ),
+                disabled=True,
+            )
+        )
+        self._entries.append(None)
+        if items:
+            for item, kconfig_value, sdkconfig_value in items:
+                resolution = self._state.mismatch_resolution(item, kconfig_value, sdkconfig_value)
+                entry = _MismatchEntry(
+                    item,
+                    mismatch_item_label(item),
+                    kconfig_value,
+                    sdkconfig_value,
+                    is_choice=is_choice,
+                    resolution=resolution,
+                    baseline=resolution,
+                )
+                optlist.add_option(self._row_prompt(entry, None))
+                self._entries.append(entry)
+        else:
+            optlist.add_option(Option("(none)", disabled=True))
+            self._entries.append(None)
+
+    def _row_prompt(self, entry: _MismatchEntry, focus_col: Optional[int]) -> str:
+        first_value, second_value = self._ordered_values(
+            mismatch_value_label(entry.item, entry.kconfig_value),
+            mismatch_value_label(entry.item, entry.sdkconfig_value),
+        )
+        return mismatch_format_row(
+            entry.name,
+            first_value,
+            second_value,
+            self._name_width,
+            self._first_width,
+            self._second_width,
+            self._resolution_width,
+            policy=self._policy,
+            resolution=entry.resolution,
+            focus_col=focus_col,
+        )
+
+    def _refresh_row(self, index: int) -> None:
+        if index < 0 or index >= len(self._entries):
+            return
+        entry = self._entries[index]
+        if entry is None:
+            return
+        focus_col = self._col_focus if index == self._highlighted_i else None
+        optlist = self._mismatch_list()
+        optlist.replace_option_prompt_at_index(index, self._row_prompt(entry, focus_col))
+
+    def _current_entry(self) -> Optional[_MismatchEntry]:
+        optlist = self._mismatch_list()
+        if optlist.highlighted is None or optlist.highlighted >= len(self._entries):
+            return None
+        return self._entries[optlist.highlighted]  # type: ignore
+
+    def on_option_list_option_highlighted(self, event: OptionList.OptionHighlighted) -> None:
+        prev = self._highlighted_i
+        self._highlighted_i = event.option_index
+        if prev is not None and prev != self._highlighted_i:
+            self._refresh_row(prev)
+        if self._highlighted_i is not None:
+            self._refresh_row(self._highlighted_i)
+
+    def _apply_resolution(self, index: int, source: str) -> None:
+        if index >= len(self._entries):
+            return
+        entry = self._entries[index]
+        if entry is None:
+            return
+        entry.resolution = source
+        self._refresh_row(index)
+
+    def _clear_resolution(self, index: int) -> None:
+        if index >= len(self._entries):
+            return
+        entry = self._entries[index]
+        if entry is None or entry.resolution is None:
+            return
+        entry.resolution = None
+        self._refresh_row(index)
+
+    def action_unresolve(self) -> None:
+        optlist = self._mismatch_list()
+        index = optlist.highlighted
+        entry = self._current_entry()
+        if entry is not None and entry.resolution is not None and index is not None:
+            self._clear_resolution(index)
+
+    def _apply_all(self, source: str) -> None:
+        for index, entry in enumerate(self._entries):
+            if entry is not None:
+                self._apply_resolution(index, source)
+
+    def action_show_help(self) -> None:
+        self.app.push_screen(HelpPopupScreen("Help", MISMATCH_SCREEN_HELP_TEXT))
+
+    def action_set_all_kconfig(self) -> None:
+        self._apply_all("kconfig")
+
+    def action_set_all_sdkconfig(self) -> None:
+        self._apply_all("sdkconfig")
+
+    def action_noop(self) -> None:
+        return
+
+    def action_col_left(self) -> None:
+        self._move_col(-1)
+
+    def action_col_right(self) -> None:
+        self._move_col(1)
+
+    def _move_col(self, delta: int) -> None:
+        if self._current_entry() is None:
+            return
+        self._col_focus = max(0, min(MISMATCH_FOCUS_COLS - 1, self._col_focus + delta))
+        optlist = self._mismatch_list()
+        if optlist.highlighted is not None:
+            self._refresh_row(optlist.highlighted)
+
+    def action_apply_focused(self) -> None:
+        optlist = self._mismatch_list()
+        index = optlist.highlighted
+        entry = self._current_entry()
+        if entry is None or index is None:
+            return
+        if self._col_focus == MISMATCH_COL_NAME:
+            self._open_detail(index, entry)
+        elif self._col_focus == MISMATCH_COL_FIRST:
+            self._apply_resolution(index, self._value_order[0])
+        elif self._col_focus == MISMATCH_COL_SECOND:
+            self._apply_resolution(index, self._value_order[1])
+
+    def _open_detail(self, index: int, entry: _MismatchEntry) -> None:
+        location = ""
+        if entry.item.nodes:
+            node = entry.item.nodes[0]
+            location = f"{node.filename}:{node.linenr}"
+        first_value, second_value = self._ordered_values(
+            mismatch_value_label(entry.item, entry.kconfig_value),
+            mismatch_value_label(entry.item, entry.sdkconfig_value),
+        )
+        self.app.push_screen(
+            MismatchDetailScreen(
+                entry.name,
+                location,
+                first_value,
+                second_value,
+                self._policy,
+                is_choice=entry.is_choice,
+            ),
+            callback=lambda source, i=index: self._on_detail_result(i, source),
+        )
+
+    def _on_detail_result(self, index: int, source: Optional[str]) -> None:
+        if source is None:
+            return
+        self._apply_resolution(index, source)
+
+    def _changed_entries(self) -> List[_MismatchEntry]:
+        return [entry for entry in self._entries if entry is not None and entry.resolution != entry.baseline]
+
+    def _commit(self) -> None:
+        changed = self._changed_entries()
+        for entry in changed:
+            if entry.resolution is None:
+                self._state.clear_mismatch_resolution(entry.item, update_menu=False)
+            else:
+                self._state.apply_mismatch_resolution(
+                    entry.item,
+                    entry.resolution,
+                    entry.kconfig_value,
+                    entry.sdkconfig_value,
+                    update_menu=False,
+                )
+        if changed:
+            self._state._update_menu()
+
+    def action_cancel(self) -> None:
+        if not self._changed_entries():
+            self.dismiss(None)
+            return
+        self.app.push_screen(
+            KeyDialogScreen(
+                title="Return",
+                text="Apply the selected values?\n\n(Y)es  (N)o  (C)ancel",
+                keys="ync",
+            ),
+            callback=self._handle_return_response,
+        )
+
+    def _handle_return_response(self, key: Optional[str]) -> None:
+        if key == "y":
+            self._commit()
+            self.dismiss(None)
+        elif key == "n":
+            self.dismiss(None)
+
+
+class MismatchDetailScreen(ModalScreen[Optional[str]]):
+    """Popup to inspect a mismatch and pick Kconfig or sdkconfig."""
+
+    DEFAULT_CSS = """
+    MismatchDetailScreen {
+        align: center middle;
+        background: $background 60%;
+    }
+    MismatchDetailScreen #dialog {
+        width: 80;
+        max-width: 90%;
+        height: auto;
+        min-height: 18;
+        padding: 2 4;
+    }
+    MismatchDetailScreen #detail-info {
+        height: auto;
+    }
+    MismatchDetailScreen #detail-values {
+        height: 5;
+        margin: 1 0;
+        content-align: center middle;
+        text-align: center;
+    }
+    MismatchDetailScreen #detail-help {
+        margin-top: 1;
+        text-style: italic;
+        height: auto;
+    }
+    """
+
+    BINDINGS = [
+        Binding("escape", "cancel", "Cancel", show=False),
+        Binding(
+            "q,Q,s,S,o,O,d,D,f,F,c,C,a,A,r,R,p,P,m,M,slash,question_mark,backspace",
+            "noop",
+            show=False,
+            priority=True,
+        ),
+    ]
+
+    def action_noop(self) -> None:
+        return
+
+    def __init__(
+        self,
+        name: str,
+        location: str,
+        first_value: str,
+        second_value: str,
+        policy: DefaultsPolicy,
+        *,
+        is_choice: bool,
+    ) -> None:
+        super().__init__()
+        self._item_name = name
+        self._location = location
+        self._first_value = first_value
+        self._second_value = second_value
+        self._first_header, self._second_header = mismatch_detail_column_headers(policy)
+        self._value_order = mismatch_value_order(policy)
+        self._is_choice = is_choice
+        self._focus_col = 0
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="dialog"):
+            yield Static(self._info(), id="detail-info")
+            yield Static("\n")
+            yield Static("Select which value to apply:", id="detail-select-label")
+            yield Static(self._values(), id="detail-values")
+            yield Static("\n")
+            yield Static(MISMATCH_DETAIL_HELP_LINES, id="detail-help", markup=False)
+
+    def _info(self) -> str:
+        return mismatch_detail_info(self._item_name, self._location, is_choice=self._is_choice)
+
+    def _values(self) -> str:
+        return mismatch_detail_values(
+            self._first_value,
+            self._second_value,
+            self._focus_col,
+            self._first_header,
+            self._second_header,
+        )
+
+    def _redraw(self) -> None:
+        self.query_one("#detail-values", Static).update(self._values())
 
     def on_key(self, event: Key) -> None:
-        ol = self.query_one("#matches-list", OptionList)
-        if event.key == "down":
-            ol.action_cursor_down()
+        if event.key == "left":
+            self._focus_col = 0
+            self._redraw()
             event.prevent_default()
             event.stop()
-        elif event.key == "up":
-            ol.action_cursor_up()
-            event.prevent_default()
-            event.stop()
-        elif event.key == "pagedown":
-            _page(ol, 1)
-            event.prevent_default()
-            event.stop()
-        elif event.key == "pageup":
-            _page(ol, -1)
+        elif event.key == "right":
+            self._focus_col = 1
+            self._redraw()
             event.prevent_default()
             event.stop()
         elif event.key == "enter":
-            if self._matches and ol.highlighted is not None:
-                self.dismiss(self._matches[ol.highlighted])
-                event.prevent_default()
-                event.stop()
-        elif event.key == "ctrl+f":
-            if self._matches and ol.highlighted is not None:
-                node = self._matches[ol.highlighted]
-                self.app.push_screen(InfoScreen(node, self._state, from_jump_to=True))
-                event.prevent_default()
-                event.stop()
+            self.dismiss(self._value_order[self._focus_col])
+            event.prevent_default()
+            event.stop()
 
     def action_cancel(self) -> None:
         self.dismiss(None)

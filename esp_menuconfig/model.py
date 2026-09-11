@@ -35,6 +35,7 @@ from esp_kconfiglib.core import Symbol
 from esp_kconfiglib.core import _recursively_perform_action
 from esp_kconfiglib.core import _restore_default
 from esp_kconfiglib.core import expr_value
+from esp_kconfiglib.report import DefaultValuesArea
 
 from .formatting import _is_y_mode_choice_sym
 from .formatting import check_valid as _fmt_check_valid
@@ -256,6 +257,81 @@ class MenuConfigState:
     def set_val(self, sc: Union[Symbol, Choice], val: Union[str, int]) -> None:
         self._set_val(sc, val)
 
+    def apply_mismatch_resolution(
+        self,
+        item: Union[Symbol, Choice],
+        source: str,
+        kconfig_value: str,
+        sdkconfig_value: str,
+        update_menu: bool = True,
+    ) -> None:
+        """
+        Mark *item* user-set to the Kconfig or sdkconfig default captured at load.
+
+        Pass ``update_menu=False`` when resolving several items in a row and
+        refresh the menu once the whole batch is applied.
+        """
+        value = kconfig_value if source == "kconfig" else sdkconfig_value
+        filename = self.conf_filename
+        if type(item) is Choice:
+            if value == "choice deselected":
+                self.clear_mismatch_resolution(item, update_menu=update_menu)
+                return
+            for sym in item.syms:
+                if sym.name == value:
+                    self.kconf.set_value_and_source(sym, "y", filename)
+                    self.conf_changed = True
+                    if update_menu:
+                        self._update_menu()
+                    return
+            return
+        if type(item) is not Symbol:
+            return
+        self.kconf.set_value_and_source(item, value, filename)
+        self.conf_changed = True
+        if update_menu:
+            self._update_menu()
+
+    def mismatch_resolution(
+        self,
+        item: Union[Symbol, Choice],
+        kconfig_value: str,
+        sdkconfig_value: str,
+    ) -> Optional[str]:
+        """
+        Resolution already recorded for *item*, derived from its user-set value.
+
+        Returns ``"kconfig"``, ``"sdkconfig"``, ``"other"`` for a user-set value
+        matching neither default, or ``None`` when the mismatch is unresolved.
+        """
+        if type(item) is Choice:
+            if item._user_selection is None:
+                return None
+            value = item._user_selection.name
+        else:
+            if item._user_value is None:
+                return None
+            value = item.str_value
+        if value == kconfig_value:
+            return "kconfig"
+        if value == sdkconfig_value:
+            return "sdkconfig"
+        return "other"
+
+    def clear_mismatch_resolution(self, item: Union[Symbol, Choice], update_menu: bool = True) -> None:
+        """
+        Drop the user-set value so the mismatch is unresolved again.
+        """
+        if type(item) is Choice:
+            item.unset_value()
+            for sym in item.syms:
+                sym.unset_value()
+        else:
+            item.unset_value()
+        self.conf_changed = True
+        if update_menu:
+            self._update_menu()
+
     def _set_val(self, sc: Union[Symbol, Choice], val: Union[str, int]) -> None:
         if val in BOOL_TO_STR:
             val = BOOL_TO_STR[val]  # type: ignore
@@ -395,6 +471,34 @@ class MenuConfigState:
 
         return matches, None
 
+    def default_mismatches(
+        self,
+    ) -> Tuple[List[Tuple[Symbol, str, str]], List[Tuple[Choice, str, str]]]:
+        """
+        Return symbols and choices that had a default-value mismatch at load.
+
+        Each item is ``(object, kconfig_value, sdkconfig_value)``. Values are
+        those captured when the mismatch was recorded (before policy inject).
+        """
+        area = self.kconf.report.area_to_instance[DefaultValuesArea]
+        if type(area) is not DefaultValuesArea:
+            return [], []
+        return list(area.changed_defaults), list(area.changed_choices)
+
+    def unresolved_default_mismatch_count(self) -> int:
+        """
+        Number of load-time default mismatches that still have no user-set value.
+        """
+        symbols, choices = self.default_mismatches()
+        count = 0
+        for sym, _, _ in symbols:
+            if sym._user_value is None:
+                count += 1
+        for choice, _, _ in choices:
+            if choice._user_selection is None:
+                count += 1
+        return count
+
     def _get_sorted_sc_nodes(self) -> List[MenuNode]:
         if not self._sorted_sc_cache:
             for sym in sorted(self.kconf.unique_defined_syms, key=lambda s: s.name):
@@ -416,9 +520,32 @@ class MenuConfigState:
     # --- Internal ---
 
     def _update_menu(self) -> None:
-        sel_node = self.shown[self.sel_node_i]
-        self.shown = self.shown_nodes(self.cur_menu)
-        self.sel_node_i = self.shown.index(sel_node)
+        """
+        Recompute the current menu, keeping the cursor as close as possible.
+
+        The previously selected node can disappear when the change that
+        triggered the update belonged to another node (e.g. resolving a default
+        mismatch of a symbol the current node depends on).
+        """
+        prev_shown = self.shown
+        prev_i = min(self.sel_node_i, len(prev_shown) - 1)
+        new_shown = self.shown_nodes(self.cur_menu)
+
+        # Look for the nearest still-visible node, first above the cursor, then below.
+        for node in list(prev_shown[prev_i::-1]) + list(prev_shown[prev_i + 1 :]):
+            if node in new_shown:
+                self.shown = new_shown
+                self.sel_node_i = new_shown.index(node)
+                return
+
+        if not new_shown:
+            # Nothing is visible in this menu any more; show everything so that
+            # the menu is never left without a cursor.
+            self.show_all = True
+            new_shown = self.shown_nodes(self.cur_menu)
+
+        self.shown = new_shown
+        self.sel_node_i = 0
 
     @staticmethod
     def _parent_menu(node: MenuNode) -> Optional[MenuNode]:

@@ -1,0 +1,6 @@
+# default:
+CONFIG_A=y
+# default:
+CONFIG_B=2
+# default:
+CONFIG_C=2

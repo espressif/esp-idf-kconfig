@@ -97,7 +97,7 @@ class TestLoadingDefaults(TestDefaultsBase):
 
         area = kconfig.report.area_to_instance[DefaultValuesArea]
         assert isinstance(area, DefaultValuesArea)
-        reported_names = {name for name, _, _, _ in area.changed_defaults}
+        reported_names = {sym.name for sym, _, _ in area.changed_defaults}
         assert "DEPENDEE" in reported_names
         assert "DEP" in reported_names
         promptless_names = {name for name, _, _, _, _ in area.changed_values_promptless}

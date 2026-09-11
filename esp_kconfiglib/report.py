@@ -234,12 +234,12 @@ class DefaultValuesArea(Area):
         )
         self.verbosity: str = verbosity
 
-        # (sym_name, kconfig_value, sdkconfig_value, loc)
-        self.changed_defaults: Set[Tuple[str, str, str, str]] = set()
+        # (symbol, kconfig_value, sdkconfig_value) captured before policy inject
+        self.changed_defaults: List[Tuple["Symbol", str, str]] = []
         # (sym_name, kconfig_value, sdkconfig_value, is_user_set, loc)
         self.changed_values_promptless: Set[Tuple[str, str, str, bool, str]] = set()
-        # (choice_name, kconfig_selection, sdkconfig_selection, loc)
-        self.changed_choices: Set[Tuple[str, str, str, str]] = set()
+        # (choice, kconfig_selection, sdkconfig_selection) captured before policy inject
+        self.changed_choices: List[Tuple["Choice", str, str]] = []
 
     @staticmethod
     def _first_loc(sym_or_choice: "Union[Symbol, Choice]") -> str:
@@ -282,32 +282,33 @@ class DefaultValuesArea(Area):
     def add_record(self, sym_or_choice: "Union[Symbol, Choice]", **kwargs: Optional[dict]) -> None:
         promptless: bool = kwargs.get("promptless", False)  # type: ignore
         record_type: str = kwargs.get("record_type", "symbol")  # type: ignore
-        loc = self._first_loc(sym_or_choice)
         if record_type == "symbol":  # Symbol
-            record = (
-                str(sym_or_choice.name),
-                str(sym_or_choice.str_value),
-                str(getattr(sym_or_choice, "_sdkconfig_value", "") or ""),
-                loc,
-            )
+            kconfig_value = str(sym_or_choice.str_value)
+            sdkconfig_value = str(getattr(sym_or_choice, "_sdkconfig_value", "") or "")
             if not promptless:
-                self.changed_defaults.add(record)
+                if not any(existing is sym_or_choice for existing, _, _ in self.changed_defaults):
+                    self.changed_defaults.append((sym_or_choice, kconfig_value, sdkconfig_value))  # type: ignore
             else:
                 # sdkconfig value is still set even for promptless symbols, so we can decide
                 # if sdkconfig contained default value or not
-                record_with_default_flag = record[:3] + (
-                    getattr(sym_or_choice, "_user_value", None) is not None,
-                    loc,
+                self.changed_values_promptless.add(
+                    (
+                        str(sym_or_choice.name),
+                        kconfig_value,
+                        sdkconfig_value,
+                        getattr(sym_or_choice, "_user_value", None) is not None,
+                        self._first_loc(sym_or_choice),
+                    )
                 )
-                self.changed_values_promptless.add(record_with_default_flag)
         else:  # Choice
-            record = (
-                str(sym_or_choice.name or "unnamed choice"),
-                str(sym_or_choice.selection.name if sym_or_choice.selection else "choice deselected"),  # type: ignore
-                str(kwargs.get("sdkconfig_selection", False)),
-                loc,
-            )
-            self.changed_choices.add(record)
+            if not any(existing is sym_or_choice for existing, _, _ in self.changed_choices):
+                self.changed_choices.append(
+                    (
+                        sym_or_choice,  # type: ignore
+                        str(sym_or_choice.selection.name if sym_or_choice.selection else "choice deselected"),  # type: ignore
+                        str(kwargs.get("sdkconfig_selection", False)),
+                    )
+                )
 
     def report_severity(self) -> int:
         if self._nothing_to_report(self.verbosity):
@@ -329,20 +330,23 @@ class DefaultValuesArea(Area):
             return
 
         if self.changed_defaults:
-            for sym_name, kconfig_value, sdkconfig_value, loc in self.changed_defaults:
+            for sym, kconfig_value, sdkconfig_value in self.changed_defaults:
+                loc = self._first_loc(sym)
                 prefix = f"{escape(loc)}: " if loc else ""
                 used = self._used_default_suffix(kconfig_value, sdkconfig_value)
                 self._log_for_severity(
-                    f"{prefix}{sym_name}: Kconfig default value: {kconfig_value}, "
+                    f"{prefix}{sym.name}: Kconfig default value: {kconfig_value}, "
                     f"sdkconfig default value: {sdkconfig_value}{used}"
                 )
 
         if self.changed_choices:
-            for choice_name, kconfig_selection, sdkconfig_selection, loc in self.changed_choices:
+            for choice, kconfig_selection, sdkconfig_selection in self.changed_choices:
+                loc = self._first_loc(choice)
                 prefix = f"{escape(loc)}: " if loc else ""
                 used = self._used_default_suffix(kconfig_selection, sdkconfig_selection)
+                name = choice.name or "unnamed choice"
                 self._log_for_severity(
-                    f"{prefix}{choice_name}: Kconfig default selection: {kconfig_selection}, "
+                    f"{prefix}{name}: Kconfig default selection: {kconfig_selection}, "
                     f"sdkconfig default selection: {sdkconfig_selection}{used}"
                 )
 
@@ -371,11 +375,11 @@ class DefaultValuesArea(Area):
 
         if self.changed_defaults:
             ret_json["data"]["changed_defaults"] = list()
-            for sym_name, kconfig_value, sdkconfig_value, _loc in self.changed_defaults:
+            for sym, kconfig_value, sdkconfig_value in self.changed_defaults:
                 used_from, used = self._used_default(kconfig_value, sdkconfig_value)
                 ret_json["data"]["changed_defaults"].append(
                     {
-                        "name": sym_name,
+                        "name": sym.name,
                         "kconfig_default": kconfig_value,
                         "sdkconfig_default": sdkconfig_value,
                         "used_from": used_from,
@@ -395,11 +399,11 @@ class DefaultValuesArea(Area):
                 )
         if self.changed_choices:
             ret_json["data"]["changed_choices"] = list()
-            for choice_name, kconfig_selection, sdkconfig_selection, _loc in self.changed_choices:
+            for choice, kconfig_selection, sdkconfig_selection in self.changed_choices:
                 used_from, used = self._used_default(kconfig_selection, sdkconfig_selection)
                 ret_json["data"]["changed_choices"].append(
                     {
-                        "name": choice_name,
+                        "name": choice.name or "unnamed choice",
                         "kconfig_selection": kconfig_selection,
                         "sdkconfig_selection": sdkconfig_selection,
                         "used_from": used_from,

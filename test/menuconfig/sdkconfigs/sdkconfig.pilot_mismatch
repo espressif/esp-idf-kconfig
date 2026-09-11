@@ -1,0 +1,6 @@
+# default:
+CONFIG_FOO=2
+# default:
+# CONFIG_CA is not set
+# default:
+CONFIG_CB=y

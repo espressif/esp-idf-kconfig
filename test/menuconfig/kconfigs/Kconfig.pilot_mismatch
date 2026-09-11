@@ -1,0 +1,15 @@
+mainmenu "Mismatch list test"
+
+config FOO
+    int "Foo"
+    default 1
+
+choice PICK
+    bool "Pick"
+    default CA
+
+    config CA
+        bool "Alpha"
+    config CB
+        bool "Beta"
+endchoice

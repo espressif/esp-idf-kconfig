@@ -839,3 +839,497 @@ def test_square_brackets_render_literally(tmp_path, monkeypatch):
             assert "[experimental]" in _rendered_option_text(ol.get_option_at_index(0).prompt)
 
     _run(go)
+
+
+KCONFIG_MISMATCH = str(KCONFIGS_PATH / "Kconfig.pilot_mismatch")
+SDKCONFIG_MISMATCH = Path(__file__).parent / "sdkconfigs" / "sdkconfig.pilot_mismatch"
+
+
+def _make_mismatch_app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[MenuConfigApp, Kconfig]:
+    sdkconfig = tmp_path / "sdkconfig"
+    sdkconfig.write_text(SDKCONFIG_MISMATCH.read_text(encoding="utf-8"), encoding="utf-8")
+    monkeypatch.setenv("KCONFIG_CONFIG", str(sdkconfig))
+
+    kconf = Kconfig(KCONFIG_MISMATCH)
+    kconf.warn = False
+    kconf.report.reset()
+    kconf.load_config(str(sdkconfig))
+    state = MenuConfigState(
+        kconf=kconf,
+        conf_filename=str(sdkconfig),
+        minconf_filename=str(tmp_path / "sdkconfig.defaults"),
+        conf_changed=False,
+        write_deprecated=False,
+    )
+    return MenuConfigApp(state), kconf
+
+
+def _mismatch_labels(screen: object) -> list[str]:
+    from textual.widgets import OptionList
+
+    ol = screen.query_one("#mismatch-list", OptionList)  # type: ignore[attr-defined]
+    return [_rendered_option_text(ol.get_option_at_index(i).prompt) for i in range(ol.option_count)]
+
+
+async def _leave_mismatch_screen(pilot: Pilot, answer: str) -> None:
+    """Press Esc on the mismatch screen and answer the apply/discard/cancel dialog."""
+    from esp_menuconfig.screens import KeyDialogScreen
+
+    await pilot.press("escape")
+    await pilot.pause()
+    assert isinstance(pilot.app.screen, KeyDialogScreen)
+    await pilot.press(answer)
+    await pilot.pause()
+
+
+def test_mismatch_screen_opens_and_lists_sections(tmp_path, monkeypatch):
+    """``m`` opens the default-mismatch view with config-option and choice sections."""
+
+    async def go() -> None:
+        from esp_menuconfig.screens import DefaultMismatchScreen
+
+        app, kconf = _make_mismatch_app(tmp_path, monkeypatch)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            await pilot.press("m")
+            await pilot.pause()
+            assert isinstance(app.screen, DefaultMismatchScreen)
+
+            labels = _mismatch_labels(app.screen)
+            assert "Config options" in labels
+            assert "Choices" in labels
+            assert any(
+                "Config name" in label and "alternative (from Kconfig)" in label and "Resolution" in label
+                for label in labels
+            )
+            assert any("Choice name" in label and "current (from sdkconfig)" in label for label in labels)
+            foo_row = next(label for label in labels if "Foo" in label)
+            pick_row = next(label for label in labels if "Pick" in label)
+            # Default policy is USE_SDKCONFIG, so the current (sdkconfig) value comes first.
+            assert foo_row.replace(">", " ").split()[:3] == ["Foo", "2", "1"]
+            assert pick_row.replace(">", " ").split()[:3] == ["Pick", "Beta", "Alpha"]
+            assert "(not resolved)" in foo_row
+            assert "(not resolved)" in pick_row
+
+            await pilot.press("backspace")
+            await pilot.pause()
+            assert not isinstance(app.screen, DefaultMismatchScreen)
+
+        kconf.report.reset()
+
+    _run(go)
+
+
+def test_mismatch_screen_ignores_main_window_keys(tmp_path, monkeypatch):
+    """Main-window shortcuts are disabled; Esc and Backspace both leave the view."""
+
+    async def go() -> None:
+        from esp_menuconfig.screens import DefaultMismatchScreen
+        from esp_menuconfig.screens import KeyDialogScreen
+
+        app, kconf = _make_mismatch_app(tmp_path, monkeypatch)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            await pilot.press("m")
+            await pilot.pause()
+            assert isinstance(app.screen, DefaultMismatchScreen)
+
+            for key in ("q", "o", "d", "slash", "question_mark", "f", "c", "a", "p"):
+                await pilot.press(key)
+                await pilot.pause()
+                assert isinstance(app.screen, DefaultMismatchScreen)
+                assert not isinstance(app.screen, KeyDialogScreen)
+
+            await pilot.press("escape")
+            await pilot.pause()
+            assert not isinstance(app.screen, DefaultMismatchScreen)
+
+        kconf.report.reset()
+
+    _run(go)
+
+
+def test_mismatch_help_opens_popup(tmp_path, monkeypatch):
+    """``h`` on the mismatch screen opens a help popup; any key closes it."""
+
+    async def go() -> None:
+        from esp_menuconfig.formatting import MISMATCH_SCREEN_HELP_TEXT
+        from esp_menuconfig.screens import DefaultMismatchScreen
+        from esp_menuconfig.screens import HelpPopupScreen
+
+        app, kconf = _make_mismatch_app(tmp_path, monkeypatch)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            await pilot.press("m")
+            await pilot.pause()
+            assert isinstance(app.screen, DefaultMismatchScreen)
+
+            await pilot.press("h")
+            await pilot.pause()
+            assert isinstance(app.screen, HelpPopupScreen)
+            assert app.screen.dialog_text == MISMATCH_SCREEN_HELP_TEXT
+
+            await pilot.press("escape")
+            await pilot.pause()
+            assert isinstance(app.screen, DefaultMismatchScreen)
+
+        kconf.report.reset()
+
+    _run(go)
+
+
+def test_mismatch_k_and_s_set_all_values(tmp_path, monkeypatch):
+    """``k`` and ``s`` resolve every mismatch to the Kconfig or sdkconfig value."""
+
+    async def go() -> None:
+        from esp_menuconfig.screens import DefaultMismatchScreen
+
+        app, kconf = _make_mismatch_app(tmp_path, monkeypatch)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            await pilot.press("m")
+            await pilot.pause()
+            assert isinstance(app.screen, DefaultMismatchScreen)
+
+            await pilot.press("k")
+            await pilot.pause()
+            labels = _mismatch_labels(app.screen)
+            foo_row = next(label for label in labels if "Foo" in label)
+            pick_row = next(label for label in labels if "Pick" in label)
+            assert "user-set alternative value" in foo_row
+            assert "user-set alternative value" in pick_row
+            # Selections are staged until the screen is left and the change confirmed.
+            assert kconf.syms["FOO"]._user_value is None
+            assert kconf.named_choices["PICK"]._user_selection is None
+
+            await _leave_mismatch_screen(pilot, "y")
+            assert kconf.syms["FOO"].str_value == "1"
+            assert kconf.named_choices["PICK"].selection is kconf.syms["CA"]
+
+            await pilot.press("m")
+            await pilot.pause()
+            await pilot.press("s")
+            await pilot.pause()
+            labels = _mismatch_labels(app.screen)
+            foo_row = next(label for label in labels if "Foo" in label)
+            pick_row = next(label for label in labels if "Pick" in label)
+            assert "user-set current value" in foo_row
+            assert "user-set current value" in pick_row
+
+            await _leave_mismatch_screen(pilot, "y")
+            assert kconf.syms["FOO"].str_value == "2"
+            assert kconf.named_choices["PICK"].selection is kconf.syms["CB"]
+
+        kconf.report.reset()
+
+    _run(go)
+
+
+def test_mismatch_enter_on_value_sets_user_choice(tmp_path, monkeypatch):
+    """Left/right focus a value column; Enter marks that value as user-set."""
+
+    async def go() -> None:
+        from esp_menuconfig.screens import DefaultMismatchScreen
+
+        app, kconf = _make_mismatch_app(tmp_path, monkeypatch)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            await pilot.press("m")
+            await pilot.pause()
+            assert isinstance(app.screen, DefaultMismatchScreen)
+
+            # Default policy is USE_SDKCONFIG: the first column is current (sdkconfig),
+            # the second is alternative (Kconfig).
+            await pilot.press("right")
+            await pilot.press("enter")
+            await pilot.pause()
+            labels = _mismatch_labels(app.screen)
+            foo_row = next(label for label in labels if "Foo" in label)
+            assert "user-set current value" in foo_row
+
+            await _leave_mismatch_screen(pilot, "y")
+            assert kconf.syms["FOO"].str_value == "2"
+            assert kconf.syms["FOO"]._user_value == "2"
+
+            await pilot.press("m")
+            await pilot.pause()
+            await pilot.press("right")
+            await pilot.press("right")
+            await pilot.press("enter")
+            await pilot.pause()
+            labels = _mismatch_labels(app.screen)
+            foo_row = next(label for label in labels if "Foo" in label)
+            assert "user-set alternative value" in foo_row
+
+            await _leave_mismatch_screen(pilot, "y")
+            assert kconf.syms["FOO"].str_value == "1"
+
+            await pilot.press("m")
+            await pilot.pause()
+            await pilot.press("r")
+            await pilot.pause()
+            assert isinstance(app.screen, DefaultMismatchScreen)
+            foo_row = next(label for label in _mismatch_labels(app.screen) if "Foo" in label)
+            assert "(not resolved)" in foo_row
+
+            await _leave_mismatch_screen(pilot, "y")
+            assert kconf.syms["FOO"]._user_value is None
+
+        kconf.report.reset()
+
+    _run(go)
+
+
+def test_mismatch_resolutions_are_shown_after_reopening(tmp_path, monkeypatch):
+    """A resolution applied in an earlier visit is still shown when the screen reopens."""
+
+    async def go() -> None:
+        from esp_menuconfig.screens import DefaultMismatchScreen
+
+        app, kconf = _make_mismatch_app(tmp_path, monkeypatch)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            await pilot.press("m")
+            await pilot.pause()
+            await pilot.press("right")
+            await pilot.press("enter")
+            await pilot.pause()
+            await _leave_mismatch_screen(pilot, "y")
+
+            await pilot.press("m")
+            await pilot.pause()
+            assert isinstance(app.screen, DefaultMismatchScreen)
+            labels = _mismatch_labels(app.screen)
+            foo_row = next(label for label in labels if "Foo" in label)
+            pick_row = next(label for label in labels if "Pick" in label)
+            assert "user-set current value" in foo_row
+            assert "(not resolved)" in pick_row
+
+        kconf.report.reset()
+
+    _run(go)
+
+
+def test_mismatch_escape_without_changes_returns_without_dialog(tmp_path, monkeypatch):
+    """Leaving the screen without staging anything does not ask about applying."""
+
+    async def go() -> None:
+        from esp_menuconfig.screens import DefaultMismatchScreen
+        from esp_menuconfig.screens import KeyDialogScreen
+
+        app, kconf = _make_mismatch_app(tmp_path, monkeypatch)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            await pilot.press("m")
+            await pilot.pause()
+            assert isinstance(app.screen, DefaultMismatchScreen)
+
+            await pilot.press("escape")
+            await pilot.pause()
+            assert not isinstance(app.screen, KeyDialogScreen)
+            assert not isinstance(app.screen, DefaultMismatchScreen)
+            assert kconf.syms["FOO"]._user_value is None
+
+        kconf.report.reset()
+
+    _run(go)
+
+
+def test_mismatch_escape_discard_keeps_configuration(tmp_path, monkeypatch):
+    """``n`` on the return dialog leaves the configuration untouched."""
+
+    async def go() -> None:
+        from esp_menuconfig.screens import DefaultMismatchScreen
+
+        app, kconf = _make_mismatch_app(tmp_path, monkeypatch)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            await pilot.press("m")
+            await pilot.pause()
+            await pilot.press("k")
+            await pilot.pause()
+
+            await _leave_mismatch_screen(pilot, "n")
+            assert kconf.syms["FOO"]._user_value is None
+            assert kconf.named_choices["PICK"]._user_selection is None
+
+            await pilot.press("m")
+            await pilot.pause()
+            assert isinstance(app.screen, DefaultMismatchScreen)
+            assert all("(not resolved)" in label for label in _mismatch_labels(app.screen) if "Foo" in label)
+
+        kconf.report.reset()
+
+    _run(go)
+
+
+def test_mismatch_escape_cancel_stays_on_screen(tmp_path, monkeypatch):
+    """``c`` on the return dialog keeps the staged selections and the screen open."""
+
+    async def go() -> None:
+        from esp_menuconfig.screens import DefaultMismatchScreen
+        from esp_menuconfig.screens import KeyDialogScreen
+
+        app, kconf = _make_mismatch_app(tmp_path, monkeypatch)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            await pilot.press("m")
+            await pilot.pause()
+            await pilot.press("k")
+            await pilot.pause()
+
+            await pilot.press("escape")
+            await pilot.pause()
+            assert isinstance(app.screen, KeyDialogScreen)
+            await pilot.press("c")
+            await pilot.pause()
+
+            assert isinstance(app.screen, DefaultMismatchScreen)
+            foo_row = next(label for label in _mismatch_labels(app.screen) if "Foo" in label)
+            assert "user-set alternative value" in foo_row
+            assert kconf.syms["FOO"]._user_value is None
+
+            await _leave_mismatch_screen(pilot, "y")
+            assert kconf.syms["FOO"].str_value == "1"
+
+        kconf.report.reset()
+
+    _run(go)
+
+
+def test_mismatch_name_enter_opens_detail_popup(tmp_path, monkeypatch):
+    """Enter on the name opens the detail popup; Esc leaves the mismatch unresolved."""
+
+    async def go() -> None:
+        from textual.widgets import Static
+
+        from esp_menuconfig.screens import DefaultMismatchScreen
+        from esp_menuconfig.screens import MismatchDetailScreen
+
+        app, kconf = _make_mismatch_app(tmp_path, monkeypatch)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            await pilot.press("m")
+            await pilot.pause()
+            assert isinstance(app.screen, DefaultMismatchScreen)
+
+            await pilot.press("enter")
+            await pilot.pause()
+            assert isinstance(app.screen, MismatchDetailScreen)
+            info_text = str(app.screen.query_one("#detail-info", Static).content)
+            values_text = str(app.screen.query_one("#detail-values", Static).content)
+            assert "Config name:[/bold] Foo" in info_text
+            assert "Config location:" in info_text
+            assert "alternative" in values_text
+            assert "(from Kconfig)" in values_text
+            assert "current" in values_text
+            assert "(from sdkconfig)" in values_text
+            # The mismatch item name must not be stored on the Textual widget's
+            # own `name` attribute (it is used internally for DOM/CSS lookups).
+            assert app.screen.name is None
+
+            await pilot.press("escape")
+            await pilot.pause()
+            assert isinstance(app.screen, DefaultMismatchScreen)
+            foo_row = next(label for label in _mismatch_labels(app.screen) if "Foo" in label)
+            assert "(not resolved)" in foo_row
+            assert kconf.syms["FOO"]._user_value is None
+
+            await pilot.press("down")
+            await pilot.press("enter")
+            await pilot.pause()
+            assert isinstance(app.screen, MismatchDetailScreen)
+            info_text = str(app.screen.query_one("#detail-info", Static).content)
+            assert "Choice name:[/bold] Pick" in info_text
+            assert "Choice location:" in info_text
+            await pilot.press("escape")
+            await pilot.pause()
+            await pilot.press("up")
+            await pilot.pause()
+
+            await pilot.press("enter")
+            await pilot.pause()
+            # In the detail dialog, focus_col 0 is the first (current) column.
+            await pilot.press("enter")
+            await pilot.pause()
+            assert isinstance(app.screen, DefaultMismatchScreen)
+            foo_row = next(label for label in _mismatch_labels(app.screen) if "Foo" in label)
+            assert "user-set current value" in foo_row
+
+            await _leave_mismatch_screen(pilot, "y")
+            assert kconf.syms["FOO"].str_value == "2"
+
+        kconf.report.reset()
+
+    _run(go)
+
+
+def _notice_text(app: MenuConfigApp) -> str:
+    from textual.widgets import Static
+
+    return str(app.query_one("#mismatch-notice", Static).content)
+
+
+def _notice_visible(app: MenuConfigApp) -> bool:
+    from textual.containers import Horizontal
+
+    return bool(app.query_one("#mismatch-notice-rack", Horizontal).display)
+
+
+def test_mismatch_notice_stays_on_main_window_until_resolved(tmp_path, monkeypatch):
+    """Main window shows a bottom-right notice while any mismatch is unresolved."""
+
+    async def go() -> None:
+        from esp_menuconfig.screens import DefaultMismatchScreen
+
+        app, kconf = _make_mismatch_app(tmp_path, monkeypatch)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            assert _notice_visible(app)
+            assert "2 default value mismatches" in _notice_text(app)
+            assert "Press M to review" in _notice_text(app)
+
+            await pilot.press("m")
+            await pilot.pause()
+            assert isinstance(app.screen, DefaultMismatchScreen)
+            assert not app.screen.query("#mismatch-notice-rack")
+
+            await pilot.press("right")
+            await pilot.press("enter")
+            await pilot.pause()
+            await _leave_mismatch_screen(pilot, "y")
+            assert not isinstance(app.screen, DefaultMismatchScreen)
+            assert _notice_visible(app)
+            assert "1 default value mismatch" in _notice_text(app)
+
+            await pilot.press("m")
+            await pilot.pause()
+            await pilot.press("k")
+            await pilot.pause()
+            await _leave_mismatch_screen(pilot, "y")
+            assert not _notice_visible(app)
+
+            await pilot.press("m")
+            await pilot.pause()
+            await pilot.press("k")
+            await pilot.press("r")
+            await pilot.pause()
+            await _leave_mismatch_screen(pilot, "y")
+            assert _notice_visible(app)
+            assert "1 default value mismatch" in _notice_text(app)
+
+        kconf.report.reset()
+
+    _run(go)
+
+
+def test_mismatch_notice_absent_without_mismatches(tmp_path, monkeypatch):
+    """Main window has no mismatch notice when sdkconfig matches Kconfig defaults."""
+
+    async def go() -> None:
+        app = _make_app(tmp_path, monkeypatch)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            assert not _notice_visible(app)
+
+    _run(go)

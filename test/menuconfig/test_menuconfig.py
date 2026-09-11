@@ -12,6 +12,7 @@ from typing import Union
 import pytest
 
 from esp_kconfiglib import Kconfig
+from esp_kconfiglib.core import MENU
 from esp_kconfiglib.core import Choice
 from esp_kconfiglib.core import MenuNode
 from esp_kconfiglib.core import Symbol
@@ -19,6 +20,10 @@ from esp_kconfiglib.core import _restore_default
 from esp_menuconfig import _needs_save
 from esp_menuconfig import menuconfig
 from esp_menuconfig import reload_sdkconfig_file
+from esp_menuconfig.formatting import mismatch_column_widths
+from esp_menuconfig.formatting import mismatch_format_row
+from esp_menuconfig.formatting import mismatch_notice_text
+from esp_menuconfig.formatting import mismatch_table_header
 from esp_menuconfig.formatting import node_str
 from esp_menuconfig.model import ChangeResult
 from esp_menuconfig.model import MenuConfigState
@@ -124,11 +129,11 @@ class TestNeedsSave(MenuconfigTestBase):
         self.assert_and_print_actual(True, kconfig)
 
     @pytest.mark.parametrize("defaults_policy", ["sdkconfig", "kconfig"])
-    def test_default_value_in_kconfig_changed(self, defaults_policy: str) -> None:
+    def test_default_value_in_kconfig_changed(self, defaults_policy: str, monkeypatch: pytest.MonkeyPatch) -> None:
         # Default value of a symbol in Kconfig changed.
         # Using "original sdkconfig" with the "old" default value.
         os.environ["KCONFIG_CONFIG"] = os.path.join(SDKCONFIGS_NEEDS_SAVE_PATH, "sdkconfig.no_change")
-        os.environ["KCONFIG_DEFAULTS_POLICY"] = defaults_policy
+        monkeypatch.setenv("KCONFIG_DEFAULTS_POLICY", defaults_policy)
         # MOTORS_ENABLED default value changed from "n" to "y"
         kconfig = Kconfig(os.path.join(KCONFIGS_PATH, "Kconfig.default_value_changed"))
         menuconfig(kconfig, headless=True)
@@ -452,6 +457,7 @@ class TestChoiceDefaultMenuLabels(MenuconfigTestBase):
 
             named_parent = _node_str_wrapper(named_choice_node)
             assert "(default value)" in named_parent
+            assert "mismatched" not in named_parent
             assert "prompt for named choice" in named_parent
 
             default_line = _node_str_wrapper(sym_nodes[named_default_selection])
@@ -463,6 +469,7 @@ class TestChoiceDefaultMenuLabels(MenuconfigTestBase):
 
             unnamed_parent = _node_str_wrapper(unnamed_choice_node)
             assert "(default value)" in unnamed_parent
+            assert "mismatched" not in unnamed_parent
 
             baz_line = _node_str_wrapper(sym_nodes["BAZ"])
             qux_line = _node_str_wrapper(sym_nodes["QUX"])
@@ -552,6 +559,15 @@ def _sc_names(nodes: List[MenuNode]) -> List[str]:
     return [n.item.name for n in nodes if isinstance(n.item, (Symbol, Choice)) and n.item.name is not None]
 
 
+def _symbol_node(nodes: List[MenuNode], name: str) -> MenuNode:
+    """Return the first shown node whose item is Symbol *name*."""
+    for node in nodes:
+        item = node.item
+        if type(item) is Symbol and item.name == name:
+            return node
+    raise AssertionError(f"no symbol node named {name}")
+
+
 @pytest.mark.parametrize("version", ["1", "2"], indirect=True)
 class TestSearchNodes(MenuconfigTestBase):
     def test_search_matches_config_prefix(self) -> None:
@@ -592,3 +608,196 @@ class TestSearchNodes(MenuconfigTestBase):
         prefixed_matches, prefixed_err = state.search_nodes("^config_motors_enabled$")
         assert prefixed_err is None
         assert _sc_names(prefixed_matches) == ["MOTORS_ENABLED"]
+
+
+@pytest.mark.parametrize("version", ["1", "2"], indirect=True)
+class TestDefaultMismatchList(MenuconfigTestBase):
+    def test_default_mismatches_lists_symbols_and_choices(self) -> None:
+        kconfig = Kconfig(os.path.join(KCONFIGS_PATH, "Kconfig.pilot_mismatch"))
+        kconfig.report.reset()
+        kconfig.load_config(os.path.join(SDKCONFIGS_PATH, "sdkconfig.pilot_mismatch"))
+        state = _make_state(kconfig)
+
+        symbols, choices = state.default_mismatches()
+        assert [(sym.name, kconfig_val, sdk_val) for sym, kconfig_val, sdk_val in symbols] == [("FOO", "1", "2")]
+        assert [(choice.name, kconfig_val, sdk_val) for choice, kconfig_val, sdk_val in choices] == [
+            ("PICK", "CA", "CB")
+        ]
+
+        kconfig.report.reset()
+
+    def test_default_mismatches_unique_after_reload(self) -> None:
+        kconfig = Kconfig(os.path.join(KCONFIGS_PATH, "Kconfig.pilot_mismatch"))
+        kconfig.report.reset()
+        sdkconfig = os.path.join(SDKCONFIGS_PATH, "sdkconfig.pilot_mismatch")
+        kconfig.load_config(sdkconfig)
+        kconfig.load_config(sdkconfig)
+        state = _make_state(kconfig)
+
+        symbols, choices = state.default_mismatches()
+        assert [sym.name for sym, _, _ in symbols] == ["FOO"]
+        assert [choice.name for choice, _, _ in choices] == ["PICK"]
+
+        kconfig.report.reset()
+
+    def test_node_str_marks_mismatched_default_values(self) -> None:
+        kconfig = Kconfig(os.path.join(KCONFIGS_PATH, "Kconfig.pilot_mismatch"))
+        kconfig.report.reset()
+        kconfig.load_config(os.path.join(SDKCONFIGS_PATH, "sdkconfig.pilot_mismatch"))
+
+        foo_node = None
+        pick_node = None
+        for node in kconfig.node_iter():
+            if type(node.item) is Symbol and node.item.name == "FOO":
+                foo_node = node
+            elif type(node.item) is Choice and node.item.name == "PICK":
+                pick_node = node
+
+        assert foo_node is not None
+        assert pick_node is not None
+        assert "(default value, mismatched)" in _node_str_wrapper(foo_node)
+        assert "(default value, mismatched)" in _node_str_wrapper(pick_node)
+
+        kconfig.report.reset()
+
+    def test_default_mismatches_empty_without_sdkconfig_defaults(self) -> None:
+        kconfig = Kconfig(os.path.join(KCONFIGS_PATH, "Kconfig.pilot_mismatch"))
+        kconfig.report.reset()
+        state = _make_state(kconfig)
+
+        symbols, choices = state.default_mismatches()
+        assert symbols == []
+        assert choices == []
+
+        kconfig.report.reset()
+
+    def test_apply_mismatch_resolution_sets_user_value(self) -> None:
+        kconfig = Kconfig(os.path.join(KCONFIGS_PATH, "Kconfig.pilot_mismatch"))
+        kconfig.report.reset()
+        kconfig.load_config(os.path.join(SDKCONFIGS_PATH, "sdkconfig.pilot_mismatch"))
+        state = _make_state(kconfig)
+
+        foo = kconfig.syms["FOO"]
+        pick = kconfig.named_choices["PICK"]
+        state.apply_mismatch_resolution(foo, "kconfig", "1", "2")
+        assert foo.str_value == "1"
+        assert foo._user_value == "1"
+        assert state.conf_changed
+
+        state.apply_mismatch_resolution(pick, "sdkconfig", "CA", "CB")
+        assert pick.selection is kconfig.syms["CB"]
+        assert kconfig.syms["CB"]._user_value == 2
+
+        state.apply_mismatch_resolution(pick, "kconfig", "choice deselected", "CB")
+        assert pick._user_selection is None
+        assert kconfig.syms["CB"]._user_value is None
+
+        state.apply_mismatch_resolution(pick, "sdkconfig", "CA", "CB")
+        assert pick.selection is kconfig.syms["CB"]
+
+        state.clear_mismatch_resolution(foo)
+        assert foo._user_value is None
+        state.clear_mismatch_resolution(pick)
+        assert pick._user_selection is None
+        assert kconfig.syms["CB"]._user_value is None
+
+        kconfig.report.reset()
+
+    def _dep_state(self) -> MenuConfigState:
+        kconfig = Kconfig(os.path.join(KCONFIGS_PATH, "Kconfig.mismatch_dep"))
+        kconfig.report.reset()
+        kconfig.load_config(os.path.join(SDKCONFIGS_PATH, "sdkconfig.mismatch_dep"))
+        return _make_state(kconfig)
+
+    def test_resolution_hiding_selected_node_keeps_cursor(self) -> None:
+        """Resolving A hides B; the cursor must survive on a still-visible node."""
+        state = self._dep_state()
+        b_node = _symbol_node(state.shown, "B")
+        state.sel_node_i = state.shown.index(b_node)
+
+        state.apply_mismatch_resolution(state.kconf.syms["A"], "kconfig", "n", "y")
+
+        assert b_node not in state.shown
+        assert state.selected_node.item is state.kconf.syms["A"]
+
+        state.kconf.report.reset()
+
+    def test_resolution_emptying_current_menu_falls_back_to_show_all(self) -> None:
+        """Submenu S only holds C, which depends on A; resolving A empties S."""
+        state = self._dep_state()
+        menu_node = next(n for n in state.shown if n.item == MENU)
+        assert state.enter_menu(menu_node)
+        assert _sc_names(state.shown) == ["C"]
+
+        state.apply_mismatch_resolution(state.kconf.syms["A"], "kconfig", "n", "y")
+
+        assert state.show_all
+        assert state.selected_node.item is state.kconf.syms["C"]
+
+        state.kconf.report.reset()
+
+    def test_unresolved_default_mismatch_count_tracks_user_values(self) -> None:
+        kconfig = Kconfig(os.path.join(KCONFIGS_PATH, "Kconfig.pilot_mismatch"))
+        kconfig.report.reset()
+        kconfig.load_config(os.path.join(SDKCONFIGS_PATH, "sdkconfig.pilot_mismatch"))
+        state = _make_state(kconfig)
+
+        assert state.unresolved_default_mismatch_count() == 2
+        foo = kconfig.syms["FOO"]
+        pick = kconfig.named_choices["PICK"]
+        state.apply_mismatch_resolution(foo, "kconfig", "1", "2")
+        assert state.unresolved_default_mismatch_count() == 1
+        state.apply_mismatch_resolution(pick, "sdkconfig", "CA", "CB")
+        assert state.unresolved_default_mismatch_count() == 0
+        state.clear_mismatch_resolution(foo)
+        assert state.unresolved_default_mismatch_count() == 1
+
+        kconfig.report.reset()
+
+
+def test_mismatch_table_aligns_columns() -> None:
+    from rich.text import Text
+
+    rows = [
+        ("A", "2", "41"),
+        ("SSS", "something very long that will stretch", "something else that is long"),
+        ("PICK", "CA", "CB"),
+    ]
+    kconfig_header, sdkconfig_header = "Kconfig value", "sdkconfig value"
+    name_width, kconfig_width, sdkconfig_width, resolution_width = mismatch_column_widths(
+        rows, kconfig_header, sdkconfig_header
+    )
+    widths = (name_width, kconfig_width, sdkconfig_width, resolution_width)
+    config_header = Text.from_markup(
+        mismatch_table_header("Config name", kconfig_header, sdkconfig_header, *widths)
+    ).plain
+    choice_header = Text.from_markup(
+        mismatch_table_header("Choice name", kconfig_header, sdkconfig_header, *widths)
+    ).plain
+    config_row = Text.from_markup(mismatch_format_row("A", "2", "41", *widths)).plain
+    long_row = Text.from_markup(
+        mismatch_format_row("SSS", "something very long that will stretch", "something else that is long", *widths)
+    ).plain
+    choice_row = Text.from_markup(mismatch_format_row("PICK", "CA", "CB", *widths)).plain
+    focused_row = Text.from_markup(mismatch_format_row("A", "2", "41", *widths, focus_col=1)).plain
+
+    assert "Config name" in config_header
+    assert "Choice name" in choice_header
+    assert "Resolution" in config_header
+    assert "(not resolved)" in config_row
+    sdk_col = config_header.index("sdkconfig value")
+    assert choice_header.index("sdkconfig value") == sdk_col
+    assert config_row.index("41") == sdk_col
+    assert long_row.index("something else that is long") == sdk_col
+    assert choice_row.index("CB") == sdk_col
+    assert config_header.index("Resolution") == config_row.index("(not resolved)")
+    assert focused_row.index("2") == config_header.index("Kconfig value")
+    assert focused_row[focused_row.index("2") - 1] == ">"
+
+
+def test_mismatch_notice_text_singular_and_plural() -> None:
+    from rich.text import Text
+
+    assert "1 default value mismatch" in Text.from_markup(mismatch_notice_text(1)).plain
+    assert "2 default value mismatches" in Text.from_markup(mismatch_notice_text(2)).plain
+    assert "Press M to review" in Text.from_markup(mismatch_notice_text(2)).plain
