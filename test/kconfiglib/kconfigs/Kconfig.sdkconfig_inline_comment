@@ -1,0 +1,10 @@
+# See sdkconfig.sdkconfig_inline_comment for details
+mainmenu "Test sdkconfig inline comment handling"
+
+    config INT_CONFIG
+        int "int config"
+        default 100
+
+    config STRING_CONFIG
+        string "string config"
+        default "unused"

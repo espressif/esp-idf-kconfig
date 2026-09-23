@@ -1,0 +1,5 @@
+# Trailing inline comments on assignment lines must be stripped before the
+# value is validated/stored, for both plain and "# default:"-marked lines.
+# default:
+CONFIG_INT_CONFIG=50 # or any number not equal to 100
+CONFIG_STRING_CONFIG="foo # bar" # trailing comment
