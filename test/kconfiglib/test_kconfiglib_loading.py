@@ -8,6 +8,7 @@ import pytest
 from esp_kconfiglib import Kconfig
 from esp_kconfiglib.core import STR_TO_BOOL
 from esp_kconfiglib.core import TYPE_TO_STR
+from esp_kconfiglib.report import DefaultValuesArea
 
 TEST_FILES_PATH = os.path.abspath(os.path.dirname(__file__))
 KCONFIG_PATH = os.path.join(TEST_FILES_PATH, "kconfigs")
@@ -807,6 +808,32 @@ class TestDefaultPragmaRegression(TestBase):
         assert not tested_symbol._loaded_as_default
         # sdkconfig value correctly loaded
         assert tested_symbol.str_value == "y"
+
+        kconfig.report.reset()
+
+
+@pytest.mark.parametrize("version", ["1", "2"], indirect=True)
+class TestSdkconfigInlineComment(TestBase):
+    """
+    Trailing "# comment" text on a sdkconfig assignment line must not become part
+    of the value for int/hex/float/string symbols, and must not suppress the
+    default-value-mismatch report.
+    """
+
+    def test_inline_comment_stripped(self):
+        kconfig = Kconfig(os.path.join(KCONFIG_PATH, "Kconfig.sdkconfig_inline_comment"))
+        kconfig.load_config(os.path.join(SDKCONFIGS_PATH, "sdkconfig.sdkconfig_inline_comment"))
+
+        int_sym = kconfig.syms["INT_CONFIG"]
+        string_sym = kconfig.syms["STRING_CONFIG"]
+
+        assert int_sym.str_value == "50"
+        assert int_sym._sdkconfig_value == "50"
+        assert string_sym.str_value == "foo # bar"
+        assert string_sym._sdkconfig_value == "foo # bar"
+
+        default_values_area = kconfig.report.area_to_instance[DefaultValuesArea]
+        assert default_values_area.changed_defaults
 
         kconfig.report.reset()
 

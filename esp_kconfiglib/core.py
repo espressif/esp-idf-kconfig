@@ -1416,6 +1416,7 @@ class Kconfig(object):
                 match = set_match(line)
                 if match:
                     name, val = match.groups()
+                    val = _strip_inline_comment(val)
                     sym = get_sym(name)
                     if not sym and in_deprecated_block:
                         sym = _create_new_deprecated_symbol(name, val)
@@ -7630,6 +7631,17 @@ def _is_base_n(s, n):
         return True
     except ValueError:
         return False
+
+
+def _strip_inline_comment(val: str) -> str:
+    """
+    Strip a trailing inline "# comment" from an unquoted sdkconfig assignment value.
+    Quoted string values are left untouched, as they are delimited separately and may
+    legitimately contain "#".
+    """
+    if val.startswith('"'):
+        return val
+    return re.split(r"\s+#", val, maxsplit=1)[0].rstrip()
 
 
 def _looks_like_number(s):
