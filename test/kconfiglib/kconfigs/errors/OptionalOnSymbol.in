@@ -1,0 +1,5 @@
+mainmenu "optional on a config"
+
+config FOO
+    bool "foo"
+    optional

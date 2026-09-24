@@ -1,0 +1,9 @@
+mainmenu "allnoconfig_y on a choice"
+
+choice
+    prompt "pick"
+    option allnoconfig_y
+
+    config A
+        bool "a"
+endchoice

@@ -707,55 +707,6 @@ class TestParserV2Diagnostic:
         env["KCONFIG_PARSER_VERSION"] = "2"
         return subprocess.run(cmd, capture_output=True, text=True, env=env)
 
-    def test_unsupported_help_dashes_is_intended(self, tmp_path):
-        result = self._run_kconfgen(
-            tmp_path,
-            """
-            mainmenu "Test"
-
-                config FOO
-                    bool "foo"
-                    ---help---
-                      help text
-            """,
-        )
-        assert result.returncode != 0
-        combined = result.stdout + result.stderr
-        # The parse error itself must point at ---help---, not the previous line's newline.
-        assert "(line 6)" in combined
-        assert "This parse failure is intended" in combined
-        assert "'---help---'" in combined
-        assert "KCONFIG_PARSER_VERSION=1" in combined
-        assert "parser bug" not in combined
-
-    @pytest.mark.parametrize(
-        "kconfig_text, expected_fragment",
-        [
-            (
-                """
-                mainmenu "Test"
-
-                    choice
-                        optional
-                        prompt "c"
-                        config A
-                            bool "a"
-                        config B
-                            bool "b"
-                    endchoice
-                """,
-                "'optional' on a choice",
-            ),
-        ],
-    )
-    def test_unsupported_construct_is_intended(self, tmp_path, kconfig_text, expected_fragment):
-        result = self._run_kconfgen(tmp_path, kconfig_text)
-        assert result.returncode != 0
-        combined = result.stdout + result.stderr
-        assert "This parse failure is intended" in combined
-        assert expected_fragment in combined
-        assert "parser bug" not in combined
-
     def test_hints_parser_bug_when_v1_succeeds_without_legacy_construct(self, tmp_path):
         result = self._run_kconfgen(
             tmp_path,

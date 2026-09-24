@@ -9,12 +9,9 @@ Changes Overview
 ----------------
 
 - `Missing tristate type/m Value`_
-- `The ---help--- Keyword Is No Longer Supported`_
 - `The def_<type> Options Are Not Supported`_
-- `The option Keyword Is Deprecated`_
-- `The optional Keyword for Choice Entries Is Not Supported`_
 - `config or choice Names Must Contain Only Numbers, Uppercase Letters, and Underscores`_
-- `Preprocessor Macros Are Supported Only in the Form of symbol = value or symbol := value`_
+- `Deprecated Constructs`_
 
 .. _missing-tristate:
 
@@ -82,27 +79,6 @@ You can manually mimic the same behavior as closely as possible by using the fol
         # Write the condition explicitly
         default "enabled" if NEW_TRISTATE_OPTION == 2 || (NEW_TRISTATE_OPTION == 1 && MODULES)
 
-.. _missing-help:
-
-The ``---help---`` Keyword Is No Longer Supported
--------------------------------------------------
-
-The ``---help---`` option was removed as it was breaking the general (indentation-based) syntax in Kconfig files. Also, in the ESP-IDF ecosystem, it was used only very sparsely, if ever. Replace the ``---help---`` keyword with properly indented ``help`` in your Kconfig files for them to work with esp-idf-kconfig v3.x.
-
-Example:
-
-.. code-block:: kconfig
-
-    config MY_OPTION
-        bool "My option with the old help syntax causing parsing error in esp-idf-kconfig v3.x"
-        ---help---
-            This is my option.
-
-    config MY_OPTION
-        bool "My option with the new help syntax"
-        help
-            This is my option.
-
 .. _missing-def-type:
 
 The ``def_<type>`` Options Are Not Supported
@@ -120,32 +96,6 @@ The ``def_<type>`` options were removed as they were not used in the ESP-IDF eco
     config MY_OPTION
         bool
         default y
-
-.. _deprecated-option-keyword:
-
-The ``option`` Keyword Is Deprecated
-------------------------------------
-
-The ``option`` keyword is deprecated and supported only in the form of ``option env=``. Instead of using the ``option`` keyword, you can use direct expansion of environment variables to set the configuration options:
-
-.. code-block:: kconfig
-
-    config MY_OPTION
-        string "My option with old option syntax"
-        option env=MY_ENV_VAR
-
-    # should be replaced with:
-
-    config MY_OPTION
-        string "My option with new env variable syntax"
-        default "${MY_ENV_VAR}"
-
-.. _optional-keyword-missing-for-choice:
-
-The ``optional`` Keyword for Choice Entries Is Not Supported
-------------------------------------------------------------
-
-This option was removed because there were no known cases where it was used in the ESP-IDF ecosystem. Currently, there is no direct replacement for it.
 
 .. _only-uppercase-names:
 
@@ -183,24 +133,59 @@ For more information, refer to the `sdkconfig.rename <https://docs.espressif.com
 
     # End of deprecated options
 
-.. _only-simple-preprocessor-macros:
+.. _deprecated-constructs:
 
-Preprocessor Macros Are Supported Only in the Form of ``symbol = value`` or ``symbol := value``
------------------------------------------------------------------------------------------------
+Deprecated Constructs
+----------------------
 
-The original preprocessor macros are no longer supported. If you are using only simple ``symbol = value`` or ``symbol := value`` macros, you can continue to use them. For now, it is not planned to support the full preprocessor syntax, as it is not used in the ESP-IDF Kconfig files. To use esp-idf-kconfig v3, you need to remove any other preprocessor macros from your Kconfig files.
+The constructs below are accepted with a deprecation note printed to ``stderr``. They will become errors in a future major release.
 
-Example of a simple preprocessor macro (assignment):
+The ``---help---`` / ``--help--`` Keyword
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Replace it with the plain ``help`` keyword indented one level deeper than its ``config``/``choice`` keyword:
 
 .. code-block:: kconfig
 
-    # := would also work
-    MIN_RANGE = 0
-    MAX_RANGE = 100
+    config MY_OPTION
+        bool "My option with the old help syntax"
+        ---help---
+            This is my option.
+
+    # should be replaced with:
 
     config MY_OPTION
-        int "My option with simple preprocessor macros"
-        range $(MIN_RANGE) $(MAX_RANGE)
-        default 50
+        bool "My option with the new help syntax"
+        help
+            This is my option.
 
-None of the other macros are supported.
+The ``optional`` Keyword for Choice Entries
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+``optional`` is a noop for some time. A ``choice`` cannot be left without a selection. Remove the
+keyword; no replacement is needed. If you want to make a choice that can have no selection, use the following syntax with an additional "enable" symbol:
+
+.. code-block:: kconfig
+
+    config ENABLE_CHOICE
+        bool "Enable choice"
+        help
+            This choice can be left without a selection.
+
+    choice CHOICE_NAME
+        prompt "Choose an option"
+        depends on ENABLE_CHOICE
+
+        config OPTION_A
+            bool "Option A"
+
+        config OPTION_B
+            bool "Option B"
+
+    endchoice
+
+The ``option`` Keyword
+^^^^^^^^^^^^^^^^^^^^^^
+
+
+The ``option`` keyword is now deprecated except for ``option env=``. Other sub-keywords are effectively a noop; ``modules`` lost its meaning with the removal of the tristate type, and ``defconfig_list`` and ``allnoconfig_y`` do not have a meaning in the ESP-IDF context. Remove them from your Kconfig files.

@@ -16,13 +16,9 @@ def _write(tmp_path: Path, text: str) -> Path:
 @pytest.mark.parametrize(
     "line, expected_fragment",
     [
-        ("        ---help---", "'---help---'"),
-        ("        --help--", "'---help---'"),
         ('        tristate "foo"', "'tristate' type"),
         ("        def_bool y", "'def_<type>' shorthand"),
         ("        def_tristate m", "'def_<type>' shorthand"),
-        ("        optional", "'optional' on a choice"),
-        ("        option modules", "'option' other than"),
         ("    FOO += bar", "preprocessor '+='"),
         ("    $(warning-if,y,hello)", "bare preprocessor macro"),
         ("    FOO := $(shell,echo hi)", "preprocessor function call"),
@@ -35,18 +31,6 @@ def test_detects_construct_on_reported_line(tmp_path, line, expected_fragment):
     assert matches
     assert expected_fragment in matches[0].description
     assert matches[0].line_nr == 2
-
-
-def test_help_dashes_reported_on_previous_line(tmp_path):
-    path = _write(
-        tmp_path,
-        'mainmenu "T"\n    config FOO\n        bool "foo"\n        ---help---\n          text\n',
-    )
-    # Even if the error is reported on the bool line (line 3), the next line is scanned.
-    matches = find_legacy_constructs(str(path), 3)
-    assert len(matches) == 1
-    assert "'---help---'" in matches[0].description
-    assert matches[0].line_nr == 4
 
 
 def test_ignores_supported_option_env(tmp_path):

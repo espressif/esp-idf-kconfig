@@ -356,7 +356,8 @@ class KconfigOptionBlock(KconfigBlock):
     In order to speed up the parsing, option blocks are now parsed manually, which speeds up the parsing by up to 50 %.
     """
 
-    def __init__(self, parser: "Parser"):
+    def __init__(self, parser: "Parser") -> None:
+        self.parser = parser
         self.help_block = KconfigHelpBlock(parser)
         self.entry_keywords = (
             "config",
@@ -406,6 +407,7 @@ class KconfigOptionBlock(KconfigBlock):
             "weak_set": [],
             "help": None,
             "warning": [],
+            "optional": False,
         }
 
         def is_line_with_option(tokens: List[str]) -> bool:
@@ -565,7 +567,15 @@ class KconfigOptionBlock(KconfigBlock):
 
                 current_loc += len(line) + 1  # +1 for \n
 
-            elif tokens[0] == "help":
+            elif tokens[0] == "help" or tokens[0].strip("-") == "help":
+                if tokens[0] != "help":
+                    # "---help---"/"--help--"/etc.: an old form of the C tools accepted by accident and kept
+                    # for backwards compatibility by parser v1. Use the plain "help" keyword instead.
+                    log.note(
+                        f"{escape(self.parser.file_stack[-1])}:{lineno(line_start, instring)}: "
+                        f"Deprecation notice: '{tokens[0]}' is deprecated; use 'help' instead. "
+                        "Support will be removed in a future major release."
+                    )
                 new_loc, parsed_help = self.help_block.parseImpl(instring, current_loc)
                 # rstrip() only the assembled text (matching parser v1), not each line individually,
                 # so trailing whitespace inside the block is preserved and only the block's trailing
@@ -762,16 +772,28 @@ class KconfigOptionBlock(KconfigBlock):
                 current_loc += len(line) + 1  # +1 for \n
 
             elif tokens[0] == "option":
-                if not tokens[1].startswith("env="):
+                if tokens[1].startswith("env="):
+                    option_dict["option"].append(("env", tokens[1][5:-1]))
+                elif tokens[1] in ("modules", "defconfig_list", "allnoconfig_y"):
+                    # NOTE: all three are dead functionality in ESP-IDF context.
+                    # FIXME: remove in the next major version.
+                    log.note(
+                        f"{escape(self.parser.file_stack[-1])}:{lineno(line_start, instring)}: "
+                        f"Deprecation notice: 'option {tokens[1]}' is deprecated. "
+                        "Support will be removed in a future major release."
+                    )
+                    option_dict["option"].append((tokens[1], None))
+                else:
                     raise ParseException(
                         instring,
                         line_start,
                         'Error parsing option block: option must be in a form "option env=<env_var>".',
                         self,
                     )
-                option = tokens[1][5:-1]
-                # Converting the option to default with the same semantics
-                option_dict["option"].append(option)
+                current_loc += len(line) + 1  # +1 for \n
+
+            elif tokens[0] == "optional":
+                option_dict["optional"] = True
                 current_loc += len(line) + 1  # +1 for \n
 
             elif tokens[0] == "warning":

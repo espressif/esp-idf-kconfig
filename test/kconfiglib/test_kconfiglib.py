@@ -117,11 +117,21 @@ class TestWarningCases(BaseKconfigTest):
             "SelectImplyNonBool": (
                 "Parser v1 does not emit type-check warnings for 'select' and 'imply' on non-bool source symbols."
             ),
-            "QuotedChoiceName": "Parser v1 silently accepts a quoted choice name and does not deprecate it.",
-            "LegacyBooleanType": "Parser v1 silently accepts the 'boolean' type keyword and does not deprecate it.",
-            "HelpIndentation": "Parser v1 does not enforce indentation and thus does not deprecate it.",
-            "LowercaseChoiceName": "Parser v1 does not report lowercase letters in choice names.",
+            "Deprecated_QuotedChoiceName": (
+                "Parser v1 silently accepts a quoted choice name and does not deprecate it."
+            ),
+            "Deprecated_LegacyBooleanType": (
+                "Parser v1 silently accepts the 'boolean' type keyword and does not deprecate it."
+            ),
+            "Deprecated_HelpIndentation": "Parser v1 does not enforce indentation and thus does not deprecate it.",
+            "Deprecated_LowercaseChoiceName": "Parser v1 does not report lowercase letters in choice names.",
             "IllegalReference": "Parser v1 does not report illegal characters in symbol references.",
+            "Deprecated_HelpDashes": "Parser v1 silently accepts --help-- / ---help--- and does not deprecate it.",
+            "Deprecated_Optional": "Parser v1 silently accepts 'optional' and does not deprecate it.",
+            "Deprecated_OptionForms": (
+                "Parser v1 silently accepts 'option modules'/'defconfig_list'/'allnoconfig_y' "
+                "and does not deprecate them."
+            ),
         }
         if int(version) == 1 and filename in v1_skipped_tests.keys():
             pytest.skip(v1_skipped_tests[filename])
@@ -150,7 +160,6 @@ class TestErrorCases(BaseKconfigTest):
             "IllegalChoiceName": "Original kconfiglib allows any character in a choice name.",
             "TextAfterMenuTitle": "Original kconfiglib rejects it as well, but with a different message.",
             "TextAfterCommentText": "Original kconfiglib rejects it as well, but with a different message.",
-            "HelpDashes": "Original kconfiglib accepts --help-- / ---help--- as a help keyword.",
         }
         if int(version) == 1 and filename in v1_skipped_tests.keys():
             pytest.skip(v1_skipped_tests[filename])

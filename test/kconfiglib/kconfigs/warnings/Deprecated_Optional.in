@@ -1,0 +1,10 @@
+mainmenu "optional choice keyword"
+
+choice
+    prompt "pick one"
+    optional
+
+config A
+    bool "a"
+
+endchoice

@@ -554,28 +554,53 @@ class Parser:
                 )
 
         # parse option
-        if options["option"]:
-            env_var = options["option"][0]
-            sym_name = node.item.name  # type: ignore[union-attr]
-            node.item.env_var = env_var  # type: ignore
-            if env_var in os.environ:
-                node.defaults.append((self.kconfig._lookup_const_sym(os.environ[env_var]), self.kconfig.y))
-            else:
-                log.note(
-                    f"{escape(self.file_stack[-1])}:{node.linenr}: "
-                    f"{sym_name} has 'option env=\"{env_var}\"', "
-                    f"but the environment variable {env_var} is not set"
-                )
+        for kind, value in options["option"]:
+            if kind == "env":
+                env_var: str = value  # type: ignore[assignment]
+                sym_name = node.item.name  # type: ignore[union-attr]
+                node.item.env_var = env_var  # type: ignore
+                if env_var in os.environ:
+                    node.defaults.append((self.kconfig._lookup_const_sym(os.environ[env_var]), self.kconfig.y))
+                else:
+                    log.note(
+                        f"{escape(self.file_stack[-1])}:{node.linenr}: "
+                        f"{sym_name} has 'option env=\"{env_var}\"', "
+                        f"but the environment variable {env_var} is not set"
+                    )
 
-            if env_var != sym_name:
-                log.note(
-                    "Kconfiglib expands environment variables "
-                    "in strings directly, meaning you do not "
-                    "need 'option env=...' \"bounce\" symbols. "
-                    "For compatibility with the C tools, "
-                    f"rename {sym_name} to {env_var} (so that the symbol name "
-                    "matches the environment variable name).",
-                )
+                if env_var != sym_name:
+                    log.note(
+                        "Kconfiglib expands environment variables "
+                        "in strings directly, meaning you do not "
+                        "need 'option env=...' \"bounce\" symbols. "
+                        "For compatibility with the C tools, "
+                        f"rename {sym_name} to {env_var} (so that the symbol name "
+                        "matches the environment variable name).",
+                    )
+            elif kind == "defconfig_list":
+                if not self.kconfig.defconfig_list:
+                    self.kconfig.defconfig_list = node.item  # type: ignore[assignment]
+                else:
+                    log.note(
+                        f"{escape(self.file_stack[-1])}:{node.linenr}: "
+                        "'option defconfig_list' set on multiple symbols "
+                        f"({self.kconfig.defconfig_list.name} and {node.item.name}). "  # type: ignore[union-attr]
+                        f"Only {self.kconfig.defconfig_list.name} will be used."
+                    )
+            elif kind == "allnoconfig_y":
+                if type(node.item) is not Symbol:
+                    raise KconfigError("the 'allnoconfig_y' option is only valid for symbols")
+                node.item.is_allnoconfig_y = True  # type: ignore[union-attr]
+            # kind == "modules": no-op, kept for backwards compatibility (see grammar's deprecation note).
+
+        if options["optional"]:
+            if type(node.item) is not Choice:
+                raise KconfigError('"optional" is only valid for choices')
+            log.note(
+                f"{escape(self.file_stack[-1])}:{node.linenr}: "
+                "Deprecation notice: the 'optional' keyword has no effect and is ignored. "
+                "This keyword will cause a parse error in a future major release."
+            )
 
         if options["warning"]:
             if type(node.item) is Symbol:
