@@ -128,9 +128,11 @@ class TestWarningCases(BaseKconfigTest):
             "IllegalReference": "Parser v1 does not report illegal characters in symbol references.",
             "Deprecated_HelpDashes": "Parser v1 silently accepts --help-- / ---help--- and does not deprecate it.",
             "Deprecated_Optional": "Parser v1 silently accepts 'optional' and does not deprecate it.",
-            "Deprecated_OptionForms": (
-                "Parser v1 silently accepts 'option modules'/'defconfig_list'/'allnoconfig_y' "
-                "and does not deprecate them."
+            "Deprecated_OptionDefconfigList": (
+                "Parser v1 silently accepts 'option defconfig_list' and does not deprecate it."
+            ),
+            "Deprecated_OptionAllnoconfigY": (
+                "Parser v1 silently accepts 'option allnoconfig_y' and does not deprecate it."
             ),
             "Deprecated_PreprocessorPlusEquals": (
                 "Parser v1 silently accepts preprocessor '+=' and does not deprecate it."

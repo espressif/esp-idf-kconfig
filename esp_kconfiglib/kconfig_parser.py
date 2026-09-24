@@ -357,8 +357,8 @@ class Parser:
         if op == "+=":
             log.note(
                 f"{escape(self.file_stack[-1])}:{lineno(loc, s)}: "
-                "Deprecation notice: the preprocessor '+=' operator is deprecated; "
-                "use ':=' or '=' instead. Support will be removed in a future major release."
+                "Deprecation notice: the preprocessor '+=' operator is deprecated. "
+                "Support will be removed in a future major release."
             )
 
         is_new_variable = name not in self.kconfig.variables
@@ -376,8 +376,8 @@ class Parser:
         # legacy; in order to make everything work, we need to set the value to the is_recursive flag
         # Difference between "=" and ":=" is that in original kconfiglib, ":=" is expanded immediately,
         # while "=" is expanded when used. Parser v2 always expands eagerly (like ":="), regardless of
-        # the operator used, so a "=" macro whose value has side effects (e.g. "$(shell,...)") only runs
-        # those side effects once, at definition time, not on every use.
+        # the operator used. For "=" macros this differs from parser v1: a recursive value is expanded once,
+        # at definition time, instead of on every use (e.g. "$(shell,...)" side effects run only once).
         expanded = self.kconfig._expand_whole(val, ())
 
         if op == "+=" and not is_new_variable:
@@ -391,8 +391,8 @@ class Parser:
         self.kconfig.linenr = lineno(loc, s)
         log.note(
             f"{escape(self.file_stack[-1])}:{lineno(loc, s)}: "
-            "Deprecation notice: a bare preprocessor macro call is deprecated; wrap side-effecting calls "
-            "in a 'NAME = value' assignment instead. Support will be removed in a future major release."
+            "Deprecation notice: a bare preprocessor macro call is deprecated. "
+            "Support will be removed in a future major release."
         )
         self.kconfig._expand_whole(parsed_macro["expr"].rstrip(), ())
 
@@ -612,7 +612,6 @@ class Parser:
                 if type(node.item) is not Symbol:
                     raise KconfigError("the 'allnoconfig_y' option is only valid for symbols")
                 node.item.is_allnoconfig_y = True  # type: ignore[union-attr]
-            # kind == "modules": no-op, kept for backwards compatibility (see grammar's deprecation note).
 
         if options["optional"]:
             if type(node.item) is not Choice:

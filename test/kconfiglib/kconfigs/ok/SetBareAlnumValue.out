@@ -1,0 +1,12 @@
+#
+# Automatically generated file. DO NOT EDIT.
+# Espressif IoT Development Framework (ESP-IDF)  Project Configuration
+#
+
+#
+# Regression test: symbol_regex must tokenize '12BA' as one token, not '1'+'2BA'
+#
+# default:
+CONFIG_A=y
+# default:
+CONFIG_B=12ba

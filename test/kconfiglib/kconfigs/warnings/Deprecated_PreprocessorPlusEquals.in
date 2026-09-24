@@ -1,6 +1,10 @@
 mainmenu "preprocessor += operator"
 
 FOO := a
+
+config BEFORE
+    bool "before"
+    default n
 FOO += b
 
 config BAR

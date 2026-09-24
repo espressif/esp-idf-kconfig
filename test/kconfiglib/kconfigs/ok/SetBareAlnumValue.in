@@ -1,0 +1,12 @@
+mainmenu "Test tokenization of a bare digit+letter value (e.g. set FOO=12BA)"
+
+    comment "Regression test: symbol_regex must tokenize '12BA' as one token, not '1'+'2BA'"
+
+    config A
+        bool
+        default y
+        set B=12ba
+
+    config B # Should be 0x12ba, A is y
+        hex "b"
+        default 0x0

@@ -188,7 +188,7 @@ The ``option`` Keyword
 ^^^^^^^^^^^^^^^^^^^^^^
 
 
-The ``option`` keyword is now deprecated except for ``option env=``. Other sub-keywords are effectively a noop; ``modules`` lost its meaning with the removal of the tristate type, and ``defconfig_list`` and ``allnoconfig_y`` do not have a meaning in the ESP-IDF context. Remove them from your Kconfig files.
+The ``option`` keyword is deprecated except for ``option env=``. ``option modules`` is not supported (it lost its meaning with the removal of the tristate type). ``option allnoconfig_y`` has no effect. ``option defconfig_list`` only selects the default configuration file for ``Kconfig.load_config()`` called without a filename, which ESP-IDF tooling does not use. Remove these options from your Kconfig files.
 
 .. _only-simple-preprocessor-macros:
 

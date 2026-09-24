@@ -1,0 +1,6 @@
+# test if a hex default value given without the "0x" prefix is reported as deprecated
+mainmenu "mainmenu"
+
+    config HEX_NO_PREFIX
+        hex "hex default without 0x prefix"
+        default 1a2b

@@ -1,0 +1,2 @@
+Deprecation notice: hex literal '1a2b' without '0x' prefix detected. In the
+next major version, hex literals will be required to have a '0x' prefix.

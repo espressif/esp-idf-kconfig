@@ -179,14 +179,23 @@ class KconfigHelpBlock(KconfigBlock):
 
 
 # Complete regex combining all the parts:
+# NOTE: regex alternation is first-match-wins, not longest-match: once an alternative matches at
+# all, its (possibly short) match is used and later, more specific alternatives are never tried.
+# The numeric alternatives below therefore use a lookahead+backreference trick (Python's re has no
+# atomic groups before 3.11, which this package must not depend on) to emulate an atomic group:
+# (?=(?P<name>PATTERN))(?P=name) matches exactly like PATTERN, but the trailing (?!...) lookahead
+# can no longer make \d+ backtrack to a shorter digit run, so e.g. "12BA" isn't cut into "1"/"12".
+# If a numeric alternative is immediately followed by an identifier character, it doesn't match at
+# all here and falls through to the general identifier alternative, so the whole token (e.g.
+# "12BA", "1a2b") is matched in one piece.
 symbol_regex = r"""(?<!\S)
                     (y|n|\"y\"|\"n\")(?!\S)  # y, n, "y", "n" symbols
                     |(true|True|false|False|yes|Yes|no|No)(?!\S)  # invalid bool literals - will sanitize later
-                    |0[x|X][\da-fA-F]+  # hexnums: 0x1234, 0X1234ABCD
-                    |\d+(\.\d+){1,2} # versions: 4.4, 5.3.1 (versions without dots are handled by the "numbers" below)
-                    |-?\d+\.\d+(?:[eE][+-]?\d+)?  # floats: 1.5, -3.14, 1.5e-6, -2.5E10
-                    |-?\d+[eE][+-]?\d+  # floats with exponent but no decimal: 1e-6, -2E10
-                    |-?\d+   # numbers: 1234, -1234
+                    |0[xX](?=(?P<hexdigits>[\da-fA-F]+))(?P=hexdigits)(?![A-Za-z_./-])  # hexnums: 0x1234, 0X1234ABCD
+                    |(?=(?P<version>\d+(\.\d+){1,2}))(?P=version)(?![A-Za-z_./-])  # versions: 4.4, 5.3.1
+                    |-?(?=(?P<floatdec>\d+\.\d+(?:[eE][+-]?\d+)?))(?P=floatdec)(?![A-Za-z_./-])  # floats: 1.5, -3.14
+                    |-?(?=(?P<floatexp>\d+[eE][+-]?\d+))(?P=floatexp)(?![A-Za-z_./-])  # floats: 1e-6, -2E10
+                    |-?(?=(?P<intlit>\d+))(?P=intlit)(?![A-Za-z_./-])  # numbers: 1234, -1234
                     |[A-Za-z\d_./-]+  # variables: FOO, BAR_BAR, ENABLE_ESP64
                                       # . / and - are part of the identifier character set of parser v1
                                       # and are mostly seen in unquoted string defaults, e.g. my.host.name
@@ -413,10 +422,40 @@ class KconfigOptionBlock(KconfigBlock):
             "optional": False,
         }
 
+        def parse_default_value_expr(expr_text: str) -> List:
+            """
+            Parse *expr_text* (the value part of a 'default') as a Kconfig expression.
+            """
+            try:
+                result: List = expression.parse_string(expr_text, parse_all=True).as_list()
+            except ParseException as pe:
+                raise ParseSyntaxException(
+                    instring,
+                    _expr_error_loc(line, line_start, expr_text, pe),
+                    f"invalid 'default' value: {pe.msg}",
+                    self,
+                ) from pe
+            return result
+
+        def parse_range_symbol_token(token: str) -> str:
+            """
+            Parse a single 'range' bound token as a symbol.
+            """
+            try:
+                value: str = symbol.parse_string(token, parse_all=True).as_list()[0]
+            except ParseException as pe:
+                raise ParseSyntaxException(
+                    instring,
+                    _expr_error_loc(line, line_start, token, pe),
+                    f"invalid 'range' symbol: {pe.msg}",
+                    self,
+                ) from pe
+            return value
+
         def is_line_with_option(tokens: List[str]) -> bool:
             if tokens[0].startswith(self.entry_keywords) or re.match(
-                r"^\s*([A-Z0-9_]+)\s*[:]?=\s*(.*?)\s*$", " ".join(tokens)
-            ):  # macro
+                r"^\s*(?:[A-Z0-9_]+\s*[:+]?=|\$\()", " ".join(tokens)
+            ):  # macro assignment or bare macro call
                 return False
 
             return True
@@ -535,15 +574,7 @@ class KconfigOptionBlock(KconfigBlock):
                 if "if" in tokens:
                     if_idx = tokens.index("if")
                     expr_text = " ".join(tokens[1:if_idx])
-                    try:
-                        default_val = expression.parse_string(expr_text, parse_all=True).as_list()
-                    except ParseException as pe:
-                        raise ParseSyntaxException(
-                            instring,
-                            _expr_error_loc(line, line_start, expr_text, pe),
-                            f"invalid 'default' value: {pe.msg}",
-                            self,
-                        )
+                    default_val = parse_default_value_expr(expr_text)
                     expr_text = " ".join(tokens[if_idx + 1 :])
                     try:
                         default_cond = expression.parse_string(expr_text, parse_all=True).as_list()
@@ -557,15 +588,7 @@ class KconfigOptionBlock(KconfigBlock):
                     option_dict["default"].append((default_val, default_cond, lineno(line_start, instring)))
                 else:
                     expr_text = " ".join(tokens[1:])
-                    try:
-                        default_val = expression.parse_string(expr_text, parse_all=True).as_list()
-                    except ParseException as pe:
-                        raise ParseSyntaxException(
-                            instring,
-                            _expr_error_loc(line, line_start, expr_text, pe),
-                            f"invalid 'default' value: {pe.msg}",
-                            self,
-                        )
+                    default_val = parse_default_value_expr(expr_text)
                     option_dict["default"].append((default_val, None, lineno(line_start, instring)))
 
                 current_loc += len(line) + 1  # +1 for \n
@@ -610,16 +633,8 @@ class KconfigOptionBlock(KconfigBlock):
                     current_loc += len(line) + 1  # +1 for \n
 
             elif tokens[0] == "range":
-                try:
-                    symbol1 = symbol.parse_string(tokens[1], parse_all=True).as_list()[0]
-                    symbol2 = symbol.parse_string(tokens[2], parse_all=True).as_list()[0]
-                except ParseException as pe:
-                    raise ParseSyntaxException(
-                        instring,
-                        _expr_error_loc(line, line_start, " ".join(tokens[1:3]), pe),
-                        f"invalid 'range' symbol: {pe.msg}",
-                        self,
-                    )
+                symbol1 = parse_range_symbol_token(tokens[1])
+                symbol2 = parse_range_symbol_token(tokens[2])
                 cond = None
                 if len(tokens) > 3:
                     if not tokens[3] == "if":
@@ -777,8 +792,8 @@ class KconfigOptionBlock(KconfigBlock):
             elif tokens[0] == "option":
                 if tokens[1].startswith("env="):
                     option_dict["option"].append(("env", tokens[1][5:-1]))
-                elif tokens[1] in ("modules", "defconfig_list", "allnoconfig_y"):
-                    # NOTE: all three are dead functionality in ESP-IDF context.
+                elif tokens[1] in ("defconfig_list", "allnoconfig_y"):
+                    # NOTE: both are dead functionality in ESP-IDF context.
                     # FIXME: remove in the next major version.
                     log.note(
                         f"{escape(self.parser.file_stack[-1])}:{lineno(line_start, instring)}: "
