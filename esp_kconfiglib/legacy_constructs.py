@@ -28,8 +28,9 @@ class LegacyMatch:
 
 
 # Every regex matches one legacy unsupported construct.
-# NOTE: '---help---', 'optional' and 'option' (other than 'env=') used to be listed here, but are now
-# accepted by parser v2 (with a deprecation note); see differences.rst.
+# NOTE: '---help---', 'optional', 'option' (other than 'env='), preprocessor '+=', bare macro calls and
+# preprocessor function-call macros used to be listed here, but are now accepted by parser v2 (with a
+# deprecation note); see differences.rst.
 _LINE_PATTERNS: Tuple[Tuple[Pattern[str], str], ...] = (
     (
         re.compile(r"^\s*tristate\b"),
@@ -38,18 +39,6 @@ _LINE_PATTERNS: Tuple[Tuple[Pattern[str], str], ...] = (
     (
         re.compile(r"^\s*def_(?:bool|int|hex|string|tristate|float)\b"),
         "'def_<type>' shorthand; split it into a type and a default",
-    ),
-    (
-        re.compile(r"^\s*[A-Za-z0-9_]+\s*\+="),
-        "preprocessor '+=' assignment; only 'NAME = value' and 'NAME := value' are supported",
-    ),
-    (
-        re.compile(r"^\s*\$\("),
-        "bare preprocessor macro call; only simple 'NAME = value' / 'NAME := value' macros are supported",
-    ),
-    (
-        re.compile(r"^\s*[A-Za-z0-9_]+\s*:?=\s*\$\([^)\s]+,"),
-        "preprocessor function call; only simple 'NAME = value' / 'NAME := value' macros are supported",
     ),
 )
 

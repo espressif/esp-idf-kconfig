@@ -1,0 +1,7 @@
+mainmenu "bare preprocessor macro"
+
+$(info,bare macro side effect)
+
+config DUMMY
+    bool "dummy"
+    default n

@@ -195,6 +195,9 @@ symbol_regex = r"""(?<!\S)
                     |\"?\$[({]?[A-Z\d_]+[)}]?\"?"""  # $ENV, ENV can be in () or {} and the whole thing can be in ""
 
 symbol = Regex(symbol_regex, re.X)
+# Simple macro assignments match the regex below. Anything that doesn't (e.g. preprocessor function calls)
+# is a more complex, deprecated construct — this regex is only used to decide whether to print that deprecation notice.
+_LEGACY_MACRO_VALUE_RE = re.compile(symbol_regex, re.X)
 
 
 class KconfigExpression(Token):
@@ -932,14 +935,41 @@ class KconfigGrammar:
         ###########################
         # Although not a basic Kconfig syntax, some Kconfig files are using basic macros in the form of NAME := value.
         # This part adds support for this.
+        # The value is matched as raw text to the end of the line (like parser v1 does), so that it can also hold
+        # a preprocessor function call (e.g. "$(shell,echo hi)"), not just a plain literal or "$(ENV_VAR)"
+        # reference. Deprecated (function-call) forms are flagged in _macro_value_action below.
+        macro_value = Regex(r"[^\n]+").set_name("macro value")
+
+        def _macro_value_action(instring: str, loc: int, tokens: ParseResults) -> str:
+            val: str = tokens[0].strip()
+            if not _LEGACY_MACRO_VALUE_RE.fullmatch(val):
+                log.note(
+                    f"{escape(parser.file_stack[-1])}:{lineno(loc, instring)}: "
+                    "Deprecation notice: preprocessor macro value is not a simple literal. "
+                    "Preprocessor function calls (e.g. '$(shell,...)') are deprecated and will "
+                    "be rejected in a future major release."
+                )
+            return val
+
+        macro_value.set_parse_action(_macro_value_action)
+
         macro = (
             (
                 macro_name.set_results_name("name")
-                + one_of([":=", "="]).set_results_name("operation")
-                + symbol.set_results_name("value")
+                + one_of([":=", "+=", "="]).set_results_name("operation")
+                + macro_value.set_results_name("value")
             )
             .set_parse_action(parser.parse_macro)
             .set_name("macro definition")
+        )
+
+        # A macro call on its own line, e.g. "$(info,hello)" or "$(warning-if,y,oops)", used only for its
+        # side effects. Parser v1 accepts this; parser v2 accepts it as a deprecated construct.
+        macro_call = (
+            Regex(r"\$\([^\n]+")
+            .set_results_name("expr")
+            .set_parse_action(parser.parse_macro_call)
+            .set_name("bare preprocessor macro")
         )
 
         ###########################
@@ -1006,9 +1036,9 @@ class KconfigGrammar:
         # Every entry should have the same indentation and optionally, an empty line in between two entries.
         # But e.g. lvgl does not follow any rules in their Kconfig files and thus,
         # formal specifications needs to be loosen.
-        entry_records = (config | menu | choice | source | menuconfig | if_entry | comment | macro).set_name(
-            "Kconfig entry"
-        )
+        entry_records = (
+            config | menu | choice | source | menuconfig | if_entry | comment | macro | macro_call
+        ).set_name("Kconfig entry")
         entries << ZeroOrMore(entry_records).set_results_name("entries")
 
         menu << (

@@ -19,9 +19,6 @@ def _write(tmp_path: Path, text: str) -> Path:
         ('        tristate "foo"', "'tristate' type"),
         ("        def_bool y", "'def_<type>' shorthand"),
         ("        def_tristate m", "'def_<type>' shorthand"),
-        ("    FOO += bar", "preprocessor '+='"),
-        ("    $(warning-if,y,hello)", "bare preprocessor macro"),
-        ("    FOO := $(shell,echo hi)", "preprocessor function call"),
         ("    config FOO.BAR", "config/choice name"),
     ],
 )

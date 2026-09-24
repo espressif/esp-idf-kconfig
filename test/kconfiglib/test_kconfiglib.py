@@ -132,6 +132,15 @@ class TestWarningCases(BaseKconfigTest):
                 "Parser v1 silently accepts 'option modules'/'defconfig_list'/'allnoconfig_y' "
                 "and does not deprecate them."
             ),
+            "Deprecated_PreprocessorPlusEquals": (
+                "Parser v1 silently accepts preprocessor '+=' and does not deprecate it."
+            ),
+            "Deprecated_PreprocessorBareMacro": (
+                "Parser v1 silently accepts a bare macro call and does not deprecate it."
+            ),
+            "Deprecated_PreprocessorFunctionMacro": (
+                "Parser v1 silently accepts a preprocessor function-call macro and does not deprecate it."
+            ),
         }
         if int(version) == 1 and filename in v1_skipped_tests.keys():
             pytest.skip(v1_skipped_tests[filename])

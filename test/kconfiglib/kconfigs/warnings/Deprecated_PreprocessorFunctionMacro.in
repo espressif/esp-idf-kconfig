@@ -1,0 +1,7 @@
+mainmenu "preprocessor function-call macro"
+
+GREETING := $(info,evaluating function-call macro)
+
+config DUMMY
+    bool "dummy"
+    default n

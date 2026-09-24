@@ -347,10 +347,22 @@ class Parser:
             node.dep = self.kconfig.y
 
     def parse_macro(self, s: str, loc: int, parsed_macro: ParseResults) -> None:
+        self.kconfig.linenr = lineno(loc, s)
         name = parsed_macro["name"]
         op = parsed_macro["operation"]
         val = parsed_macro["value"]
-        if name in self.kconfig.variables:  # Already seen variable
+        if type(val) is Symbol:
+            val = val.name
+
+        if op == "+=":
+            log.note(
+                f"{escape(self.file_stack[-1])}:{lineno(loc, s)}: "
+                "Deprecation notice: the preprocessor '+=' operator is deprecated; "
+                "use ':=' or '=' instead. Support will be removed in a future major release."
+            )
+
+        is_new_variable = name not in self.kconfig.variables
+        if not is_new_variable:  # Already seen variable
             var = self.kconfig.variables[name]
         else:
             # New variable
@@ -363,17 +375,26 @@ class Parser:
 
         # legacy; in order to make everything work, we need to set the value to the is_recursive flag
         # Difference between "=" and ":=" is that in original kconfiglib, ":=" is expanded immediately,
-        # while "=" is expanded when used. However, we currently support only simple NAME = VALUE macros,
-        # where there is no difference between the two (literal is always expanded to itself).
-        if op == "=":
-            var.is_recursive = True
-        elif op == ":=":
-            var.is_recursive = False
+        # while "=" is expanded when used. Parser v2 always expands eagerly (like ":="), regardless of
+        # the operator used, so a "=" macro whose value has side effects (e.g. "$(shell,...)") only runs
+        # those side effects once, at definition time, not on every use.
+        expanded = self.kconfig._expand_whole(val, ())
 
-        if isinstance(val, Symbol):
-            val = val.name
+        if op == "+=" and not is_new_variable:
+            var.value = f"{var.value} {expanded}"
+        else:
+            # "+=" on a previously-undefined variable behaves like "=" (matches parser v1).
+            var.is_recursive = op != ":="
+            var.value = expanded
 
-        var.value = self.kconfig._expand_whole(val, ())
+    def parse_macro_call(self, s: str, loc: int, parsed_macro: ParseResults) -> None:
+        self.kconfig.linenr = lineno(loc, s)
+        log.note(
+            f"{escape(self.file_stack[-1])}:{lineno(loc, s)}: "
+            "Deprecation notice: a bare preprocessor macro call is deprecated; wrap side-effecting calls "
+            "in a 'NAME = value' assignment instead. Support will be removed in a future major release."
+        )
+        self.kconfig._expand_whole(parsed_macro["expr"].rstrip(), ())
 
     def parse_prompt(self, node: MenuNode, prompts: List[Tuple]) -> None:
         for prompt in prompts:

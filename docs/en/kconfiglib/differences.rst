@@ -35,3 +35,6 @@ The following constructs are still accepted, because the original ``kconfiglib``
 - The ``---help---``/``--help--`` keyword (any number of dashes on either side of ``help``). Use the plain ``help`` keyword instead.
 - The ``optional`` keyword on a ``choice``. It has no effect. Remove it.
 - The ``option`` keyword in the form of ``option modules``, ``option defconfig_list`` or ``option allnoconfig_y``. Use ``option env=`` for the only form recommended going forward, or see the :ref:`Migration Guide <migration-guide>` for the others.
+- The preprocessor ``+=`` assignment operator. Use ``:=`` or ``=`` instead.
+- A bare preprocessor macro call on its own line (e.g. ``$(info,hello)``), used only for its side effects.
+- A preprocessor macro whose value is a function call (e.g. ``FOO := $(shell,echo hi)``) rather than a simple literal or ``$(ENV_VAR)`` reference.

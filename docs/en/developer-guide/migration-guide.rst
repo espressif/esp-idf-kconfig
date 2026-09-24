@@ -189,3 +189,16 @@ The ``option`` Keyword
 
 
 The ``option`` keyword is now deprecated except for ``option env=``. Other sub-keywords are effectively a noop; ``modules`` lost its meaning with the removal of the tristate type, and ``defconfig_list`` and ``allnoconfig_y`` do not have a meaning in the ESP-IDF context. Remove them from your Kconfig files.
+
+.. _only-simple-preprocessor-macros:
+
+Preprocessor Macros
+^^^^^^^^^^^^^^^^^^^^
+
+Simple ``symbol = value`` / ``symbol := value`` macros will remain working.
+
+The following extended forms are deprecated **without replacement**:
+
+- The ``+=`` assignment operator.
+- A bare macro call on its own line, used only for its side effect (e.g. ``$(info,hello)``).
+- A macro value that calls a preprocessor function (e.g. ``FOO := $(shell,echo hi)``) rather than being a simple literal or ``$(ENV_VAR)`` reference.

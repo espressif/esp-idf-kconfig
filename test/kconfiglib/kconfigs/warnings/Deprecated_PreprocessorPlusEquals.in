@@ -1,0 +1,8 @@
+mainmenu "preprocessor += operator"
+
+FOO := a
+FOO += b
+
+config BAR
+    string "bar"
+    default "$(FOO)"
