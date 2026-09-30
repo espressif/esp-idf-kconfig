@@ -347,10 +347,22 @@ class Parser:
             node.dep = self.kconfig.y
 
     def parse_macro(self, s: str, loc: int, parsed_macro: ParseResults) -> None:
+        self.kconfig.linenr = lineno(loc, s)
         name = parsed_macro["name"]
         op = parsed_macro["operation"]
         val = parsed_macro["value"]
-        if name in self.kconfig.variables:  # Already seen variable
+        if type(val) is Symbol:
+            val = val.name
+
+        if op == "+=":
+            log.note(
+                f"{escape(self.file_stack[-1])}:{lineno(loc, s)}: "
+                "Deprecation notice: the preprocessor '+=' operator is deprecated. "
+                "Support will be removed in a future major release."
+            )
+
+        is_new_variable = name not in self.kconfig.variables
+        if not is_new_variable:  # Already seen variable
             var = self.kconfig.variables[name]
         else:
             # New variable
@@ -363,17 +375,26 @@ class Parser:
 
         # legacy; in order to make everything work, we need to set the value to the is_recursive flag
         # Difference between "=" and ":=" is that in original kconfiglib, ":=" is expanded immediately,
-        # while "=" is expanded when used. However, we currently support only simple NAME = VALUE macros,
-        # where there is no difference between the two (literal is always expanded to itself).
-        if op == "=":
-            var.is_recursive = True
-        elif op == ":=":
-            var.is_recursive = False
+        # while "=" is expanded when used. Parser v2 always expands eagerly (like ":="), regardless of
+        # the operator used. For "=" macros this differs from parser v1: a recursive value is expanded once,
+        # at definition time, instead of on every use (e.g. "$(shell,...)" side effects run only once).
+        expanded = self.kconfig._expand_whole(val, ())
 
-        if isinstance(val, Symbol):
-            val = val.name
+        if op == "+=" and not is_new_variable:
+            var.value = f"{var.value} {expanded}"
+        else:
+            # "+=" on a previously-undefined variable behaves like "=" (matches parser v1).
+            var.is_recursive = op != ":="
+            var.value = expanded
 
-        var.value = self.kconfig._expand_whole(val, ())
+    def parse_macro_call(self, s: str, loc: int, parsed_macro: ParseResults) -> None:
+        self.kconfig.linenr = lineno(loc, s)
+        log.note(
+            f"{escape(self.file_stack[-1])}:{lineno(loc, s)}: "
+            "Deprecation notice: a bare preprocessor macro call is deprecated. "
+            "Support will be removed in a future major release."
+        )
+        self.kconfig._expand_whole(parsed_macro["expr"].rstrip(), ())
 
     def parse_prompt(self, node: MenuNode, prompts: List[Tuple]) -> None:
         for prompt in prompts:
@@ -554,28 +575,52 @@ class Parser:
                 )
 
         # parse option
-        if options["option"]:
-            env_var = options["option"][0]
-            sym_name = node.item.name  # type: ignore[union-attr]
-            node.item.env_var = env_var  # type: ignore
-            if env_var in os.environ:
-                node.defaults.append((self.kconfig._lookup_const_sym(os.environ[env_var]), self.kconfig.y))
-            else:
-                log.note(
-                    f"{escape(self.file_stack[-1])}:{node.linenr}: "
-                    f"{sym_name} has 'option env=\"{env_var}\"', "
-                    f"but the environment variable {env_var} is not set"
-                )
+        for kind, value in options["option"]:
+            if kind == "env":
+                env_var: str = value  # type: ignore[assignment]
+                sym_name = node.item.name  # type: ignore[union-attr]
+                node.item.env_var = env_var  # type: ignore
+                if env_var in os.environ:
+                    node.defaults.append((self.kconfig._lookup_const_sym(os.environ[env_var]), self.kconfig.y))
+                else:
+                    log.note(
+                        f"{escape(self.file_stack[-1])}:{node.linenr}: "
+                        f"{sym_name} has 'option env=\"{env_var}\"', "
+                        f"but the environment variable {env_var} is not set"
+                    )
 
-            if env_var != sym_name:
-                log.note(
-                    "Kconfiglib expands environment variables "
-                    "in strings directly, meaning you do not "
-                    "need 'option env=...' \"bounce\" symbols. "
-                    "For compatibility with the C tools, "
-                    f"rename {sym_name} to {env_var} (so that the symbol name "
-                    "matches the environment variable name).",
-                )
+                if env_var != sym_name:
+                    log.note(
+                        "Kconfiglib expands environment variables "
+                        "in strings directly, meaning you do not "
+                        "need 'option env=...' \"bounce\" symbols. "
+                        "For compatibility with the C tools, "
+                        f"rename {sym_name} to {env_var} (so that the symbol name "
+                        "matches the environment variable name).",
+                    )
+            elif kind == "defconfig_list":
+                if not self.kconfig.defconfig_list:
+                    self.kconfig.defconfig_list = node.item  # type: ignore[assignment]
+                else:
+                    log.note(
+                        f"{escape(self.file_stack[-1])}:{node.linenr}: "
+                        "'option defconfig_list' set on multiple symbols "
+                        f"({self.kconfig.defconfig_list.name} and {node.item.name}). "  # type: ignore[union-attr]
+                        f"Only {self.kconfig.defconfig_list.name} will be used."
+                    )
+            elif kind == "allnoconfig_y":
+                if type(node.item) is not Symbol:
+                    raise KconfigError("the 'allnoconfig_y' option is only valid for symbols")
+                node.item.is_allnoconfig_y = True  # type: ignore[union-attr]
+
+        if options["optional"]:
+            if type(node.item) is not Choice:
+                raise KconfigError('"optional" is only valid for choices')
+            log.note(
+                f"{escape(self.file_stack[-1])}:{node.linenr}: "
+                "Deprecation notice: the 'optional' keyword has no effect and is ignored. "
+                "This keyword will cause a parse error in a future major release."
+            )
 
         if options["warning"]:
             if type(node.item) is Symbol:

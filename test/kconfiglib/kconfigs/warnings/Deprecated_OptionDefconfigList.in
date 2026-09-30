@@ -1,0 +1,6 @@
+mainmenu "option defconfig_list"
+
+config DEFCONFIG_LIST
+    string "defconfig list"
+    option defconfig_list
+    default "some.config"

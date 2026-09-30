@@ -4231,6 +4231,8 @@ class Kconfig(object):
                                 f"for string symbol {sym.name}. Will be required in the future."
                             )
 
+                    elif sym.orig_type == HEX and _is_unprefixed_hex_literal(default):
+                        _note_unprefixed_hex_literal(loc, default.name)
                     elif not num_ok(default, sym.orig_type):  # INT/HEX/FLOAT
                         log.note(
                             f"{loc}: "
@@ -4256,6 +4258,11 @@ class Kconfig(object):
                     )
                 else:
                     for low, high, _ in sym.ranges:
+                        if sym.orig_type == HEX:
+                            if _is_unprefixed_hex_literal(low):
+                                _note_unprefixed_hex_literal(loc, low.name)
+                            if _is_unprefixed_hex_literal(high):
+                                _note_unprefixed_hex_literal(loc, high.name)
                         if not num_ok(low, sym.orig_type) or not num_ok(high, sym.orig_type):
                             log.note(
                                 f"{loc}: "
@@ -8311,6 +8318,22 @@ STRING = _T_STRING
 INT = _T_INT
 HEX = _T_HEX
 FLOAT = _T_FLOAT
+
+# A constant symbol whose name is only hex digits, with no 0x/0X prefix (e.g. "1a2b", "10").
+_UNPREFIXED_HEX_RE = re.compile(r"^[0-9a-fA-F]+$")
+
+
+def _is_unprefixed_hex_literal(sc: "Symbol") -> bool:
+    return type(sc) is Symbol and not sc.nodes and _UNPREFIXED_HEX_RE.fullmatch(sc.name) is not None
+
+
+def _note_unprefixed_hex_literal(loc: str, token: str) -> None:
+    log.note(
+        f"{loc}: "
+        f"Deprecation notice: hex literal '{token}' without '0x' prefix detected. "
+        "In the next major version, hex literals will be required to have a '0x' prefix."
+    )
+
 
 TYPE_TO_STR = {
     UNKNOWN: "unknown",

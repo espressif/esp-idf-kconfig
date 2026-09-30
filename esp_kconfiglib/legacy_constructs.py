@@ -3,9 +3,10 @@
 """
 Detect unsupported legacy Kconfig constructs near a parser v2 error.
 
-Parser v2 rejects some constructs that parser v1 still accepts. When kconfgen
-re-parses a failed tree with v1, these matches distinguish an intentional
-rejection from a possible parser bug.
+Parser v2 rejects a couple of constructs that parser v1 still accepts and that
+are not planned to be supported (see 'Unsupported Constructs' in
+differences.rst). When kconfgen re-parses a failed tree with v1, these matches
+distinguish an intentional rejection from a possible parser bug.
 """
 
 import re
@@ -26,12 +27,11 @@ class LegacyMatch:
     line_text: str
 
 
-# Every regex matches one legacy unsupported construct
+# Every regex matches one legacy unsupported construct.
+# NOTE: '---help---', 'optional', 'option' (other than 'env='), preprocessor '+=', bare macro calls and
+# preprocessor function-call macros used to be listed here, but are now accepted by parser v2 (with a
+# deprecation note); see differences.rst.
 _LINE_PATTERNS: Tuple[Tuple[Pattern[str], str], ...] = (
-    (
-        re.compile(r"^\s*-+help-+\s*$"),
-        "'---help---'; use an indented 'help' keyword instead",
-    ),
     (
         re.compile(r"^\s*tristate\b"),
         "'tristate' type; use 'bool' instead",
@@ -39,26 +39,6 @@ _LINE_PATTERNS: Tuple[Tuple[Pattern[str], str], ...] = (
     (
         re.compile(r"^\s*def_(?:bool|int|hex|string|tristate|float)\b"),
         "'def_<type>' shorthand; split it into a type and a default",
-    ),
-    (
-        re.compile(r"^\s*optional\b"),
-        "'optional' on a choice; this keyword is not supported",
-    ),
-    (
-        re.compile(r"^\s*option\b(?!\s*env=)"),
-        "'option' other than 'option env='; this form is not supported",
-    ),
-    (
-        re.compile(r"^\s*[A-Za-z0-9_]+\s*\+="),
-        "preprocessor '+=' assignment; only 'NAME = value' and 'NAME := value' are supported",
-    ),
-    (
-        re.compile(r"^\s*\$\("),
-        "bare preprocessor macro call; only simple 'NAME = value' / 'NAME := value' macros are supported",
-    ),
-    (
-        re.compile(r"^\s*[A-Za-z0-9_]+\s*:?=\s*\$\([^)\s]+,"),
-        "preprocessor function call; only simple 'NAME = value' / 'NAME := value' macros are supported",
     ),
 )
 

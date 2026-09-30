@@ -1,0 +1,7 @@
+# test if a hex range bound given without the "0x" prefix is reported as deprecated
+mainmenu "mainmenu"
+
+    config HEX_RANGE_NO_PREFIX
+        hex "hex range bound without 0x prefix"
+        range 0 1a2b
+        default 0x10

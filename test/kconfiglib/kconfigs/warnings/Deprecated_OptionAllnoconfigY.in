@@ -1,0 +1,6 @@
+mainmenu "option allnoconfig_y"
+
+config ALLNOCONFIG_Y
+    bool "allnoconfig_y symbol"
+    option allnoconfig_y
+    default y

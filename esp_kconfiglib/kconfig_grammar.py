@@ -179,14 +179,23 @@ class KconfigHelpBlock(KconfigBlock):
 
 
 # Complete regex combining all the parts:
+# NOTE: regex alternation is first-match-wins, not longest-match: once an alternative matches at
+# all, its (possibly short) match is used and later, more specific alternatives are never tried.
+# The numeric alternatives below therefore use a lookahead+backreference trick (Python's re has no
+# atomic groups before 3.11, which this package must not depend on) to emulate an atomic group:
+# (?=(?P<name>PATTERN))(?P=name) matches exactly like PATTERN, but the trailing (?!...) lookahead
+# can no longer make \d+ backtrack to a shorter digit run, so e.g. "12BA" isn't cut into "1"/"12".
+# If a numeric alternative is immediately followed by an identifier character, it doesn't match at
+# all here and falls through to the general identifier alternative, so the whole token (e.g.
+# "12BA", "1a2b") is matched in one piece.
 symbol_regex = r"""(?<!\S)
                     (y|n|\"y\"|\"n\")(?!\S)  # y, n, "y", "n" symbols
                     |(true|True|false|False|yes|Yes|no|No)(?!\S)  # invalid bool literals - will sanitize later
-                    |0[x|X][\da-fA-F]+  # hexnums: 0x1234, 0X1234ABCD
-                    |\d+(\.\d+){1,2} # versions: 4.4, 5.3.1 (versions without dots are handled by the "numbers" below)
-                    |-?\d+\.\d+(?:[eE][+-]?\d+)?  # floats: 1.5, -3.14, 1.5e-6, -2.5E10
-                    |-?\d+[eE][+-]?\d+  # floats with exponent but no decimal: 1e-6, -2E10
-                    |-?\d+   # numbers: 1234, -1234
+                    |0[xX](?=(?P<hexdigits>[\da-fA-F]+))(?P=hexdigits)(?![A-Za-z_./-])  # hexnums: 0x1234, 0X1234ABCD
+                    |(?=(?P<version>\d+(\.\d+){1,2}))(?P=version)(?![A-Za-z_./-])  # versions: 4.4, 5.3.1
+                    |-?(?=(?P<floatdec>\d+\.\d+(?:[eE][+-]?\d+)?))(?P=floatdec)(?![A-Za-z_./-])  # floats: 1.5, -3.14
+                    |-?(?=(?P<floatexp>\d+[eE][+-]?\d+))(?P=floatexp)(?![A-Za-z_./-])  # floats: 1e-6, -2E10
+                    |-?(?=(?P<intlit>\d+))(?P=intlit)(?![A-Za-z_./-])  # numbers: 1234, -1234
                     |[A-Za-z\d_./-]+  # variables: FOO, BAR_BAR, ENABLE_ESP64
                                       # . / and - are part of the identifier character set of parser v1
                                       # and are mostly seen in unquoted string defaults, e.g. my.host.name
@@ -195,6 +204,9 @@ symbol_regex = r"""(?<!\S)
                     |\"?\$[({]?[A-Z\d_]+[)}]?\"?"""  # $ENV, ENV can be in () or {} and the whole thing can be in ""
 
 symbol = Regex(symbol_regex, re.X)
+# Simple macro assignments match the regex below. Anything that doesn't (e.g. preprocessor function calls)
+# is a more complex, deprecated construct — this regex is only used to decide whether to print that deprecation notice.
+_LEGACY_MACRO_VALUE_RE = re.compile(symbol_regex, re.X)
 
 
 class KconfigExpression(Token):
@@ -356,7 +368,8 @@ class KconfigOptionBlock(KconfigBlock):
     In order to speed up the parsing, option blocks are now parsed manually, which speeds up the parsing by up to 50 %.
     """
 
-    def __init__(self, parser: "Parser"):
+    def __init__(self, parser: "Parser") -> None:
+        self.parser = parser
         self.help_block = KconfigHelpBlock(parser)
         self.entry_keywords = (
             "config",
@@ -406,12 +419,43 @@ class KconfigOptionBlock(KconfigBlock):
             "weak_set": [],
             "help": None,
             "warning": [],
+            "optional": False,
         }
+
+        def parse_default_value_expr(expr_text: str) -> List:
+            """
+            Parse *expr_text* (the value part of a 'default') as a Kconfig expression.
+            """
+            try:
+                result: List = expression.parse_string(expr_text, parse_all=True).as_list()
+            except ParseException as pe:
+                raise ParseSyntaxException(
+                    instring,
+                    _expr_error_loc(line, line_start, expr_text, pe),
+                    f"invalid 'default' value: {pe.msg}",
+                    self,
+                ) from pe
+            return result
+
+        def parse_range_symbol_token(token: str) -> str:
+            """
+            Parse a single 'range' bound token as a symbol.
+            """
+            try:
+                value: str = symbol.parse_string(token, parse_all=True).as_list()[0]
+            except ParseException as pe:
+                raise ParseSyntaxException(
+                    instring,
+                    _expr_error_loc(line, line_start, token, pe),
+                    f"invalid 'range' symbol: {pe.msg}",
+                    self,
+                ) from pe
+            return value
 
         def is_line_with_option(tokens: List[str]) -> bool:
             if tokens[0].startswith(self.entry_keywords) or re.match(
-                r"^\s*([A-Z0-9_]+)\s*[:]?=\s*(.*?)\s*$", " ".join(tokens)
-            ):  # macro
+                r"^\s*(?:[A-Z0-9_]+\s*[:+]?=|\$\()", " ".join(tokens)
+            ):  # macro assignment or bare macro call
                 return False
 
             return True
@@ -530,15 +574,7 @@ class KconfigOptionBlock(KconfigBlock):
                 if "if" in tokens:
                     if_idx = tokens.index("if")
                     expr_text = " ".join(tokens[1:if_idx])
-                    try:
-                        default_val = expression.parse_string(expr_text, parse_all=True).as_list()
-                    except ParseException as pe:
-                        raise ParseSyntaxException(
-                            instring,
-                            _expr_error_loc(line, line_start, expr_text, pe),
-                            f"invalid 'default' value: {pe.msg}",
-                            self,
-                        )
+                    default_val = parse_default_value_expr(expr_text)
                     expr_text = " ".join(tokens[if_idx + 1 :])
                     try:
                         default_cond = expression.parse_string(expr_text, parse_all=True).as_list()
@@ -552,20 +588,20 @@ class KconfigOptionBlock(KconfigBlock):
                     option_dict["default"].append((default_val, default_cond, lineno(line_start, instring)))
                 else:
                     expr_text = " ".join(tokens[1:])
-                    try:
-                        default_val = expression.parse_string(expr_text, parse_all=True).as_list()
-                    except ParseException as pe:
-                        raise ParseSyntaxException(
-                            instring,
-                            _expr_error_loc(line, line_start, expr_text, pe),
-                            f"invalid 'default' value: {pe.msg}",
-                            self,
-                        )
+                    default_val = parse_default_value_expr(expr_text)
                     option_dict["default"].append((default_val, None, lineno(line_start, instring)))
 
                 current_loc += len(line) + 1  # +1 for \n
 
-            elif tokens[0] == "help":
+            elif tokens[0] == "help" or tokens[0].strip("-") == "help":
+                if tokens[0] != "help":
+                    # "---help---"/"--help--"/etc.: an old form of the C tools accepted by accident and kept
+                    # for backwards compatibility by parser v1. Use the plain "help" keyword instead.
+                    log.note(
+                        f"{escape(self.parser.file_stack[-1])}:{lineno(line_start, instring)}: "
+                        f"Deprecation notice: '{tokens[0]}' is deprecated; use 'help' instead. "
+                        "Support will be removed in a future major release."
+                    )
                 new_loc, parsed_help = self.help_block.parseImpl(instring, current_loc)
                 # rstrip() only the assembled text (matching parser v1), not each line individually,
                 # so trailing whitespace inside the block is preserved and only the block's trailing
@@ -597,16 +633,8 @@ class KconfigOptionBlock(KconfigBlock):
                     current_loc += len(line) + 1  # +1 for \n
 
             elif tokens[0] == "range":
-                try:
-                    symbol1 = symbol.parse_string(tokens[1], parse_all=True).as_list()[0]
-                    symbol2 = symbol.parse_string(tokens[2], parse_all=True).as_list()[0]
-                except ParseException as pe:
-                    raise ParseSyntaxException(
-                        instring,
-                        _expr_error_loc(line, line_start, " ".join(tokens[1:3]), pe),
-                        f"invalid 'range' symbol: {pe.msg}",
-                        self,
-                    )
+                symbol1 = parse_range_symbol_token(tokens[1])
+                symbol2 = parse_range_symbol_token(tokens[2])
                 cond = None
                 if len(tokens) > 3:
                     if not tokens[3] == "if":
@@ -762,16 +790,28 @@ class KconfigOptionBlock(KconfigBlock):
                 current_loc += len(line) + 1  # +1 for \n
 
             elif tokens[0] == "option":
-                if not tokens[1].startswith("env="):
+                if tokens[1].startswith("env="):
+                    option_dict["option"].append(("env", tokens[1][5:-1]))
+                elif tokens[1] in ("defconfig_list", "allnoconfig_y"):
+                    # NOTE: both are dead functionality in ESP-IDF context.
+                    # FIXME: remove in the next major version.
+                    log.note(
+                        f"{escape(self.parser.file_stack[-1])}:{lineno(line_start, instring)}: "
+                        f"Deprecation notice: 'option {tokens[1]}' is deprecated. "
+                        "Support will be removed in a future major release."
+                    )
+                    option_dict["option"].append((tokens[1], None))
+                else:
                     raise ParseException(
                         instring,
                         line_start,
                         'Error parsing option block: option must be in a form "option env=<env_var>".',
                         self,
                     )
-                option = tokens[1][5:-1]
-                # Converting the option to default with the same semantics
-                option_dict["option"].append(option)
+                current_loc += len(line) + 1  # +1 for \n
+
+            elif tokens[0] == "optional":
+                option_dict["optional"] = True
                 current_loc += len(line) + 1  # +1 for \n
 
             elif tokens[0] == "warning":
@@ -910,14 +950,41 @@ class KconfigGrammar:
         ###########################
         # Although not a basic Kconfig syntax, some Kconfig files are using basic macros in the form of NAME := value.
         # This part adds support for this.
+        # The value is matched as raw text to the end of the line (like parser v1 does), so that it can also hold
+        # a preprocessor function call (e.g. "$(shell,echo hi)"), not just a plain literal or "$(ENV_VAR)"
+        # reference. Deprecated (function-call) forms are flagged in _macro_value_action below.
+        macro_value = Regex(r"[^\n]+").set_name("macro value")
+
+        def _macro_value_action(instring: str, loc: int, tokens: ParseResults) -> str:
+            val: str = tokens[0].strip()
+            if not _LEGACY_MACRO_VALUE_RE.fullmatch(val):
+                log.note(
+                    f"{escape(parser.file_stack[-1])}:{lineno(loc, instring)}: "
+                    "Deprecation notice: preprocessor macro value is not a simple literal. "
+                    "Preprocessor function calls (e.g. '$(shell,...)') are deprecated and will "
+                    "be rejected in a future major release."
+                )
+            return val
+
+        macro_value.set_parse_action(_macro_value_action)
+
         macro = (
             (
                 macro_name.set_results_name("name")
-                + one_of([":=", "="]).set_results_name("operation")
-                + symbol.set_results_name("value")
+                + one_of([":=", "+=", "="]).set_results_name("operation")
+                + macro_value.set_results_name("value")
             )
             .set_parse_action(parser.parse_macro)
             .set_name("macro definition")
+        )
+
+        # A macro call on its own line, e.g. "$(info,hello)" or "$(warning-if,y,oops)", used only for its
+        # side effects. Parser v1 accepts this; parser v2 accepts it as a deprecated construct.
+        macro_call = (
+            Regex(r"\$\([^\n]+")
+            .set_results_name("expr")
+            .set_parse_action(parser.parse_macro_call)
+            .set_name("bare preprocessor macro")
         )
 
         ###########################
@@ -984,9 +1051,9 @@ class KconfigGrammar:
         # Every entry should have the same indentation and optionally, an empty line in between two entries.
         # But e.g. lvgl does not follow any rules in their Kconfig files and thus,
         # formal specifications needs to be loosen.
-        entry_records = (config | menu | choice | source | menuconfig | if_entry | comment | macro).set_name(
-            "Kconfig entry"
-        )
+        entry_records = (
+            config | menu | choice | source | menuconfig | if_entry | comment | macro | macro_call
+        ).set_name("Kconfig entry")
         entries << ZeroOrMore(entry_records).set_results_name("entries")
 
         menu << (
