@@ -20,6 +20,20 @@
 </div>
 <hr>
 
+## v3.14.0 (2026-10-08)
+
+### ✨ New Features
+
+- resolve default value mismatches in menuconfig TUI *(Jan Beran - e3f8815)*
+
+### 🐛 Bug Fixes
+
+- **kconfiglib**: fix tokenizer splitting of bare alphanumeric tokens *(Jan Beran - 5a8d1b3)*
+- **kconfiglib**: strip inline comments from sdkconfig values *(Jan Beran - 54b0bcf)*
+- re-enable legacy preprocessor macro forms, print deprecation warning *(Jan Beran - 73176cf)*
+- re-enable legacy Kconfig keywords, print deprecation warning *(Jan Beran - 0fe7d43)*
+
+
 ## v3.13.0 (2026-09-04)
 
 ### ✨ New Features
