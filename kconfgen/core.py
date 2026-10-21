@@ -226,6 +226,31 @@ def write_json_menus(config: kconfiglib.Kconfig, filename: str, write_deprecated
     result: List = []
     node_lookup: Dict = {}
 
+    def _parse_range_bound(
+        bound: kconfiglib.Symbol,
+        sym: kconfiglib.Symbol,
+        node: kconfiglib.MenuNode,
+    ) -> Union[int, float]:
+        if sym.type == kconfiglib.FLOAT:
+            try:
+                return float(bound.str_value)
+            except ValueError:
+                log.warn(
+                    f"{escape(node.filename)}:{node.linenr}: range bound {escape(bound.name)} "
+                    f"on {escape(sym.name)} has invalid float value '{escape(bound.str_value)}', using 0.0"
+                )
+                return 0.0
+
+        base = 16 if sym.type == kconfiglib.HEX else 10
+        try:
+            return int(bound.str_value, base)
+        except ValueError:
+            log.warn(
+                f"{escape(node.filename)}:{node.linenr}: range bound {escape(bound.name)} "
+                f"on {escape(sym.name)} has invalid base-{base} value '{escape(bound.str_value)}', using 0"
+            )
+            return 0
+
     def write_node(node: kconfiglib.MenuNode) -> None:
         try:
             json_parent = node_lookup[node.parent]["children"]
@@ -269,17 +294,10 @@ def write_json_menus(config: kconfiglib.Kconfig, filename: str, write_deprecated
             if len(sym.ranges) > 0:
                 for min_range, max_range, cond_expr in sym.ranges:
                     if kconfiglib.expr_value(cond_expr):
-                        if sym.type == kconfiglib.FLOAT:
-                            greatest_range = [
-                                float(min_range.str_value),
-                                float(max_range.str_value),
-                            ]
-                        else:
-                            base = 16 if sym.type == kconfiglib.HEX else 10
-                            greatest_range = [
-                                int(min_range.str_value, base),
-                                int(max_range.str_value, base),
-                            ]
+                        greatest_range = [
+                            _parse_range_bound(min_range, sym, node),
+                            _parse_range_bound(max_range, sym, node),
+                        ]
                         break
 
             new_json = {
