@@ -222,6 +222,33 @@ class TestJsonMenus(KconfgenBaseTestCase):
     def test_float_ranges(self, runner):
         runner(self.args, FLOAT_SNIPPET, r'"range":\s+\[\s+0\.5,\s+2\.5\s+\]', test="regex")
 
+    def test_inactive_symbol_range_bound(self, runner):
+        in_text = """
+        mainmenu "Test"
+
+            config TARGET_C3
+                bool
+                default n
+
+            if TARGET_C3
+                config MAX_GPIO
+                    int
+                    default 21
+            endif
+
+            config PIN_NUM
+                int "Pin number"
+                default 10
+                range -1 MAX_GPIO
+
+            config FLOAT_BOUND_PIN
+                float "Float pin"
+                default 0.0
+                range -1.5 UNDEFINED_FLOAT_BOUND
+        """
+        runner(self.args, in_text, r'"range":\s+\[\s+-1,\s+0\s+\]', test="regex")
+        runner(self.args, in_text, r'"range":\s+\[\s+-1\.5,\s+0\.0\s+\]', test="regex")
+
 
 @pytest.mark.parametrize("set_parser_version", KCONFIG_PARSER_VERSIONS, indirect=True)
 class TestConfig(KconfgenBaseTestCase):
