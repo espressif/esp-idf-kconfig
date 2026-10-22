@@ -16,8 +16,9 @@ _KCONFIGS_PATH = os.path.join(_TEST_FILES_PATH, "kconfigs")
 
 
 class TestBase:
+    @staticmethod
     @pytest.fixture(scope="class", autouse=True)
-    def version(self, request: pytest.FixtureRequest) -> Generator[None, None, None]:
+    def version(request: pytest.FixtureRequest) -> Generator[None, None, None]:
         os.environ["KCONFIG_PARSER_VERSION"] = request.param
         yield
         del os.environ["KCONFIG_PARSER_VERSION"]

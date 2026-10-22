@@ -47,8 +47,9 @@ def _make_state(kconf: "Kconfig") -> MenuConfigState:
 
 
 class MenuconfigTestBase:
+    @staticmethod
     @pytest.fixture(scope="class", autouse=True)
-    def version(self, request):
+    def version(request):
         # Set the KCONFIG_PARSER_VERSION environment variable
         version = request.param
         os.environ["KCONFIG_PARSER_VERSION"] = version

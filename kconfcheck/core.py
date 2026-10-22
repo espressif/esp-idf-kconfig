@@ -46,6 +46,20 @@ LINE_ERROR_RULES = [
 ]
 
 
+def _common_prefix(first: str, second: str) -> str:
+    """
+    Return the longest common leading substring of two strings.
+
+    Replacement for os.path.commonprefix(), which is deprecated since Python 3.15.
+    """
+    length = 0
+    for a, b in zip(first, second):
+        if a != b:
+            break
+        length += 1
+    return first[:length]
+
+
 class InputError(RuntimeError):
     """
     Represents and error on the input
@@ -422,8 +436,7 @@ class IndentAndNameChecker(BaseChecker):
             elif self.prefix_stack[-1] is None:
                 self.prefix_stack[-1] = name
             else:
-                # this has nothing common with paths but the algorithm can be used for this also
-                self.prefix_stack[-1] = os.path.commonprefix([self.prefix_stack[-1], name])
+                self.prefix_stack[-1] = _common_prefix(self.prefix_stack[-1], name)
             if self.debug:
                 log.debug(f"prefix+ {self.prefix_stack}")
         m = self.re_new_stack.search(line)

@@ -335,8 +335,9 @@ class TestReplace:
     Original Kconfig should be modified instead of creating new file.
     """
 
+    @staticmethod
     @pytest.fixture(scope="class")
-    def data(_):
+    def data():
         data = DataTestReplace()
         test_files_path = os.path.join(os.path.dirname(__file__))
         data.ORIGINAL = os.path.join(test_files_path, "Kconfig")
@@ -383,8 +384,9 @@ class DataSDKConfigRename:
 
 
 class TestSDKConfigRename:
+    @staticmethod
     @pytest.fixture(scope="class")
-    def data(_):
+    def data():
         data = DataSDKConfigRename()
         current_path = os.path.abspath(os.path.dirname(__file__))
         data.correct_sdkconfigs = os.path.join(current_path, "sdkconfigs", "correct")

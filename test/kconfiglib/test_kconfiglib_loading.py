@@ -16,8 +16,9 @@ SDKCONFIGS_PATH = os.path.join(TEST_FILES_PATH, "sdkconfigs")
 
 
 class TestBase:
+    @staticmethod
     @pytest.fixture(scope="class", autouse=True)
-    def version(self, request):
+    def version(request):
         # Set the KCONFIG_PARSER_VERSION environment variable
         version = request.param
         os.environ["KCONFIG_PARSER_VERSION"] = version
@@ -32,8 +33,9 @@ class TestDefaultsBase(TestBase):
     It sets the KCONFIG_PARSER_VERSION environment variable based on the test parameter.
     """
 
+    @staticmethod
     @pytest.fixture(scope="class")
-    def policy(self, request):
+    def policy(request):
         # Set the KCONFIG_DEFAULTS_POLICY environment variable
         policy = request.param
         os.environ["KCONFIG_DEFAULTS_POLICY"] = policy

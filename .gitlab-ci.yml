@@ -37,7 +37,8 @@ workflow:
     - internet
   parallel:
     matrix:
-      - PYTHON_VERSION: ["3.8", "3.14"]
+      # test only oldest and newest Python supported
+      - PYTHON_VERSION: ["3.8", "3.15"]
   variables:
     RUN_TESTS: "coverage run -m pytest -vv"
     COVERAGE_PROCESS_START: "${CI_PROJECT_DIR}/pyproject.toml"
