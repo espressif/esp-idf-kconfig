@@ -39,8 +39,9 @@ class ConfigTargetVisibilityTestCase:
 
 @pytest.mark.parametrize("setup_class", [1, 2], indirect=True)
 class TestConfigTargetVisibilityChipA(ConfigTargetVisibilityTestCase):
+    @staticmethod
     @pytest.fixture(scope="class", autouse=True)
-    def setup_chip(self):
+    def setup_chip():
         os.environ["IDF_TARGET"] = "chipa"
         os.environ["ENV_SET_FOR_TEST"] = "chipa"
 
@@ -107,8 +108,9 @@ class TestConfigTargetVisibilityChipA(ConfigTargetVisibilityTestCase):
 
 @pytest.mark.parametrize("setup_class", [1, 2], indirect=True)
 class TestConfigTargetVisibilityChipB(ConfigTargetVisibilityTestCase):
+    @staticmethod
     @pytest.fixture(scope="class", autouse=True)
-    def setup_chip(self):
+    def setup_chip():
         os.environ["IDF_TARGET"] = "chipb"
         os.environ["ENV_SET_FOR_TEST"] = "chipa"
 

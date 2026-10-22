@@ -29,8 +29,9 @@ def data():
 
 @pytest.mark.parametrize("prepare", (1, 2), indirect=True)
 class TestDocOutput:
+    @staticmethod
     @pytest.fixture(scope="class", autouse=True)
-    def prepare(_, data, request):
+    def prepare(data, request):
         os.environ["IDF_TARGET"] = "chipa"
         data.target = os.environ["IDF_TARGET"]
         data.config = kconfiglib.Kconfig("Kconfig", parser_version=request.param)
