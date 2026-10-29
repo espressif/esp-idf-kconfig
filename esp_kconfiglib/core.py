@@ -3899,11 +3899,13 @@ class Kconfig(object):
                 depend_on(sym, high)
                 depend_on(sym, cond)
 
-            for _, cond, source in sym.rev_values:
+            for value, cond, source in sym.rev_values:
+                depend_on(sym, value)
                 depend_on(sym, cond)
                 depend_on(sym, source)
 
-            for _, cond, source in sym.weak_rev_values:
+            for value, cond, source in sym.weak_rev_values:
+                depend_on(sym, value)
                 depend_on(sym, cond)
                 depend_on(sym, source)
 
@@ -5031,13 +5033,12 @@ class Symbol:
                 src: "Symbol"
                 candidate_val, cond, src = rev_value
                 if expr_value(cond):
-                    if _is_base_n(candidate_val.name, base):
-                        val = candidate_val.name
+                    if _is_base_n(candidate_val.str_value, base):
+                        val = candidate_val.str_value
                         val_num_int = int(val, base)
                         self._write_to_conf = True
                         self._has_active_indirect_set = True
                     else:
-                        num2str = str if base == 10 else hex
                         log.note(
                             f"indirectly set value {candidate_val.str_value} on "
                             f"{escape(self.name_and_loc)} (by {escape(src.name_and_loc)}) "
@@ -5074,14 +5075,13 @@ class Symbol:
                 for weak_rev_value in self.weak_rev_values:
                     candidate_val, cond, src = weak_rev_value
                     if expr_value(cond) and expr_value(self.direct_dep):
-                        if _is_base_n(candidate_val.name, base):
-                            val = candidate_val.name
+                        if _is_base_n(candidate_val.str_value, base):
+                            val = candidate_val.str_value
                             val_num_int = int(val, base)
                             self._write_to_conf = True
                         else:
-                            num2str = str if base == 10 else hex
                             log.note(
-                                f"indirectly set value {num2str(candidate_val)} on "
+                                f"indirectly set value {candidate_val.str_value} on "
                                 f"{escape(self.name_and_loc)} (by {escape(src.name_and_loc)}) "
                                 f"is not a valid base {base} number."
                             )
@@ -5195,8 +5195,8 @@ class Symbol:
             for rev_value in self.rev_values:
                 candidate_val, cond, src = rev_value
                 if expr_value(cond):
-                    if is_float(candidate_val.name):
-                        val = _normalize_float(candidate_val.name)
+                    if is_float(candidate_val.str_value):
+                        val = _normalize_float(candidate_val.str_value)
                         val_num_float = float(val)
                         self._write_to_conf = True
                         self._has_active_indirect_set = True
@@ -5236,8 +5236,8 @@ class Symbol:
                 for weak_rev_value in self.weak_rev_values:
                     candidate_val, cond, src = weak_rev_value
                     if expr_value(cond) and expr_value(self.direct_dep):
-                        if is_float(candidate_val.name):
-                            val = _normalize_float(candidate_val.name)
+                        if is_float(candidate_val.str_value):
+                            val = _normalize_float(candidate_val.str_value)
                             val_num_float = float(val)
                             self._write_to_conf = True
                         else:

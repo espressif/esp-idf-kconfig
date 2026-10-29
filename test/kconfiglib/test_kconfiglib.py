@@ -213,3 +213,30 @@ class TestHelpTextIsLiteral:
             "# Another comment-looking line, after a blank line.\n"
             "Second paragraph."
         )
+
+
+class TestIndirectSetWithSymbolValue:
+    """
+    Changing the source value at runtime is not covered by IndirectValueSetSymbol.in/.out fixtures.
+    """
+
+    @pytest.mark.parametrize("version", ["1", "2"])
+    @pytest.mark.parametrize(
+        "src, dst, new_value",
+        [
+            ("SRC_INT", "DST_INT", "33"),
+            ("SRC_HEX", "DST_HEX", "0x21"),
+            ("SRC_FLOAT", "DST_FLOAT", "3.5"),
+            ("SRC_STR", "DST_STR", "new"),
+            ("SRC_INT", "WEAK_DST_INT", "33"),
+            ("SRC_HEX", "WEAK_DST_HEX", "0x21"),
+            ("SRC_FLOAT", "WEAK_DST_FLOAT", "3.5"),
+            ("SRC_STR", "WEAK_DST_STR", "new"),
+        ],
+    )
+    def test_target_follows_source_change(self, monkeypatch, version, src, dst, new_value):
+        monkeypatch.setenv("KCONFIG_PARSER_VERSION", version)
+        config = Kconfig(os.path.join(TESTS_PATH_OK, "IndirectValueSetSymbol.in"))
+        assert config.syms[dst].str_value == config.syms[src].str_value
+        config.syms[src].set_value(new_value)
+        assert config.syms[dst].str_value == new_value
