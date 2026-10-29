@@ -114,10 +114,9 @@ def node_str(
             elif sym.has_active_default_value():
                 s += _default_value_annotation(sym, kconf)
 
-            for _, cond, source in sym.rev_values:
-                if expr_value(cond):
-                    s += f" (force-set by {source.name})"
-                    break
+            active_set = sym.active_indirect_set
+            if active_set is not None and sym.has_active_indirect_set:
+                s += f" (force-set by {active_set[2].name})"
 
     if isinstance(node.item, Choice) and node.item.bool_value == _VAL_Y:
         choice = node.item
@@ -812,16 +811,21 @@ def _set_info(sym: Symbol, kconf: Kconfig) -> str:
     active_weak_indirects = []
     inactive_weak_indirects = []
 
-    for val, cond, src in sym.rev_values:
-        entry = f"- {val.name} {cond_str(cond)} (by symbol {src.name})\n"
-        if expr_value(cond):
+    # Only the option which actually provides the value is active
+    active_set = sym.active_indirect_set
+
+    for rev_value in sym.rev_values:
+        val, cond, src = rev_value
+        entry = f"- {_expr_str(val)} {cond_str(cond)} (by symbol {src.name})\n"
+        if rev_value is active_set:
             active_indirects.append(entry)
         else:
             inactive_indirects.append(entry)
 
-    for val, cond, src in sym.weak_rev_values:
-        entry = f"- {val.name} {cond_str(cond)} (by symbol {src.name})\n"
-        if expr_value(cond):
+    for weak_rev_value in sym.weak_rev_values:
+        val, cond, src = weak_rev_value
+        entry = f"- {_expr_str(val)} {cond_str(cond)} (by symbol {src.name})\n"
+        if weak_rev_value is active_set:
             active_weak_indirects.append(entry)
         else:
             inactive_weak_indirects.append(entry)

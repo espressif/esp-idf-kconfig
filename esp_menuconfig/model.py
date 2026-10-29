@@ -250,7 +250,7 @@ class MenuConfigState:
             return False
 
         if isinstance(sc, Symbol) and sc.orig_type in (STRING, INT, HEX, FLOAT):
-            return not sc._has_active_indirect_set
+            return not sc.has_active_indirect_set
 
         return len(sc.assignable) > 1 or _is_y_mode_choice_sym(sc)
 

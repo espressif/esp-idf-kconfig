@@ -1,0 +1,19 @@
+mainmenu "Test set and set default options with a symbol as the value"
+
+    config VALUE_SOURCE
+        int "Value source"
+        default 22
+
+    config SET_SOURCE
+        bool "Set option source"
+        default y
+        set SET_TARGET=VALUE_SOURCE
+        set default SET_DEFAULT_TARGET=VALUE_SOURCE
+
+    config SET_TARGET
+        int "Set option target"
+        default 0
+
+    config SET_DEFAULT_TARGET
+        int "Set default option target"
+        default 0
