@@ -1,0 +1,2 @@
+SOURCE has 'set' option with the bool symbol BOOL_TARGET as its target, which is only supported for non-bool symbols - option ignored
+SOURCE has 'set default' option with the bool symbol WEAK_BOOL_TARGET as its target, which is only supported for non-bool symbols - option ignored

@@ -1,0 +1,79 @@
+mainmenu "Test set and set default with a symbol value whose dependencies are not satisfied"
+
+    config SRC_ENABLED
+        bool "Enable source symbols"
+        default y
+
+    config SRC_INT
+        int "src int"
+        depends on SRC_ENABLED
+        default 22
+
+    config SRC_HEX
+        hex "src hex"
+        depends on SRC_ENABLED
+        default 0x16
+
+    config SRC_FLOAT
+        float "src float"
+        depends on SRC_ENABLED
+        default 2.5
+
+    config SRC_STR
+        string "src str"
+        depends on SRC_ENABLED
+        default "src"
+
+    config APPLY_SET
+        bool
+        default y
+        set DST_INT=SRC_INT
+        set DST_HEX=SRC_HEX
+        set DST_FLOAT=SRC_FLOAT
+        set DST_STR=SRC_STR
+        set NEXT_DST_INT=SRC_INT
+        set NEXT_DST_INT=99
+
+    config APPLY_SET_DEFAULT
+        bool
+        default y
+        set default WEAK_DST_INT=SRC_INT
+        set default WEAK_DST_HEX=SRC_HEX
+        set default WEAK_DST_FLOAT=SRC_FLOAT
+        set default WEAK_DST_STR=SRC_STR
+
+    config DST_INT
+        int "dst int"
+        default 7
+
+    config DST_HEX
+        hex "dst hex"
+        default 0x7
+
+    config DST_FLOAT
+        float "dst float"
+        default 1.0
+
+    config DST_STR
+        string "dst str"
+        default "dst"
+
+    config NEXT_DST_INT
+        int "next dst int"
+        default 7
+
+    config WEAK_DST_INT
+        int "weak dst int"
+        default 7
+
+    config WEAK_DST_HEX
+        hex "weak dst hex"
+        default 0x7
+
+    config WEAK_DST_FLOAT
+        float "weak dst float"
+        default 1.0
+
+    config WEAK_DST_STR
+        string "weak dst str"
+        default "dst"

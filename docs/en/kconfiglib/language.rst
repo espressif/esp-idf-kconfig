@@ -558,7 +558,7 @@ Example for ``select`` and ``imply``:
 The ``set`` and ``set default`` Options
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-The ``set`` and ``set default`` options allow you to define reverse dependency between a ``bool``-type source symbol and non-``bool`` (``int``, ``string``, ``hex``) target symbol. Let's suppose you have a ``bool``-type symbol ``SOURCE`` and non-``bool`` symbol ``TARGET``. You want to set a value for ``TARGET`` based on the value of ``SOURCE``. Reverse dependency means that the relation between ``SOURCE`` and ``TARGET`` is defined in the ``SOURCE`` config definition.
+The ``set`` and ``set default`` options allow you to define reverse dependency between a ``bool``-type source symbol and non-``bool`` (``int``, ``string``, ``hex``, ``float``) target symbol. Let's suppose you have a ``bool``-type symbol ``SOURCE`` and non-``bool`` symbol ``TARGET``. You want to set a value for ``TARGET`` based on the value of ``SOURCE``. Reverse dependency means that the relation between ``SOURCE`` and ``TARGET`` is defined in the ``SOURCE`` config definition.
 
 The ``set`` option ignores direct dependencies and defaults of the target symbol, the ``set default`` option does not.
 
@@ -571,6 +571,8 @@ Although ``TARGET`` symbol can be of ``int``, ``string``, ``hex`` or ``float`` t
 .. note::
 
     Both parsers warn when ``set`` or ``set default`` is used on a non-``bool`` source symbol and ignore the option. However, due to a different parsing strategy in parser v1, the warning is only emitted if the type keyword (e.g. ``int``) appears **before** ``set`` in the source file. If the type is declared after ``set``, parser v1 will silently ignore the option without a warning. To avoid this, always declare the type before any ``set`` or ``set default`` options.
+
+    Similarly, ``set`` or ``set default`` options with a ``bool``-type target symbol are reported and ignored. The target type is checked once all Kconfig files are parsed, so the target symbol can be defined anywhere.
 
 This option can be used in the following entries (optionally, multiple times):
 
@@ -619,6 +621,34 @@ Example for ``set`` and ``set default``:
         # These cannot be changed by the user.
         set SHIP_NAME="USS Enterprise NCC-1701"
         set NUMBER_OF_MOTORS=2
+
+If the right-hand side of the assignment is a symbol, the current value of that symbol is used and the target symbol is updated whenever the value changes. Such an option takes effect only if the right-hand side symbol is available, i.e. its direct dependencies (``depends on``) are satisfied. In other words, ``set TARGET=VALUE_SYMBOL`` defined in ``SOURCE`` behaves as ``set TARGET=VALUE_SYMBOL if SOURCE && <VALUE_SYMBOL is available>``.
+
+.. note::
+
+    If the value of a ``set`` or ``set default`` option is not available, or it is not valid for the type of the target symbol (e.g. a string for an ``int`` target), the option is treated as if its condition was false: the next ``set`` (or ``set default``) option for the target symbol is used, or, if there is none, the target falls back to its user-set value (``set`` only) and defaults as usual. Invalid values are reported in the log.
+
+.. code-block:: kconfig
+
+    config PIN_OVERRIDE_ENABLED
+        bool "Override the pin"
+        default n
+
+    config PIN_OVERRIDE
+        int "Overridden pin number"
+        depends on PIN_OVERRIDE_ENABLED
+        default 22
+
+    config APPLY_PIN_OVERRIDE
+        bool
+        default y
+        # TARGET_PIN is set to the value of PIN_OVERRIDE only if PIN_OVERRIDE_ENABLED is enabled,
+        # otherwise, the user-set value or default value of TARGET_PIN is used.
+        set TARGET_PIN=PIN_OVERRIDE
+
+    config TARGET_PIN
+        int "Target pin number"
+        default 7
 
 The ``default`` Option
 ^^^^^^^^^^^^^^^^^^^^^^

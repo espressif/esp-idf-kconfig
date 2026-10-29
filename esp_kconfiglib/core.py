@@ -4213,6 +4213,11 @@ class Kconfig(object):
                             f"{target_sym.name}, which is not bool"
                         )
 
+                # "set"/"set default" targets must be non-bool. The type of the target is not necessarily
+                # known when the option is parsed (it may be defined later), so it is checked here.
+                if sym.rev_values or sym.weak_rev_values:
+                    _remove_bool_set_target(sym)
+
             elif sym.orig_type:  # STRING/INT/HEX/FLOAT
                 for default, _ in sym.defaults:
                     if type(default) is not Symbol:
@@ -4399,6 +4404,7 @@ class Symbol:
         "_present_in_current_sdkconfig",
         "_write_to_conf",
         "_has_active_indirect_set",
+        "_active_indirect_set",
         "_is_deprecated",
         "_user_source",
         "_default_value_injected",
@@ -4542,6 +4548,13 @@ class Symbol:
             active -> we cannot use them as an indicator anymore).
         """
         self._has_active_indirect_set = False
+
+        """
+        _active_indirect_set:
+            The (value, cond, src) tuple from rev_values or weak_rev_values which provides the current value of
+            the symbol, or None. Like _has_active_indirect_set, it is a by-product of evaluating str_value.
+        """
+        self._active_indirect_set: Optional[Tuple["Symbol", Any, "Symbol"]] = None
 
         """
         orig_type:
@@ -4992,6 +5005,8 @@ class Symbol:
             return self.name
 
         val = ""
+        # The "set"/"set default" option (entry of rev_values/weak_rev_values) providing the value, if any
+        active_set: Optional[Tuple["Symbol", Any, "Symbol"]] = None
         # Warning: See Symbol._rec_invalidate(), and note that this is a hidden
         # function call (property magic)
         vis = self.visibility
@@ -5032,19 +5047,20 @@ class Symbol:
             for rev_value in self.rev_values:
                 src: "Symbol"
                 candidate_val, cond, src = rev_value
-                if expr_value(cond):
+                # Invalid or unavailable values make the option inactive; try the next one
+                if expr_value(cond) and _set_value_available(candidate_val):
                     if _is_base_n(candidate_val.str_value, base):
                         val = candidate_val.str_value
                         val_num_int = int(val, base)
                         self._write_to_conf = True
                         self._has_active_indirect_set = True
-                    else:
-                        log.note(
-                            f"indirectly set value {candidate_val.str_value} on "
-                            f"{escape(self.name_and_loc)} (by {escape(src.name_and_loc)}) "
-                            f"is not a valid base {base} number."
-                        )
-                    break
+                        active_set = rev_value
+                        break
+                    log.note(
+                        f"indirectly set value {candidate_val.str_value} on "
+                        f"{escape(self.name_and_loc)} (by {escape(src.name_and_loc)}) "
+                        f"is not a valid base {base} number."
+                    )
             else:
                 self._has_active_indirect_set = False
 
@@ -5074,18 +5090,18 @@ class Symbol:
                 # Like imply: only apply when the target's direct dependencies are met
                 for weak_rev_value in self.weak_rev_values:
                     candidate_val, cond, src = weak_rev_value
-                    if expr_value(cond) and expr_value(self.direct_dep):
+                    if expr_value(cond) and expr_value(self.direct_dep) and _set_value_available(candidate_val):
                         if _is_base_n(candidate_val.str_value, base):
                             val = candidate_val.str_value
                             val_num_int = int(val, base)
                             self._write_to_conf = True
-                        else:
-                            log.note(
-                                f"indirectly set value {candidate_val.str_value} on "
-                                f"{escape(self.name_and_loc)} (by {escape(src.name_and_loc)}) "
-                                f"is not a valid base {base} number."
-                            )
-                        break
+                            active_set = weak_rev_value
+                            break
+                        log.note(
+                            f"indirectly set value {candidate_val.str_value} on "
+                            f"{escape(self.name_and_loc)} (by {escape(src.name_and_loc)}) "
+                            f"is not a valid base {base} number."
+                        )
                     else:
                         val_num_int = 0  # strtoll() on empty string
 
@@ -5124,6 +5140,12 @@ class Symbol:
                             f"{num2str(clamp)} due to being outside the active range "
                             f"([{num2str(low_int)}, {num2str(high_int)}])"
                         )
+                    elif active_set is not None:
+                        log.note(
+                            f"indirectly set value {num2str(val_num_int)} on {escape(self.name_and_loc)} "
+                            f"(by {escape(active_set[2].name_and_loc)}) clamped to {num2str(clamp)} due to "
+                            f"being outside the active range ([{num2str(low_int)}, {num2str(high_int)}])"
+                        )
 
         elif self.orig_type == STRING:
             # Precedence (if step does not apply, go to next step):
@@ -5136,10 +5158,11 @@ class Symbol:
             # 1) Apply rev_values (force-set) if any
             for rev_value in self.rev_values:
                 candidate_val, cond, _ = rev_value
-                if expr_value(cond):
+                if expr_value(cond) and _set_value_available(candidate_val):
                     val = candidate_val.str_value
                     self._write_to_conf = True
                     self._has_active_indirect_set = True
+                    active_set = rev_value
                     break
             else:
                 self._has_active_indirect_set = False
@@ -5152,14 +5175,15 @@ class Symbol:
                     # Like imply: only apply when the target's direct dependencies are met
                     for weak_rev_value in self.weak_rev_values:
                         candidate_val, cond, _ = weak_rev_value
-                        if expr_value(cond) and expr_value(self.direct_dep):
+                        if expr_value(cond) and expr_value(self.direct_dep) and _set_value_available(candidate_val):
                             val = candidate_val.str_value
                             # same as imply; if weakly set, it is written to .config even if not visible
                             self._write_to_conf = True
+                            active_set = weak_rev_value
                             break
-                    # Otherwise, look at defaults
-                    # 4) Apply defaults if any
-                    if not val:
+                    else:
+                        # Otherwise, look at defaults; an empty weakly set value is a valid value
+                        # 4) Apply defaults if any
                         for sym, cond in self.defaults:
                             if expr_value(cond):
                                 val = sym.str_value
@@ -5194,18 +5218,19 @@ class Symbol:
             # 2) Apply rev_values (force-set) if any
             for rev_value in self.rev_values:
                 candidate_val, cond, src = rev_value
-                if expr_value(cond):
+                # Invalid or unavailable values make the option inactive; try the next one
+                if expr_value(cond) and _set_value_available(candidate_val):
                     if is_float(candidate_val.str_value):
                         val = _normalize_float(candidate_val.str_value)
                         val_num_float = float(val)
                         self._write_to_conf = True
                         self._has_active_indirect_set = True
-                    else:
-                        log.note(
-                            f"indirectly set value {candidate_val.str_value} on "
-                            f"{escape(self.name_and_loc)} (by {escape(src.name_and_loc)}) is not a valid float."
-                        )
-                    break
+                        active_set = rev_value
+                        break
+                    log.note(
+                        f"indirectly set value {candidate_val.str_value} on "
+                        f"{escape(self.name_and_loc)} (by {escape(src.name_and_loc)}) is not a valid float."
+                    )
             else:
                 self._has_active_indirect_set = False
 
@@ -5235,17 +5260,17 @@ class Symbol:
                 # Like imply: only apply when the target's direct dependencies are met
                 for weak_rev_value in self.weak_rev_values:
                     candidate_val, cond, src = weak_rev_value
-                    if expr_value(cond) and expr_value(self.direct_dep):
+                    if expr_value(cond) and expr_value(self.direct_dep) and _set_value_available(candidate_val):
                         if is_float(candidate_val.str_value):
                             val = _normalize_float(candidate_val.str_value)
                             val_num_float = float(val)
                             self._write_to_conf = True
-                        else:
-                            log.note(
-                                f"indirectly set value {candidate_val.str_value} on "
-                                f"{escape(self.name_and_loc)} (by {escape(src.name_and_loc)}) is not a valid float."
-                            )
-                        break
+                            active_set = weak_rev_value
+                            break
+                        log.note(
+                            f"indirectly set value {candidate_val.str_value} on "
+                            f"{escape(self.name_and_loc)} (by {escape(src.name_and_loc)}) is not a valid float."
+                        )
                     else:
                         val_num_float = 0.0
 
@@ -5281,6 +5306,12 @@ class Symbol:
                             f"{float_clamp} due to being outside the active range "
                             f"([{low_float}, {high_float}])"
                         )
+                    elif active_set is not None:
+                        log.note(
+                            f"indirectly set value {val_num_float} on {escape(self.name_and_loc)} "
+                            f"(by {escape(active_set[2].name_and_loc)}) clamped to {float_clamp} due to "
+                            f"being outside the active range ([{low_float}, {high_float}])"
+                        )
 
         # env_var corresponds to SYMBOL_AUTO in the C implementation, and is
         # also set on the defconfig_list symbol there. Test for the
@@ -5290,6 +5321,7 @@ class Symbol:
         if self.env_var is not None or self is self.kconfig.defconfig_list:
             self._write_to_conf = False
 
+        self._active_indirect_set = active_set
         self._cached_str_val = val
         return val
 
@@ -5482,6 +5514,31 @@ class Symbol:
         """
         return self.name + " " + _locs(self)
 
+    @property
+    def has_active_indirect_set(self) -> bool:
+        """
+        True if a "set" option currently takes effect on this symbol.
+
+        The underlying flag is a by-product of evaluating str_value and is not reset by invalidation,
+        so the value is (re)evaluated first to avoid returning a stale result.
+        """
+        self.str_value
+        return bool(self._has_active_indirect_set)
+
+    @property
+    def active_indirect_set(self) -> Optional[Tuple["Symbol", Any, "Symbol"]]:
+        """
+        The "set"/"set default" option which currently provides the value of this symbol, as the
+        (value, cond, src) tuple from rev_values or weak_rev_values (the same object, so it can be compared
+        with "is"), or None if the value does not come from any of them.
+
+        At most one option provides the value: the first force-set ("set") option whose condition is
+        satisfied and whose value is available and valid; if there is none and the user value is not used,
+        the first such "set default" option. Like has_active_indirect_set, the value is (re)evaluated first.
+        """
+        self.str_value
+        return self._active_indirect_set
+
     def has_active_default_value(self) -> bool:
         """
         Symbol has default value if:
@@ -5493,7 +5550,7 @@ class Symbol:
         return (
             all(node.prompt is None for node in self.nodes)  # promptless symbols always have default value
             or (
-                (self._user_value is None or self._has_active_indirect_set)
+                (self._user_value is None or self.has_active_indirect_set)
                 and self.orig_type
                 and ((not self.choice) or self.choice._user_selection is None)
             )
@@ -7638,6 +7695,51 @@ def _is_base_n(s, n):
         return True
     except ValueError:
         return False
+
+
+def _set_value_available(value: "Symbol") -> bool:
+    """
+    Return True if the value of a "set"/"set default" option can be used.
+
+    Literal values (constants, numbers and other undefined symbols) are always available. A defined
+    symbol is available only if its direct dependencies are satisfied; otherwise, the option is
+    treated as if its condition was false.
+    """
+    return value.is_constant or not value.orig_type or bool(expr_value(value.direct_dep))
+
+
+def _remove_bool_set_target(target: "Symbol") -> None:
+    """
+    Remove all "set"/"set default" options which have the bool symbol target as their target, reporting each
+    of them at the definition of the source symbol which contains it.
+
+    The options are removed from the target (rev_values, weak_rev_values) as well as from the source symbols
+    and their menu nodes (sets, weak_sets), so they are not shown e.g. in the Kconfig definition of the source.
+    """
+    # dict.fromkeys() keeps the order of the sources stable (and thus the order of the messages)
+    sources = dict.fromkeys(src for _, _, src in target.rev_values + target.weak_rev_values)
+    for src in sources:
+        for node in src.nodes:
+            for set_target, _, _ in node.sets:
+                if set_target is target:
+                    _note_bool_set_target(node, src, target, "set")
+            for set_target, _, _ in node.weak_sets:
+                if set_target is target:
+                    _note_bool_set_target(node, src, target, "set default")
+            node.sets = [set_ for set_ in node.sets if set_[0] is not target]
+            node.weak_sets = [set_ for set_ in node.weak_sets if set_[0] is not target]
+        src.sets = [set_ for set_ in src.sets if set_[0] is not target]
+        src.weak_sets = [set_ for set_ in src.weak_sets if set_[0] is not target]
+    target.rev_values.clear()
+    target.weak_rev_values.clear()
+
+
+def _note_bool_set_target(node: "MenuNode", src: "Symbol", target: "Symbol", kind: str) -> None:
+    log.note(
+        f"{escape(node.filename)}:{node.linenr}: "
+        f"{src.name} has '{kind}' option with the bool symbol {target.name} as its target, "
+        "which is only supported for non-bool symbols - option ignored"
+    )
 
 
 def _strip_inline_comment(val: str) -> str:

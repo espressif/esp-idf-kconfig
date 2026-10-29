@@ -1,0 +1,59 @@
+mainmenu "Test edge cases of set and set default options"
+
+    config VALUE_INT
+        int "Value outside of the target range"
+        default 100
+
+    config APPLY_SET
+        bool "Apply set options"
+        default y
+        set STR_TARGET=""
+        set INT_TARGET=VALUE_INT
+        set HEX_TARGET=0x100
+        set FLOAT_TARGET=10.5
+
+    config APPLY_SET_DEFAULT
+        bool "Apply set default options"
+        default y
+        set default WEAK_STR_TARGET=""
+        set default WEAK_INT_TARGET=VALUE_INT
+        set default WEAK_HEX_TARGET=0x100
+        set default WEAK_FLOAT_TARGET=10.5
+
+    config STR_TARGET
+        string "String target"
+        default "default"
+
+    config WEAK_STR_TARGET
+        string "Weak string target"
+        default "default"
+
+    config INT_TARGET
+        int "Int target"
+        range 0 10
+        default 5
+
+    config WEAK_INT_TARGET
+        int "Weak int target"
+        range 0 10
+        default 5
+
+    config HEX_TARGET
+        hex "Hex target"
+        range 0x0 0x10
+        default 0x5
+
+    config WEAK_HEX_TARGET
+        hex "Weak hex target"
+        range 0x0 0x10
+        default 0x5
+
+    config FLOAT_TARGET
+        float "Float target"
+        range 0.0 1.5
+        default 0.5
+
+    config WEAK_FLOAT_TARGET
+        float "Weak float target"
+        range 0.0 1.5
+        default 0.5
