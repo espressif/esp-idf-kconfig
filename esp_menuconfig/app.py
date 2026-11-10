@@ -86,10 +86,12 @@ class MenuConfigApp(App[str]):
         height: auto;
         align: right bottom;
         display: none;
+        visibility: hidden;
         margin: 0 1 2 0;
         overflow: hidden;
     }
     #mismatch-notice {
+        visibility: visible;
         width: auto;
         max-width: 50%;
         height: auto;
