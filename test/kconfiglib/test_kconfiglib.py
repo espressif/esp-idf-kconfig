@@ -213,3 +213,211 @@ class TestHelpTextIsLiteral:
             "# Another comment-looking line, after a blank line.\n"
             "Second paragraph."
         )
+
+
+class TestIndirectSetWithSymbolValue:
+    """
+    Changing the source value at runtime is not covered by IndirectValueSetSymbol.in/.out fixtures.
+    """
+
+    @pytest.mark.parametrize("version", ["1", "2"])
+    @pytest.mark.parametrize(
+        "src, dst, new_value",
+        [
+            ("SRC_INT", "DST_INT", "33"),
+            ("SRC_HEX", "DST_HEX", "0x21"),
+            ("SRC_FLOAT", "DST_FLOAT", "3.5"),
+            ("SRC_STR", "DST_STR", "new"),
+            ("SRC_INT", "WEAK_DST_INT", "33"),
+            ("SRC_HEX", "WEAK_DST_HEX", "0x21"),
+            ("SRC_FLOAT", "WEAK_DST_FLOAT", "3.5"),
+            ("SRC_STR", "WEAK_DST_STR", "new"),
+        ],
+    )
+    def test_target_follows_source_change(self, monkeypatch, version, src, dst, new_value):
+        monkeypatch.setenv("KCONFIG_PARSER_VERSION", version)
+        config = Kconfig(os.path.join(TESTS_PATH_OK, "IndirectValueSetSymbol.in"))
+        assert config.syms[dst].str_value == config.syms[src].str_value
+        config.syms[src].set_value(new_value)
+        assert config.syms[dst].str_value == new_value
+
+
+@pytest.mark.parametrize("version", ["1", "2"])
+class TestIndirectSetWithUnavailableSymbolValue:
+    """
+    "set DST=SRC" in APPLY behaves as "set DST=SRC if APPLY && <SRC is available>", where SRC is available
+    if its direct dependencies are satisfied. Otherwise, the option is inactive and the target falls back
+    to the next "set" option, user value or defaults.
+    """
+
+    KCONFIG = os.path.join(TEST_FILES_PATH, "kconfigs", "Kconfig.set_unavailable_source")
+
+    @pytest.mark.parametrize(
+        "dst, user_value, src_value",
+        [
+            ("DST_INT", "5", "22"),
+            ("DST_HEX", "0x5", "0x16"),
+            ("DST_FLOAT", "5.5", "2.5"),
+            ("DST_STR", "user", "src"),
+        ],
+    )
+    def test_set_falls_back_to_user_value(self, monkeypatch, version, dst, user_value, src_value):
+        monkeypatch.setenv("KCONFIG_PARSER_VERSION", version)
+        config = Kconfig(self.KCONFIG)
+        sym = config.syms[dst]
+        sym.set_value(user_value)
+        # Evaluate the target while "set" is active to check no state from this evaluation leaks
+        assert sym.str_value == src_value
+        assert sym._has_active_indirect_set
+
+        config.syms["SRC_ENABLED"].set_value("n")
+        assert sym.str_value == user_value
+        assert not sym._has_active_indirect_set
+
+        config.syms["SRC_ENABLED"].set_value("y")
+        assert sym.str_value == src_value
+
+    @pytest.mark.parametrize(
+        "dst, default_value, src_value",
+        [
+            ("WEAK_DST_INT", "7", "22"),
+            ("WEAK_DST_HEX", "0x7", "0x16"),
+            ("WEAK_DST_FLOAT", "1.0", "2.5"),
+            ("WEAK_DST_STR", "dst", "src"),
+        ],
+    )
+    def test_set_default_falls_back_to_default(self, monkeypatch, version, dst, default_value, src_value):
+        monkeypatch.setenv("KCONFIG_PARSER_VERSION", version)
+        config = Kconfig(self.KCONFIG)
+        sym = config.syms[dst]
+        assert sym.str_value == src_value
+
+        config.syms["SRC_ENABLED"].set_value("n")
+        assert sym.str_value == default_value
+
+    def test_next_set_applies(self, monkeypatch, version):
+        monkeypatch.setenv("KCONFIG_PARSER_VERSION", version)
+        config = Kconfig(self.KCONFIG)
+        sym = config.syms["NEXT_DST_INT"]
+        assert sym.str_value == "22"
+
+        config.syms["SRC_ENABLED"].set_value("n")
+        assert sym.str_value == "99"
+
+    def test_indirect_set_flag_not_stale(self, monkeypatch, version):
+        monkeypatch.setenv("KCONFIG_PARSER_VERSION", version)
+        config = Kconfig(self.KCONFIG)
+        sym = config.syms["DST_INT"]
+        sym.set_value("5")
+        assert sym.str_value == "22"
+        assert sym.has_active_indirect_set
+        assert sym.active_indirect_set is sym.rev_values[0]
+        assert sym.has_active_default_value()
+
+        # Deliberately do not read str_value before checking the flag
+        config.syms["SRC_ENABLED"].set_value("n")
+        assert not sym.has_active_indirect_set
+        assert sym.active_indirect_set is None
+        assert not sym.has_active_default_value()
+        assert sym.str_value == "5"
+
+    def test_active_set_default(self, monkeypatch, version):
+        monkeypatch.setenv("KCONFIG_PARSER_VERSION", version)
+        config = Kconfig(self.KCONFIG)
+        sym = config.syms["WEAK_DST_INT"]
+        assert sym.active_indirect_set is sym.weak_rev_values[0]
+        assert not sym.has_active_indirect_set
+
+        # User value takes precedence over "set default"
+        sym.set_value("5")
+        assert sym.active_indirect_set is None
+        assert sym.str_value == "5"
+
+
+@pytest.mark.parametrize("version", ["1", "2"])
+class TestIndirectSetEdgeCases:
+    """
+    Edge cases of "set"/"set default" options not covered by the fixtures in ok/ and warnings/.
+    """
+
+    KCONFIG = os.path.join(TEST_FILES_PATH, "kconfigs", "Kconfig.set_edge_cases")
+
+    @pytest.mark.parametrize("dst", ["STR_TARGET", "WEAK_STR_TARGET"])
+    def test_empty_string_value(self, monkeypatch, version, dst):
+        monkeypatch.setenv("KCONFIG_PARSER_VERSION", version)
+        config = Kconfig(self.KCONFIG)
+        assert config.syms[dst].str_value == ""
+
+        # Once the option is inactive, the default value is used again
+        config.syms["APPLY_SET" if dst == "STR_TARGET" else "APPLY_SET_DEFAULT"].set_value("n")
+        assert config.syms[dst].str_value == "default"
+        config.report.reset()
+
+    @pytest.mark.parametrize(
+        "dst, src, value, clamped, low, high",
+        [
+            ("INT_TARGET", "APPLY_SET", "100", "10", "0", "10"),
+            ("WEAK_INT_TARGET", "APPLY_SET_DEFAULT", "100", "10", "0", "10"),
+            ("HEX_TARGET", "APPLY_SET", "0x100", "0x10", "0x0", "0x10"),
+            ("WEAK_HEX_TARGET", "APPLY_SET_DEFAULT", "0x100", "0x10", "0x0", "0x10"),
+            ("FLOAT_TARGET", "APPLY_SET", "10.5", "1.5", "0.0", "1.5"),
+            ("WEAK_FLOAT_TARGET", "APPLY_SET_DEFAULT", "10.5", "1.5", "0.0", "1.5"),
+        ],
+    )
+    def test_out_of_range_value_is_clamped_and_logged(self, monkeypatch, version, dst, src, value, clamped, low, high):
+        monkeypatch.setenv("KCONFIG_PARSER_VERSION", version)
+        config = Kconfig(self.KCONFIG)
+        config.report.reset()
+        config.syms[dst]._invalidate()
+
+        assert config.syms[dst].str_value == clamped
+        notes = [m["message"] for m in config.report._log_cache if m["level"] == "note"]
+        assert any(
+            note.startswith(f"indirectly set value {value} on {dst} ")
+            and f"(by {src} " in note
+            and note.endswith(f"clamped to {clamped} due to being outside the active range ([{low}, {high}])")
+            for note in notes
+        ), notes
+        config.report.reset()
+
+    def test_bool_target_is_ignored(self, monkeypatch, version):
+        monkeypatch.setenv("KCONFIG_PARSER_VERSION", version)
+        config = Kconfig(os.path.join(TESTS_PATH_WARNINGS, "IndirectSetBoolTarget.in"))
+        for name in ("BOOL_TARGET", "WEAK_BOOL_TARGET"):
+            sym = config.syms[name]
+            assert sym.str_value == "n"
+            assert not sym.rev_values
+            assert not sym.weak_rev_values
+        # The ignored options are removed from the source as well
+        source = config.syms["SOURCE"]
+        assert not source.sets
+        assert not source.weak_sets
+        assert not source.nodes[0].sets
+        assert not source.nodes[0].weak_sets
+        config.report.reset()
+
+    def test_bool_target_reported_at_definition_with_set(self, monkeypatch, version):
+        monkeypatch.setenv("KCONFIG_PARSER_VERSION", version)
+        kconfig_path = os.path.join(TEST_FILES_PATH, "kconfigs", "Kconfig.set_bool_target_multidef")
+        config = Kconfig(kconfig_path)
+        source = config.syms["SOURCE"]
+        first, second = source.nodes
+
+        notes = [
+            m["message"]
+            for m in config.report._log_cache
+            if m["message"].startswith(second.filename) and "with the bool symbol BOOL_TARGET" in m["message"]
+        ]
+        assert len(notes) == 2
+        assert all(note.startswith(f"{second.filename}:{second.linenr}: ") for note in notes)
+        assert any("'set' option" in note for note in notes)
+        assert any("'set default' option" in note for note in notes)
+
+        # Only the options with the bool target are removed; the other "set" option still applies
+        assert [target.name for target, _, _ in source.sets] == ["INT_TARGET"]
+        assert [target.name for target, _, _ in first.sets] == ["INT_TARGET"]
+        assert not second.sets
+        assert not source.weak_sets
+        assert not second.weak_sets
+        assert config.syms["INT_TARGET"].str_value == "1"
+        config.report.reset()

@@ -1,0 +1,65 @@
+mainmenu "Test indirect set with a symbol as the value"
+
+    config SRC_INT
+        int "src int"
+        default 22
+
+    config SRC_HEX
+        hex "src hex"
+        default 0x16
+
+    config SRC_FLOAT
+        float "src float"
+        default 2.5
+
+    config SRC_STR
+        string "src str"
+        default "src"
+
+    config APPLY_SET
+        bool
+        default y
+        set DST_INT=SRC_INT
+        set DST_HEX=SRC_HEX
+        set DST_FLOAT=SRC_FLOAT
+        set DST_STR=SRC_STR
+
+    config APPLY_SET_DEFAULT
+        bool
+        default y
+        set default WEAK_DST_INT=SRC_INT
+        set default WEAK_DST_HEX=SRC_HEX
+        set default WEAK_DST_FLOAT=SRC_FLOAT
+        set default WEAK_DST_STR=SRC_STR
+
+    config DST_INT # Should be 22
+        int
+        default 7
+
+    config DST_HEX # Should be 0x16
+        hex
+        default 0x7
+
+    config DST_FLOAT # Should be 2.5
+        float
+        default 1.0
+
+    config DST_STR # Should be "src"
+        string
+        default "dst"
+
+    config WEAK_DST_INT # Should be 22
+        int
+        default 7
+
+    config WEAK_DST_HEX # Should be 0x16
+        hex
+        default 0x7
+
+    config WEAK_DST_FLOAT # Should be 2.5
+        float
+        default 1.0
+
+    config WEAK_DST_STR # Should be "src"
+        string
+        default "dst"

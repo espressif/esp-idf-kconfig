@@ -20,6 +20,7 @@ from esp_kconfiglib.core import _restore_default
 from esp_menuconfig import _needs_save
 from esp_menuconfig import menuconfig
 from esp_menuconfig import reload_sdkconfig_file
+from esp_menuconfig.formatting import _set_info
 from esp_menuconfig.formatting import mismatch_column_widths
 from esp_menuconfig.formatting import mismatch_format_row
 from esp_menuconfig.formatting import mismatch_notice_text
@@ -327,6 +328,118 @@ class TestIndirectlySetValues(MenuconfigTestBase):
         )
 
         menuconfig(kconfig, headless=True)
+
+    def test_set_info_shows_symbol_value(self) -> None:
+        """
+        Test if the symbol info shows the resolved value when "set"/"set default" is given a symbol.
+        """
+        kconfig = Kconfig(os.path.join(KCONFIGS_PATH, "Kconfig.indirect_sets_symbol"))
+
+        assert "- VALUE_SOURCE(=22) if SET_SOURCE(=y) (by symbol SET_SOURCE)" in _set_info(
+            kconfig.syms["SET_TARGET"], kconfig
+        )
+        assert "- VALUE_SOURCE(=22) if SET_SOURCE(=y) (by symbol SET_SOURCE)" in _set_info(
+            kconfig.syms["SET_DEFAULT_TARGET"], kconfig
+        )
+
+        kconfig.syms["VALUE_SOURCE"].set_value("33")
+        assert "- VALUE_SOURCE(=33) if SET_SOURCE(=y) (by symbol SET_SOURCE)" in _set_info(
+            kconfig.syms["SET_TARGET"], kconfig
+        )
+
+    def test_force_set_annotation_skips_inactive_set(self) -> None:
+        """
+        Test if the menu tree annotates a symbol as force-set only by a "set" option which takes effect.
+        """
+        kconfig = Kconfig(os.path.join(KCONFIGS_PATH, "Kconfig.indirect_sets_inactive"))
+
+        # The only "set" option has an unavailable value -> default value is used, no force-set annotation
+        skipped = kconfig.syms["DST_SKIPPED"]
+        assert skipped.str_value == "7"
+        assert "force-set" not in _node_str_wrapper(skipped.nodes[0])
+
+        # The first "set" option is skipped, the second one takes effect
+        fallthrough = kconfig.syms["DST_FALLTHROUGH"]
+        assert fallthrough.str_value == "9"
+        line = _node_str_wrapper(fallthrough.nodes[0])
+        assert "(force-set by SECOND_SOURCE)" in line
+        assert "FIRST_SOURCE" not in line
+
+        # Once the value becomes available, the first "set" option takes effect
+        kconfig.syms["VALUE_ENABLED"].set_value("y")
+        assert fallthrough.str_value == "5"
+        assert "(force-set by FIRST_SOURCE)" in _node_str_wrapper(fallthrough.nodes[0])
+        assert "(force-set by FIRST_SOURCE)" in _node_str_wrapper(skipped.nodes[0])
+
+    def test_changeable_after_set_becomes_inactive(self) -> None:
+        """
+        Test if a symbol becomes changeable once its "set" option stops taking effect, even if its value
+        was not re-evaluated in between.
+        """
+        kconfig = Kconfig(os.path.join(KCONFIGS_PATH, "Kconfig.indirect_sets_inactive"))
+        state = _make_state(kconfig)
+        sym = kconfig.syms["DST_SKIPPED"]
+
+        kconfig.syms["VALUE_ENABLED"].set_value("y")
+        assert sym.str_value == "5"
+        assert not state.changeable(sym.nodes[0])
+
+        # Deliberately do not read str_value before checking
+        kconfig.syms["VALUE_ENABLED"].set_value("n")
+        assert state.changeable(sym.nodes[0])
+
+    def test_set_info_set_default_unmet_dependencies(self) -> None:
+        """
+        Test if the symbol info marks a "set default" option as inactive when the direct dependencies
+        of its target are not satisfied.
+        """
+        kconfig = Kconfig(os.path.join(KCONFIGS_PATH, "Kconfig.indirect_sets_inactive"))
+        sym = kconfig.syms["DST_DEPS_UNMET"]
+        entry = "- 3 if SET_DEFAULT_SOURCE(=y) (by symbol SET_DEFAULT_SOURCE)\n"
+
+        info = _set_info(sym, kconfig)
+        assert f"Inactive indirectly weak set values for this symbol (via 'set' option):\n{entry}" in info
+        assert "Active indirectly weak set values" not in info
+
+        kconfig.syms["TARGET_DEPS_ENABLED"].set_value("y")
+        assert sym.str_value == "3"
+        info = _set_info(sym, kconfig)
+        assert f"Active indirectly weak set values for this symbol (via 'set' option):\n{entry}" in info
+        assert "Inactive indirectly weak set values" not in info
+
+    def test_set_info_only_first_applicable_set_active(self) -> None:
+        """
+        Test if the symbol info marks only the "set" option which provides the value as active, even if
+        the conditions of more of them are satisfied.
+        """
+        kconfig = Kconfig(os.path.join(KCONFIGS_PATH, "Kconfig.indirect_sets_inactive"))
+        sym = kconfig.syms["DST_TWO_SETS"]
+        assert sym.str_value == "1"
+        info = _set_info(sym, kconfig)
+        assert (
+            "Active indirectly set values for this symbol (via 'set' option):\n"
+            "- 1 if BOTH_SOURCE(=y) (by symbol BOTH_SOURCE)\n"
+            "Inactive indirectly set values for this symbol (via 'set' option):\n"
+            "- 2 if BOTH_SOURCE(=y) (by symbol BOTH_SOURCE)\n"
+        ) in info
+
+    def test_set_info_set_default_overridden_by_user_value(self) -> None:
+        """
+        Test if the symbol info marks a "set default" option as inactive when a user value is used instead.
+        """
+        kconfig = Kconfig(os.path.join(KCONFIGS_PATH, "Kconfig.indirect_sets_inactive"))
+        sym = kconfig.syms["DST_USER_SET"]
+        entry = "- 3 if BOTH_SOURCE(=y) (by symbol BOTH_SOURCE)\n"
+        assert f"Active indirectly weak set values for this symbol (via 'set' option):\n{entry}" in _set_info(
+            sym, kconfig
+        )
+
+        # Deliberately do not read str_value before checking the info
+        sym.set_value("5")
+        info = _set_info(sym, kconfig)
+        assert f"Inactive indirectly weak set values for this symbol (via 'set' option):\n{entry}" in info
+        assert "Active indirectly weak set values" not in info
+        assert sym.str_value == "5"
 
 
 class TestSetRiskyConfig:

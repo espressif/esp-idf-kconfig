@@ -1,0 +1,62 @@
+mainmenu "Test menuconfig output for set and set default options which do not take effect"
+
+    config VALUE_ENABLED
+        bool "Enable the unavailable value"
+        default n
+
+    config UNAVAILABLE_VALUE
+        int "Value which is unavailable by default"
+        depends on VALUE_ENABLED
+        default 5
+
+    config AVAILABLE_VALUE
+        int "Value which is always available"
+        default 9
+
+    config FIRST_SOURCE
+        bool "First set option source"
+        default y
+        set DST_SKIPPED=UNAVAILABLE_VALUE
+        set DST_FALLTHROUGH=UNAVAILABLE_VALUE
+
+    config SECOND_SOURCE
+        bool "Second set option source"
+        default y
+        set DST_FALLTHROUGH=AVAILABLE_VALUE
+
+    config TARGET_DEPS_ENABLED
+        bool "Enable dependencies of the set default target"
+        default n
+
+    config SET_DEFAULT_SOURCE
+        bool "Set default option source"
+        default y
+        set default DST_DEPS_UNMET=3
+
+    config DST_SKIPPED
+        int "Target of a set option with unavailable value"
+        default 7
+
+    config DST_FALLTHROUGH
+        int "Target of an unavailable and an available set option"
+        default 7
+
+    config DST_DEPS_UNMET
+        int "Target of a set default option with unmet dependencies"
+        depends on TARGET_DEPS_ENABLED
+        default 7
+
+    config BOTH_SOURCE
+        bool "Source of set options which all apply"
+        default y
+        set DST_TWO_SETS=1
+        set DST_TWO_SETS=2
+        set default DST_USER_SET=3
+
+    config DST_TWO_SETS
+        int "Target of two set options which both apply"
+        default 7
+
+    config DST_USER_SET
+        int "Target of a set default option which can be overridden by the user"
+        default 7

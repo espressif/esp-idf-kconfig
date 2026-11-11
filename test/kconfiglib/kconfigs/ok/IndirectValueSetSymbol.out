@@ -1,0 +1,32 @@
+#
+# Automatically generated file. DO NOT EDIT.
+# Espressif IoT Development Framework (ESP-IDF)  Project Configuration
+#
+# default:
+CONFIG_SRC_INT=22
+# default:
+CONFIG_SRC_HEX=0x16
+# default:
+CONFIG_SRC_FLOAT=2.5
+# default:
+CONFIG_SRC_STR="src"
+# default:
+CONFIG_APPLY_SET=y
+# default:
+CONFIG_APPLY_SET_DEFAULT=y
+# default:
+CONFIG_DST_INT=22
+# default:
+CONFIG_DST_HEX=0x16
+# default:
+CONFIG_DST_FLOAT=2.5
+# default:
+CONFIG_DST_STR="src"
+# default:
+CONFIG_WEAK_DST_INT=22
+# default:
+CONFIG_WEAK_DST_HEX=0x16
+# default:
+CONFIG_WEAK_DST_FLOAT=2.5
+# default:
+CONFIG_WEAK_DST_STR="src"

@@ -1,0 +1,16 @@
+mainmenu "Set and set default with a bool target"
+
+    # Targets are defined after the source on purpose: their type is not known when "set" is parsed
+    config SOURCE
+        bool "Source"
+        default y
+        set BOOL_TARGET=y
+        set default WEAK_BOOL_TARGET=y
+
+    config BOOL_TARGET
+        bool "Bool target"
+        default n
+
+    config WEAK_BOOL_TARGET
+        bool "Weak bool target"
+        default n
