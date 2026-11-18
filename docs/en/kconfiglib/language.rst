@@ -64,13 +64,17 @@ The ``menu`` Entry
 
 The ``menu`` entry is used to group configuration options together. It can contain the same entries as the ``mainmenu`` entry. In contrast to the ``mainmenu`` entry, the ``menu`` entry is ended explicitly with the ``endmenu`` keyword on the same indentation level as the menu start.
 
-The ``menu`` has following options: ``visible if``, ``depends on``, neither of them is mandatory.
+The ``menu`` entry can have the following options:
+
+- ``visible if``: optional, multiple times
+- ``depends on``: optional, multiple times
+- ``help``: optional, at most one
 
 Syntax is as follows, where ``entries`` and ``menu_name`` are defined the same as in the ``mainmenu`` entry. The ``menu_name`` is a double-quoted string.
 
 .. code-block:: bnf
 
-    menu ::= "menu" + menu_name + [+ visible_if | depends_on] + entries + "endmenu"
+    menu ::= "menu" + menu_name [+ visible_if]* [+ depends_on]* [+ help_option] + entries + "endmenu"
 
 .. note::
     ``visible if`` vs ``depends on``:
@@ -84,6 +88,8 @@ Example:
     menu "Crew"
         # If ship is inactive, crew is not visible, but still present in the configuration
         visible if STATUS_ACTIVE
+        help
+            Configuration of the crew members onboard the ship.
 
         config CREW_ONBOARD
             int "Crew members onboard"
@@ -678,7 +684,7 @@ Example:
 The ``help`` Option
 ^^^^^^^^^^^^^^^^^^^
 
-The ``help`` option is used to define a help text for the configuration option. The help text is a multiline string indented by one level.
+The ``help`` option is used to define a help text for the configuration option or menu. The help text is a multiline string indented by one level.
 
 This option can be used in the following entries and is optional:
 

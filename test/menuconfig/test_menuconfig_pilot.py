@@ -29,6 +29,7 @@ from textual.pilot import Pilot
 
 from esp_kconfiglib import Kconfig
 from esp_menuconfig.app import MenuConfigApp
+from esp_menuconfig.formatting import info_str
 from esp_menuconfig.model import MenuConfigState
 from esp_menuconfig.screens import InfoScreen
 from esp_menuconfig.screens import InputScreen
@@ -42,6 +43,7 @@ KCONFIG_ALL_SCALARS = str(KCONFIGS_PATH / "Kconfig.pilot_all_scalars")
 KCONFIG_SUBMENU = str(KCONFIGS_PATH / "Kconfig.pilot_submenu")
 KCONFIG_CHOICE = str(KCONFIGS_PATH / "Kconfig.pilot_choice")
 KCONFIG_BRACKETS = str(KCONFIGS_PATH / "Kconfig.pilot_brackets")
+KCONFIG_MENU_HELP = str(KCONFIGS_PATH / "Kconfig.pilot_menu_help")
 
 
 def _make_app(
@@ -1331,5 +1333,33 @@ def test_mismatch_notice_absent_without_mismatches(tmp_path, monkeypatch):
         async with app.run_test() as pilot:
             await pilot.pause()
             assert not _notice_visible(app)
+
+    _run(go)
+
+
+@pytest.mark.parametrize("version", ["1", "2"])
+def test_menu_help_is_shown(tmp_path, monkeypatch, version):
+    """Help text on a menu (accepted for compatibility with parser v1) is shown in the help bar and info screen."""
+    monkeypatch.setenv("KCONFIG_PARSER_VERSION", version)
+
+    async def go() -> None:
+        from textual.widgets import Static
+
+        app = _make_app(tmp_path, monkeypatch, kconfig_path=KCONFIG_MENU_HELP)
+        app.state.show_help = True
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            await _highlight(pilot, 0)
+            app._refresh_help()
+            await pilot.pause()
+            assert str(app.query_one("#help-bar", Static).render()) == "Menu help text."
+
+            await pilot.press("?")
+            await pilot.pause()
+            assert isinstance(app.screen, InfoScreen)
+            info = info_str(app.query_one("#menu-list", MenuOptionList).current_node, app.state.kconf)
+            assert info.startswith("Help:\n\n  Menu help text.\n\n")  # "Help:" section
+            # Kconfig definition (indented by the info screen)
+            assert '  menu "Menu with help"\n  \thelp\n  \t  Menu help text.' in info
 
     _run(go)

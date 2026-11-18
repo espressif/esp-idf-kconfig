@@ -214,6 +214,15 @@ class TestHelpTextIsLiteral:
             "Second paragraph."
         )
 
+    @pytest.mark.parametrize("version", ["1", "2"])
+    def test_menu_help(self, version):
+        os.environ["KCONFIG_PARSER_VERSION"] = version
+        config = Kconfig(os.path.join(TESTS_PATH_OK, "MenuHelp.in"))
+        assert config.menus[0].help == (
+            "Not in the original Kconfig specification,\nbut supported by the ESP-IDF Kconfig flavor."
+        )
+        assert str(config.menus[0].dep) == str(config.syms["A"])
+
 
 class TestIndirectSetWithSymbolValue:
     """

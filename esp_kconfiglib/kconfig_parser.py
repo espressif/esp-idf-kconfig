@@ -207,6 +207,8 @@ class Parser:
                 menunode.visibility,
                 self.parse_expression(menu_options["visible_if"][0]),
             )
+        if menu_options["help"]:
+            menunode.help = menu_options["help"]
 
         self.kconfig.menus.append(menunode)
         self.get_children(menunode, (self.file_stack[-1], lineno(loc, s)))

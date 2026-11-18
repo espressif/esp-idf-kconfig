@@ -166,8 +166,8 @@ pointer too due to submenus created implicitly from dependencies.
 
 MenuNode.item is either a Symbol or a Choice object, or one of the constants
 MENU and COMMENT. The prompt of the menu node can be found in MenuNode.prompt,
-which also holds the title for menus and comments. For Symbol and Choice,
-MenuNode.help holds the help text (if any, otherwise None).
+which also holds the title for menus and comments. For Symbol, Choice and
+menus, MenuNode.help holds the help text (if any, otherwise None).
 
 Most symbols will only have a single menu node. A symbol defined in multiple
 locations will have one menu node for each location. The list of menu nodes for
@@ -6808,8 +6808,8 @@ class MenuNode:
 
         """
         help:
-            The help text for the menu node for Symbols and Choices. None if there is
-            no help text. Always stored in the node rather than the Symbol or Choice.
+            The help text for the menu node for Symbols, Choices and menus. None if
+            there is no help text. Always stored in the node rather than the Symbol or Choice.
             It is possible to have a separate help text at each location if a symbol
             is defined in multiple locations.
 
@@ -7094,7 +7094,7 @@ class MenuNode:
         if self.item == MENU:
             add("'visible if' deps " + BOOL_TO_STR[expr_value(self.visibility)])
 
-        if type(self.item) in _SYMBOL_CHOICE and self.help is not None:
+        if self.help is not None:
             add("has help")
 
         if self.list:
@@ -7145,6 +7145,11 @@ class MenuNode:
 
         if self.item == MENU and self.visibility is not self.kconfig.y:
             s += f"\n\tvisible if {expr_str(self.visibility, sc_expr_str_fn)}"
+
+        if self.help is not None:
+            s += "\n\thelp"
+            for line in self.help.splitlines():
+                s += "\n\t  " + line
 
         return s
 

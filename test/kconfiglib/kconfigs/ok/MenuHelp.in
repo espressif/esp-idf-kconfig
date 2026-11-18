@@ -1,0 +1,16 @@
+mainmenu "Menu with help text"
+
+menu "Menu with help"
+    depends on A
+    help
+        Not in the original Kconfig specification,
+        but supported by the ESP-IDF Kconfig flavor.
+
+    config B
+        bool "b"
+        default y
+endmenu
+
+config A
+    bool "a"
+    default y

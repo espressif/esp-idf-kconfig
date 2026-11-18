@@ -1,0 +1,10 @@
+mainmenu "Pilot menu help fixture"
+
+    menu "Menu with help"
+        help
+            Menu help text.
+
+        config INNER_BOOL
+            bool "Inner bool"
+            default n
+    endmenu
