@@ -18,6 +18,20 @@ If v1 also rejects the tree, the original v2 error is kept.
 If v1 accepts it, ``kconfgen`` checks the error location for :ref:`unsupported legacy constructs <differences>`.
 If one is found, the failure is reported as intended; otherwise it is reported as a possible parser bug.
 
+The parser is selected as follows:
+
+1. The ``KCONFIG_PARSER_VERSION`` environment variable (``1`` or ``2``), if set. This is meant for the user, e.g. to temporarily fall back to parser v1.
+2. Otherwise, a ``# kconfig-parser-version: <1|2>`` comment in the root ``Kconfig`` file, if present. This is meant for projects (e.g. ESP-IDF) which want a different default parser. The comment has to be in the leading comment block of the file, i.e. before the first line that is neither empty nor a comment. Only the root ``Kconfig`` file is inspected, files sourced from it are not:
+
+   .. code-block:: kconfig
+
+       # kconfig-parser-version: 2
+       mainmenu "My Project Configuration"
+
+3. Otherwise, parser v1 is used.
+
+Empty values are treated as unset. Any other value than ``1`` or ``2`` is ignored with a warning, as if it was unset. Because the comment is an ordinary Kconfig comment, older ``esp-idf-kconfig`` versions ignore it and keep using parser v1.
+
 .. toctree::
     :maxdepth: 2
 
