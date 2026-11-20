@@ -9,9 +9,11 @@ differences.rst). When kconfgen re-parses a failed tree with v1, these matches
 distinguish an intentional rejection from a possible parser bug.
 """
 
+import os
 import re
 from dataclasses import dataclass
 from typing import List
+from typing import Optional
 from typing import Pattern
 from typing import Tuple
 
@@ -40,7 +42,15 @@ _LINE_PATTERNS: Tuple[Tuple[Pattern[str], str], ...] = (
         re.compile(r"^\s*def_(?:bool|int|hex|string|tristate|float)\b"),
         "'def_<type>' shorthand; split it into a type and a default",
     ),
+    (
+        re.compile(r"^\s*g(?:r)?source\b"),
+        "'gsource'/'grsource' keyword; use 'osource'/'orsource' instead",
+    ),
 )
+
+# 'mainmenu' is legal only in the root Kconfig file
+_MAINMENU_RE = re.compile(r"^\s*mainmenu\b")
+_MAINMENU_DESC = "'mainmenu' outside the root Kconfig file; use 'menu'/'endmenu' instead"
 
 # Special case: malformed (menu)config/choice names
 # A config/menuconfig/choice header; group 1 is the name token (FOO, FOO.BAR, "quoted").
@@ -59,12 +69,15 @@ def _strip_inline_comment(line: str) -> str:
     return line[:hash_pos]
 
 
-def _matches_on_line(line: str) -> List[str]:
+def _matches_on_line(line: str, in_root: bool) -> List[str]:
     stripped = _strip_inline_comment(line)
     found: List[str] = []
     for pattern, description in _LINE_PATTERNS:
         if pattern.search(stripped):
             found.append(description)
+
+    if not in_root and _MAINMENU_RE.search(stripped):
+        found.append(_MAINMENU_DESC)
 
     # Check for illegal config/choice names
     name_match = _NAMED_ENTRY_RE.match(stripped)
@@ -75,14 +88,18 @@ def _matches_on_line(line: str) -> List[str]:
     return found
 
 
-def find_legacy_constructs(filename: str, linenum: int) -> List[LegacyMatch]:
+def find_legacy_constructs(filename: str, linenum: int, root_filename: Optional[str] = None) -> List[LegacyMatch]:
     """
     Scan linenum and the adjacent lines of filename for unsupported constructs.
 
     Parser v2 often reports the error on the previous line (at the newline)
     when the next token is something like ``---help---``. Checking the
     neighbours covers that.
+
+    'root_filename' is the root Kconfig file. 'mainmenu' is reported only if it is given
+    and differs from 'filename'.
     """
+    in_root = root_filename is None or os.path.realpath(filename) == os.path.realpath(root_filename)
     LINE_OFFSET = 1
     try:
         with open(filename, encoding="utf-8", errors="replace") as fh:
@@ -96,7 +113,7 @@ def find_legacy_constructs(filename: str, linenum: int) -> List[LegacyMatch]:
         if line_nr < 1 or line_nr > len(lines):
             continue
         line_text = lines[line_nr - 1]
-        for description in _matches_on_line(line_text):
+        for description in _matches_on_line(line_text, in_root):
             if description in seen:
                 continue
             seen.add(description)

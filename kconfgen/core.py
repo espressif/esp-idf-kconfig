@@ -68,7 +68,7 @@ def _diagnose_v2_parse_failure(exc: BaseException, kconfig: str) -> None:
     filename = getattr(exc, "file", None)
     linenum = getattr(exc, "line", None)
     if filename and linenum:
-        matches = find_legacy_constructs(filename, linenum)
+        matches = find_legacy_constructs(filename, linenum, os.path.join(os.getenv("srctree", ""), kconfig))
     else:
         matches = []
 
