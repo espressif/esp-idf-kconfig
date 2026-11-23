@@ -79,10 +79,8 @@ class KconfgenBaseTestCase(unittest.TestCase):
         with open(self.output_file) as f_result:
             result = f_result.read()
 
-        try:
+        if isinstance(out_text, str):  # may be a compiled regex
             out_text = textwrap.dedent(out_text)
-        except TypeError:
-            pass  # probably a regex
 
         self.functions[test](self, out_text, result)
         return result

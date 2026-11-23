@@ -34,7 +34,7 @@ workflow:
     - pip install -e .[dev] --prefer-binary
   parallel:
     matrix:
-      - PYTHON_VERSION: ["3.8", "3.13"]
+      - PYTHON_VERSION: ["3.8", "3.15"]
 
 .venv_template:
   image: python:${PYTHON_VERSION}-bookworm
@@ -47,7 +47,7 @@ workflow:
     - python -m pip install -e .[dev] --prefer-binary
   parallel:
     matrix:
-      - PYTHON_VERSION: ["3.8", "3.13"]
+      - PYTHON_VERSION: ["3.8", "3.15"]
 
 # --------------------------------------------------------------------------------------------------
 
