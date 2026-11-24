@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from esp_kconfiglib import Kconfig
+from esp_kconfiglib.core import expr_str
 
 TEST_FILES_PATH = os.path.abspath(os.path.dirname(__file__))
 TESTS_PATH_OK = os.path.join(TEST_FILES_PATH, "kconfigs", "ok")
@@ -213,6 +214,23 @@ class TestHelpTextIsLiteral:
             "# Another comment-looking line, after a blank line.\n"
             "Second paragraph."
         )
+
+    @pytest.mark.parametrize("version", ["1", "2"])
+    def test_menu_help(self, version):
+        os.environ["KCONFIG_PARSER_VERSION"] = version
+        config = Kconfig(os.path.join(TESTS_PATH_OK, "MenuHelp.in"))
+        assert config.menus[0].help == (
+            "Not in the original Kconfig specification,\nbut supported by the ESP-IDF Kconfig flavor."
+        )
+        assert str(config.menus[0].dep) == str(config.syms["A"])
+
+
+class TestMenuVisibility:
+    @pytest.mark.parametrize("version", ["1", "2"])
+    def test_multiple_visible_if(self, version, monkeypatch):
+        monkeypatch.setenv("KCONFIG_PARSER_VERSION", version)
+        config = Kconfig(os.path.join(TESTS_PATH_OK, "MenuMultipleVisibleIf.in"))
+        assert expr_str(config.menus[0].visibility) == "A && B"
 
 
 class TestIndirectSetWithSymbolValue:

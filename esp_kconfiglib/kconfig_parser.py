@@ -202,11 +202,10 @@ class Parser:
                 self.kconfig.linenr = depend_lineno
                 expr = self.parse_expression(depend)
                 menunode.dep = self.kconfig._make_and(menunode.dep, expr)
-        if menu_options["visible_if"]:  # visible if
-            menunode.visibility = self.kconfig._make_and(
-                menunode.visibility,
-                self.parse_expression(menu_options["visible_if"][0]),
-            )
+        for visible_if in menu_options["visible_if"]:  # visible if
+            menunode.visibility = self.kconfig._make_and(menunode.visibility, self.parse_expression(visible_if))
+        if menu_options["help"]:
+            menunode.help = menu_options["help"]
 
         self.kconfig.menus.append(menunode)
         self.get_children(menunode, (self.file_stack[-1], lineno(loc, s)))

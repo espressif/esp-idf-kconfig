@@ -1,0 +1,20 @@
+# all "visible if" options of a menu are combined with "&&"
+mainmenu "Menu with multiple visible if"
+
+    config A
+        bool
+        default y
+
+    config B
+        bool
+        default y
+
+    menu "menu with multiple visible if"
+        visible if A
+        visible if B
+
+        config C
+            bool "config in menu with multiple visible if"
+            default y
+
+    endmenu

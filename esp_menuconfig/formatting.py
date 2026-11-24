@@ -201,7 +201,8 @@ def info_str(node: MenuNode, kconf: Kconfig) -> str:
             + _kconfig_def_info(choice, kconf)
         )
 
-    return _kconfig_def_info(node, kconf)
+    # menu/comment
+    return _node_help_info(node) + _kconfig_def_info(node, kconf)
 
 
 def info_title(node: MenuNode) -> str:
@@ -713,6 +714,10 @@ def _help_info(sc: Union[Symbol, Choice]) -> str:
         if node.help is not None:
             s += f"Help:\n\n{textwrap.indent(node.help, '  ')}\n\n"
     return s
+
+
+def _node_help_info(node: MenuNode) -> str:
+    return f"Help:\n\n{textwrap.indent(node.help, '  ')}\n\n" if node.help is not None else ""
 
 
 def _choice_syms_info(choice: Choice) -> str:
