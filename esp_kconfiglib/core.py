@@ -346,6 +346,13 @@ variables:
     to parse a tree that parser ``1`` accepts, kconfgen reports this as a
     likely parser bug and suggests falling back to ``1``.
 
+    If KCONFIG_PARSER_VERSION is not set, the root Kconfig file can select
+    the parser with a "# kconfig-parser-version: <1|2>" comment in its
+    leading comment block (see select_parser_version()).
+
+    Empty values are treated as unset. Any other value than ``1`` or ``2``
+    is ignored with a warning, as if it was unset.
+
   - KCONFIG_WARN_UNDEF: If set to 'y', warnings will be generated for all
     references to undefined symbols within Kconfig files. The only gotcha is
     that all hex literals must be prefixed with "0x" or "0X", to make it
@@ -621,7 +628,13 @@ class Kconfig(object):
         """
         self._encoding = encoding
 
-        self.parser_version = parser_version if parser_version else int(os.environ.get("KCONFIG_PARSER_VERSION", "1"))
+        self.parser_version = parser_version if parser_version else select_parser_version(filename, encoding)
+        if self.parser_version not in (1, 2):
+            log.warn(
+                f"ignoring unsupported Kconfig parser version '{escape(str(self.parser_version))}'. "
+                "Allowed values are 1 and 2, falling back to 1"
+            )
+            self.parser_version = 1
 
         """
         allowed_multi_def_choices:
@@ -7335,6 +7348,74 @@ class _KconfigIOError(IOError):
 #
 # Public functions
 #
+
+
+# "# kconfig-parser-version: <value>" in the leading comment block of the root Kconfig file
+_PARSER_VERSION_MARKER_RE = re.compile(r"^#\s*kconfig-parser-version\s*:\s*(\S*)$")
+
+
+def _parse_parser_version(value: str, source: str) -> Optional[int]:
+    """
+    Returns the parser version given by 'value', or None if it is empty or invalid (with a warning).
+    """
+    # strip(): e.g. "set KCONFIG_PARSER_VERSION=1 && ..." in Windows cmd leaves a trailing space
+    value = value.strip()
+    if not value:
+        return None
+    if value not in ("1", "2"):
+        log.warn(
+            f"ignoring invalid value '{escape(value)}' of {escape(source)}. "
+            "Allowed values are '1' (legacy parser) and '2' (new parser)"
+        )
+        return None
+    return int(value)
+
+
+def parser_version_from_kconfig_file(kconfig_filename: str, encoding: str = "utf-8") -> Optional[int]:
+    """
+    Returns the parser version declared in the root Kconfig file, or None if it declares none.
+
+    The version is declared by a "# kconfig-parser-version: <1|2>" comment in the leading comment block
+    of the file, i.e. before the first line which is neither empty nor a comment. Only the given (root)
+    file is inspected, never the files it sources. Like Kconfig(), 'kconfig_filename' is looked up
+    relative to $srctree if it is set. Unreadable files and invalid values yield None.
+    """
+    path = join(os.getenv("srctree", ""), kconfig_filename)
+    try:
+        with open(path, "r", encoding=encoding) as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                if not line.startswith("#"):
+                    break
+                match = _PARSER_VERSION_MARKER_RE.match(line)
+                if match:
+                    return _parse_parser_version(match.group(1), f"the kconfig-parser-version comment in {path}")
+    except (OSError, UnicodeDecodeError):
+        # Errors are reported by the parser itself
+        return None
+    return None
+
+
+def select_parser_version(kconfig_filename: Optional[str] = None, encoding: str = "utf-8") -> int:
+    """
+    Returns the Kconfig parser version to use:
+
+    1. KCONFIG_PARSER_VERSION environment variable (user choice), if set,
+    2. otherwise the "# kconfig-parser-version: <1|2>" comment in the root Kconfig file 'kconfig_filename'
+       (project choice, see parser_version_from_kconfig_file()), if given and present,
+    3. otherwise parser v1.
+
+    Empty values are treated as unset. Any other value than ``1`` or ``2`` is reported with a warning
+    and also treated as unset.
+    """
+    version = _parse_parser_version(
+        os.environ.get("KCONFIG_PARSER_VERSION", ""), "the KCONFIG_PARSER_VERSION environment variable"
+    )
+    if version is None and kconfig_filename:
+        version = parser_version_from_kconfig_file(kconfig_filename, encoding)
+    return version or 1
 
 
 def expr_value(expr: Union[Symbol, Choice, Tuple]) -> int:

@@ -68,7 +68,7 @@ def _diagnose_v2_parse_failure(exc: BaseException, kconfig: str) -> None:
     filename = getattr(exc, "file", None)
     linenum = getattr(exc, "line", None)
     if filename and linenum:
-        matches = find_legacy_constructs(filename, linenum)
+        matches = find_legacy_constructs(filename, linenum, os.path.join(os.getenv("srctree", ""), kconfig))
     else:
         matches = []
 
@@ -534,7 +534,7 @@ def main(
     if env_file is not None:
         env_vars = json.load(env_file)
         os.environ.update(env_vars)
-    parser_version = int(os.environ.get("KCONFIG_PARSER_VERSION", "1"))
+    parser_version = kconfiglib.select_parser_version(kconfig)
     # TODO Once ESP-IDF will fully support kconfig report, we should switch to "quiet" as default
     #      to avoid printing the report several times during the build.
     print_report = os.environ.get("KCONFIG_REPORT_VERBOSITY", "default") != "quiet"

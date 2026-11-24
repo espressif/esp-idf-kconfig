@@ -24,6 +24,8 @@ Rejected by parser v2, accepted by parser v1:
 
 - ``config`` or ``choice`` names may contain only numbers, letters from the English alphabet and underscores. Lowercase letters are accepted but deprecated (see `Deprecated Constructs`_).
 - The root ``mainmenu`` is required.
+- ``mainmenu`` is allowed only in the root Kconfig file. Use ``menu``/``endmenu`` in sourced files instead.
+- The ``gsource`` and ``grsource`` keywords (legacy aliases of ``osource`` and ``orsource``) are not supported. Use ``osource`` and ``orsource`` instead.
 
 Reported by parser v2 only:
 

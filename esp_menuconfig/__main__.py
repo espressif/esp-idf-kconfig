@@ -13,11 +13,12 @@ from esp_kconfiglib.errors import kconfig_error_handler
 def _main(kconfig: str) -> None:
     """Launch the ESP-IDF interactive menuconfig."""
     from esp_kconfiglib.core import Kconfig
+    from esp_kconfiglib.core import select_parser_version
     from esp_kconfiglib.deprecated import load_rename_files_from_env
 
     from . import menuconfig
 
-    parser_version = int(os.environ.get("KCONFIG_PARSER_VERSION", "1"))
+    parser_version = select_parser_version(kconfig)
     kconf = Kconfig(kconfig, suppress_traceback=True, parser_version=parser_version)
     load_rename_files_from_env(
         kconf,
