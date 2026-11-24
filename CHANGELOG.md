@@ -1,3 +1,9 @@
+## v2.6.0 (2026-11-24)
+
+### New Features
+
+- add Python 3.15 support
+
 ## v2.5.4 (2026-04-21)
 
 ### Bug Fixes
