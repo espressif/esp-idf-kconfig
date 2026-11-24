@@ -20,6 +20,24 @@
 </div>
 <hr>
 
+## v3.15.0 (2026-11-24)
+
+### ✨ New Features
+
+- **kconfiglib**: document and detect all constructs rejected by parser v2 *(Jan Beran - c64d06b)*
+- **kconfiglib**: allow the parser version to be set in the root Kconfig file *(Jan Beran - 7d3e0e1)*
+- add Python 3.15 support *(Jan Beran - b4cf0f2)*
+
+### 🐛 Bug Fixes
+
+- **kconfiglib**: combine all visible if options of menus in parser v2 *(Jan Beran - 84e938b)*
+- **kconfiglib**: keep help text of menus in parser v2 *(Jan Beran - bd88c82)*
+- **kconfiglib**: ignore set/set default with unavailable symbol value *(Jan Beran - 3b9b477)*
+- **kconfiglib**: resolve symbol value in numeric set/set default *(Jan Beran - 6fd6425)*
+- **menuconfig**: stop mismatch notice rack from covering the menu *(Jan Beran - bcf23b5)*
+- **kconfgen**: fall back to 0 for invalid range bounds in json_menus *(Jan Beran - bebc155)*
+
+
 ## v3.14.0 (2026-10-08)
 
 ### ✨ New Features
